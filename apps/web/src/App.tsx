@@ -3,6 +3,7 @@ import { ApiProvider } from '@/providers/ApiProvider';
 import { StatusProvider } from '@/providers/StatusProvider';
 import { NavigationProvider } from '@/providers/NavigationProvider';
 import { ToastProvider } from '@/providers/ToastProvider';
+import { ApprovalProvider } from '@/providers/ApprovalProvider';
 import { AppShell } from '@/components/layout/AppShell';
 
 export default function App() {
@@ -12,7 +13,9 @@ export default function App() {
         <StatusProvider>
           <NavigationProvider>
             <ToastProvider>
-              <AppShell />
+              <ApprovalProvider>
+                <AppShell />
+              </ApprovalProvider>
             </ToastProvider>
           </NavigationProvider>
         </StatusProvider>

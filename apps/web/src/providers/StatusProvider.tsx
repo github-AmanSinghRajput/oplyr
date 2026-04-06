@@ -4,6 +4,8 @@ import { useDesktopBridge } from '@/hooks/use-desktop-bridge';
 import type { StatusResponse, SystemResponse } from '@/containers/voice-console/lib/types';
 import type { DesktopRuntimeStatus } from '@/desktop-shell';
 
+type StatusUpdater = StatusResponse | null | ((prev: StatusResponse | null) => StatusResponse | null);
+
 interface StatusContextValue {
   status: StatusResponse | null;
   system: SystemResponse | null;
@@ -11,7 +13,7 @@ interface StatusContextValue {
   isDesktopShell: boolean;
   assistantReady: boolean;
   refreshStatus: () => Promise<void>;
-  setStatus: (status: StatusResponse | null) => void;
+  setStatus: (updater: StatusUpdater) => void;
 }
 
 const StatusContext = createContext<StatusContextValue | null>(null);
@@ -41,6 +43,14 @@ export function StatusProvider({ children }: { children: ReactNode }) {
 
   const assistantReady = Boolean(status?.assistantProviders.activeProvider?.appConnected);
 
+  const updateStatus = useCallback((updater: StatusUpdater) => {
+    if (typeof updater === 'function') {
+      setStatus(updater);
+    } else {
+      setStatus(updater);
+    }
+  }, []);
+
   return (
     <StatusContext value={{
       status,
@@ -49,7 +59,7 @@ export function StatusProvider({ children }: { children: ReactNode }) {
       isDesktopShell,
       assistantReady,
       refreshStatus,
-      setStatus,
+      setStatus: updateStatus,
     }}>
       {children}
     </StatusContext>

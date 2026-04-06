@@ -1,4 +1,4 @@
-import { Suspense, lazy } from 'react';
+import { Suspense, lazy, startTransition, type FormEvent } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
@@ -7,12 +7,18 @@ import { useNavigation } from '@/providers/NavigationProvider';
 import { useStatus } from '@/providers/StatusProvider';
 import { useToast } from '@/providers/ToastProvider';
 import { useTheme } from '@/providers/ThemeProvider';
+import { useApproval } from '@/providers/ApprovalProvider';
+import { useApi } from '@/providers/ApiProvider';
+import { useChatStream } from '@/hooks/use-chat-stream';
+import { useAppSettings } from '@/hooks/use-app-settings';
+import { useNotes } from '@/hooks/use-notes';
+import { usePreferences } from '@/hooks/use-preferences';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/cn';
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
+import { getVoiceState } from '@/containers/voice-console/lib/helpers';
+import type { StatusResponse } from '@/containers/voice-console/lib/types';
 
-// Lazy-load screens to keep initial bundle small.
-// Phase 4 will wire remaining props (voice session, chat stream, approval) via hooks/providers.
 const ChatScreen = lazy(() => import('@/components/screens/ChatScreen').then(m => ({ default: m.ChatScreen })));
 const VoiceScreen = lazy(() => import('@/components/screens/VoiceScreen').then(m => ({ default: m.VoiceScreen })));
 const ReviewScreen = lazy(() => import('@/components/screens/ReviewScreen').then(m => ({ default: m.ReviewScreen })));
@@ -31,50 +37,142 @@ function ScreenFallback() {
   );
 }
 
-/** Placeholder screen for screens that need Phase 4 hooks to be fully wired. */
-function PlaceholderScreen({ screenId }: { screenId: string }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-20 gap-4">
-      <div className="w-16 h-16 rounded-2xl bg-accent-muted flex items-center justify-center">
-        <span className="text-accent font-bold text-2xl">V</span>
-      </div>
-      <div className="text-center">
-        <p className="text-lg font-medium text-text-primary mb-1">
-          {screenId.charAt(0).toUpperCase() + screenId.slice(1)}
-        </p>
-        <p className="text-sm text-text-tertiary">
-          This screen is built and ready. It will be fully wired once voice/chat hooks are extracted in Phase 4.
-        </p>
-      </div>
-    </div>
-  );
+function getProviderName(status: StatusResponse | null) {
+  return status?.assistantProviders.activeProvider?.name ?? 'Assistant';
 }
 
 export function AppShell() {
   const { activeScreen, setActiveScreen } = useNavigation();
-  const { status, refreshStatus } = useStatus();
+  const { status, system, refreshStatus, assistantReady } = useStatus();
   const { theme } = useTheme();
   const { toasts } = useToast();
+  const { baseUrl } = useApi();
+  const { approvals, handleApprove, handleReject } = useApproval();
+  const chat = useChatStream();
+  const settings = useAppSettings();
+  const notes = useNotes();
+  const { preferences, setPreference } = usePreferences();
 
   useKeyboardShortcuts(setActiveScreen);
 
   const displayName = status?.appSettings.displayName ?? null;
+  const voiceState = getVoiceState(status);
+
+  function handleTextSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (chat.isSubmittingTurn) return;
+
+    const nextMessage = chat.textInput.trim();
+    if (!nextMessage && chat.draftAttachments.length === 0) return;
+
+    const previousText = chat.textInput;
+    const previousAttachments = chat.draftAttachments;
+    chat.setTextInput('');
+    chat.setDraftAttachments([]);
+
+    const doSubmit = async () => {
+      try {
+        const result = await chat.streamChatMessage(nextMessage, 'text', {
+          attachmentIds: previousAttachments.map((a) => a.id),
+        });
+        await refreshStatus();
+        startTransition(() => {
+          setActiveScreen(result.type === 'approval_required' ? 'review' : 'terminal');
+        });
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') {
+          chat.setTextInput(previousText);
+          chat.setDraftAttachments(previousAttachments);
+          return;
+        }
+        chat.setTextInput(previousText);
+        chat.setDraftAttachments(previousAttachments);
+      }
+    };
+    void doSubmit();
+  }
 
   function renderScreen() {
+    // Onboarding gate
+    if (!assistantReady) {
+      return (
+        <OnboardingScreen
+          appSettings={status?.appSettings ?? null}
+          step={settings.onboardingStep}
+          selectedProviderId={settings.onboardingSelectedProviderId}
+          providers={status?.assistantProviders.providers ?? []}
+          onConnectProvider={(id) => void settings.handleProviderConnect(id)}
+          onRefresh={() => void refreshStatus()}
+          onSaveDisplayName={(name) => void settings.handleOnboardingDisplayNameSubmit(name)}
+          onSelectProvider={(id) => settings.setOnboardingSelectedProviderId(id)}
+          onContinueToInstructions={() => {
+            if (settings.onboardingSelectedProviderId) settings.setOnboardingStep(3);
+          }}
+          onBackToProviderChoice={() => settings.setOnboardingStep(2)}
+          onBackToName={() => settings.setOnboardingStep(1)}
+        />
+      );
+    }
+
     switch (activeScreen) {
       case 'workspace':
         return (
           <WorkspaceScreen
-            activeProviderName={status?.assistantProviders.activeProvider?.name ?? 'Assistant'}
+            activeProviderName={getProviderName(status)}
             projectInput={status?.workspace.projectRoot ?? ''}
             workspace={status?.workspace ?? null}
-            canBrowseProjectFolder={Boolean(window.desktopShell?.browseForFolder)}
-            isResetting={false}
-            onProjectInputChange={() => {/* Phase 4: wire to state */}}
-            onBrowseProjectFolder={() => {/* Phase 4: wire to desktop bridge */}}
-            onSaveProject={() => {/* Phase 4: wire to API */}}
-            onToggleWriteAccess={() => {/* Phase 4: wire to API */}}
-            onResetApp={() => {/* Phase 4: wire to API */}}
+            canBrowseProjectFolder={Boolean(window.desktopShell?.pickProjectFolder)}
+            isResetting={settings.busyLabel === 'Resetting VOCOD...'}
+            onProjectInputChange={() => {/* controlled by WorkspaceScreen internally */}}
+            onBrowseProjectFolder={() => {
+              if (window.desktopShell?.pickProjectFolder) {
+                void window.desktopShell.pickProjectFolder().then((folder: string | null) => {
+                  if (folder) void settings.handleSaveProject(folder);
+                });
+              }
+            }}
+            onSaveProject={() => void settings.handleSaveProject(status?.workspace.projectRoot ?? '')}
+            onToggleWriteAccess={(enabled) => void settings.handleToggleWriteAccess(enabled)}
+            onResetApp={() => void settings.handleResetApp()}
+          />
+        );
+      case 'voice':
+        return (
+          <VoiceScreen
+            audio={status?.audio ?? null}
+            busyLabel={settings.busyLabel}
+            voiceSession={status?.voiceSession ?? null}
+            voiceState={voiceState}
+            voiceActivity={null}
+            recentVoiceActivities={[]}
+            narrationMode={settings.voiceSettings?.settings.narrationMode ?? 'narrated'}
+            pendingCommandTitle={null}
+            pendingCommandPrompt={null}
+            pendingCommandOptions={[]}
+            onApplyCommandOption={() => {/* voice session hook needed */}}
+            onDismissCommandOptions={() => {/* voice session hook needed */}}
+            onToggleMute={() => {/* voice session hook needed */}}
+            onStart={() => {/* voice session hook needed */}}
+            onStop={() => {/* voice session hook needed */}}
+          />
+        );
+      case 'terminal':
+        return (
+          <ChatScreen
+            apiBaseUrl={baseUrl}
+            messages={chat.messages}
+            textInput={chat.textInput}
+            draftAttachments={chat.draftAttachments}
+            isStreaming={chat.isStreaming}
+            streamingMessageId={chat.activeChatStreamMessageId}
+            typedMessages={chat.typedMessageText}
+            disabled={chat.isSubmittingTurn}
+            onTextInputChange={chat.setTextInput}
+            onSubmit={handleTextSubmit}
+            onAttachFiles={(files) => void chat.handleAttachFiles(files)}
+            onRemoveAttachment={chat.handleRemoveDraftAttachment}
+            onStartVoice={() => setActiveScreen('voice')}
+            onCancelStreaming={chat.abortActiveChatStream}
           />
         );
       case 'shell':
@@ -84,17 +182,64 @@ export function AppShell() {
             theme={theme}
           />
         );
-      // Voice, Chat, Review, Settings, Memory, Onboarding need more state from Phase 4 hooks.
-      // For now, render placeholder. The component code is built and ready.
-      case 'voice':
-      case 'terminal':
       case 'review':
+        return (
+          <ReviewScreen
+            assistantLabel={getProviderName(status)}
+            pendingApproval={status?.pendingApproval ?? null}
+            lastDiff={status?.lastDiff ?? null}
+            approvalHistory={approvals}
+            onApprove={() => void handleApprove()}
+            onReject={() => void handleReject()}
+          />
+        );
       case 'settings':
+        return (
+          <SettingsScreen
+            appSettings={status?.appSettings ?? null}
+            preferences={preferences}
+            codexSettings={settings.codexSettings}
+            claudeSettings={settings.claudeSettings}
+            status={status}
+            system={system}
+            voiceSettings={settings.voiceSettings}
+            onAppSettingChange={(key, value) => void settings.handleAppSettingChange(key, value)}
+            onPreferenceChange={setPreference}
+            onVoiceSettingChange={(key, value) => void settings.handleVoiceSettingChange(key, value)}
+            onCodexSettingChange={(key, value) => void settings.handleCodexSettingChange(key, value)}
+            onClaudeSettingChange={(key, value) => void settings.handleClaudeSettingChange(key, value)}
+            onProviderChange={(id) => void settings.handleProviderChange(id)}
+            onProviderDisconnect={(id) => void settings.handleProviderDisconnect(id)}
+          />
+        );
       case 'memory':
-      case 'notes':
-        return <PlaceholderScreen screenId={activeScreen} />;
+        return (
+          <MemoryScreen
+            editingNoteId={notes.editingNoteId}
+            noteBody={notes.noteBody}
+            noteSource={notes.noteSource}
+            noteTitle={notes.noteTitle}
+            notes={notes.notes}
+            trackedSessions={system?.auth.trackedSessions ?? []}
+            system={system}
+            onCreateNote={notes.onCreateNote}
+            onDeleteNote={notes.onDeleteNote}
+            onEditNote={notes.onEditNote}
+            onNoteBodyChange={notes.onNoteBodyChange}
+            onNoteSourceChange={notes.onNoteSourceChange}
+            onNoteTitleChange={notes.onNoteTitleChange}
+            onResetComposer={notes.onResetComposer}
+          />
+        );
       default:
-        return <PlaceholderScreen screenId={activeScreen} />;
+        return (
+          <div className="flex flex-col items-center justify-center py-20 gap-4">
+            <div className="w-16 h-16 rounded-2xl bg-accent-muted flex items-center justify-center">
+              <span className="text-accent font-bold text-2xl">V</span>
+            </div>
+            <p className="text-sm text-text-tertiary">Screen not found.</p>
+          </div>
+        );
     }
   }
 
@@ -104,7 +249,7 @@ export function AppShell() {
       <Topbar
         displayName={displayName}
         onRefresh={() => void refreshStatus()}
-        onDisconnect={() => {/* wired in Phase 4 */}}
+        onDisconnect={() => {/* wired when voice session hook is available */}}
       />
       <ContentFrame>
         <AnimatePresence mode="wait">
