@@ -9,6 +9,7 @@ import { useToast } from '@/providers/ToastProvider';
 import { useTheme } from '@/providers/ThemeProvider';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/cn';
+import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
 
 // Lazy-load screens to keep initial bundle small.
 // Phase 4 will wire remaining props (voice session, chat stream, approval) via hooks/providers.
@@ -50,10 +51,12 @@ function PlaceholderScreen({ screenId }: { screenId: string }) {
 }
 
 export function AppShell() {
-  const { activeScreen } = useNavigation();
+  const { activeScreen, setActiveScreen } = useNavigation();
   const { status, refreshStatus } = useStatus();
   const { theme } = useTheme();
   const { toasts } = useToast();
+
+  useKeyboardShortcuts(setActiveScreen);
 
   const displayName = status?.appSettings.displayName ?? null;
 
