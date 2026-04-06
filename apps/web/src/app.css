@@ -1,0 +1,110 @@
+@import "tailwindcss";
+
+@theme {
+  /* ── Colors ── */
+  --color-background: #0e1015;
+  --color-background-elevated: #14171d;
+  --color-surface-1: #181c23;
+  --color-surface-2: #1e222b;
+  --color-surface-3: #262b36;
+
+  --color-border: rgba(110, 125, 143, 0.15);
+  --color-border-strong: rgba(130, 146, 166, 0.28);
+
+  --color-text-primary: #eaf0fa;
+  --color-text-secondary: #8a97ab;
+  --color-text-tertiary: #5a6578;
+
+  --color-accent: #00d4f5;
+  --color-accent-muted: rgba(0, 212, 245, 0.12);
+  --color-accent-border: rgba(0, 212, 245, 0.24);
+
+  --color-success: #6ffbbe;
+  --color-success-muted: rgba(111, 251, 190, 0.10);
+  --color-warning: #f2d070;
+  --color-warning-muted: rgba(242, 208, 112, 0.10);
+  --color-danger: #ff8e98;
+  --color-danger-muted: rgba(255, 142, 152, 0.10);
+
+  /* ── Layout ── */
+  --sidebar-width-collapsed: 56px;
+  --sidebar-width-expanded: 240px;
+  --topbar-height: 44px;
+
+  /* ── Radius ── */
+  --radius-panel: 16px;
+  --radius-control: 10px;
+  --radius-sm: 8px;
+  --radius-pill: 999px;
+
+  /* ── Fonts ── */
+  --font-sans: 'Geist Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, 'SFMono-Regular', monospace;
+
+  /* ── Animations ── */
+  --animate-voice-bar: voice-bar 1.2s ease-in-out infinite;
+  --animate-spin-slow: spin-slow 8s linear infinite;
+}
+
+/* Light mode overrides */
+:root[data-theme='light'] {
+  --color-background: #f4f7fb;
+  --color-background-elevated: #ffffff;
+  --color-surface-1: #ffffff;
+  --color-surface-2: #f0f4f9;
+  --color-surface-3: #e4ebf3;
+  --color-border: rgba(88, 103, 122, 0.18);
+  --color-border-strong: rgba(79, 98, 121, 0.32);
+  --color-text-primary: #0f1a28;
+  --color-text-secondary: #5a6a7e;
+  --color-text-tertiary: #8995a6;
+  --color-accent: #0891b2;
+  --color-accent-muted: rgba(8, 145, 178, 0.10);
+  --color-accent-border: rgba(8, 145, 178, 0.20);
+  --color-success: #059669;
+  --color-success-muted: rgba(5, 150, 105, 0.10);
+  --color-warning: #b45309;
+  --color-warning-muted: rgba(180, 83, 9, 0.10);
+  --color-danger: #dc2626;
+  --color-danger-muted: rgba(220, 38, 38, 0.10);
+}
+
+/* ── Base layer ── */
+@layer base {
+  * { box-sizing: border-box; }
+
+  html, body, #root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background: var(--color-background);
+    color: var(--color-text-primary);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overflow: hidden;
+  }
+
+  code, pre, kbd {
+    font-family: var(--font-mono);
+  }
+
+  ::selection {
+    background: var(--color-accent-muted);
+    color: var(--color-accent);
+  }
+}
+
+/* ── Custom keyframes ── */
+@keyframes voice-bar {
+  0%, 100% { height: 4px; }
+  50% { height: 24px; }
+}
+
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
