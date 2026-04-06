@@ -34,7 +34,7 @@ export function ChatScreen({
   onAttachFiles,
   onRemoveAttachment,
   onStartVoice,
-  onCancelStreaming,
+  onCancelStreaming
 }: ChatScreenProps) {
   return (
     <div className="flex flex-col h-[calc(100vh-var(--topbar-height))]">

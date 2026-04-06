@@ -11,7 +11,7 @@ const stateColors: Record<VoiceState, string> = {
   listening: 'from-accent/40 to-success/20',
   thinking: 'from-warning/30 to-accent/20',
   speaking: 'from-success/40 to-accent/20',
-  error: 'from-danger/40 to-danger/10',
+  error: 'from-danger/40 to-danger/10'
 };
 
 const stateGlow: Record<VoiceState, string> = {
@@ -19,7 +19,7 @@ const stateGlow: Record<VoiceState, string> = {
   listening: 'shadow-[0_0_80px_rgba(0,212,245,0.2)]',
   thinking: 'shadow-[0_0_80px_rgba(242,208,112,0.15)]',
   speaking: 'shadow-[0_0_100px_rgba(111,251,190,0.2)]',
-  error: 'shadow-[0_0_60px_rgba(255,142,152,0.15)]',
+  error: 'shadow-[0_0_60px_rgba(255,142,152,0.15)]'
 };
 
 export function AgentOrb({ voiceState, size = 200 }: AgentOrbProps) {
@@ -36,7 +36,7 @@ export function AgentOrb({ voiceState, size = 200 }: AgentOrbProps) {
           stateGlow[voiceState],
           'transition-all duration-700 ease-out',
           voiceState === 'listening' && 'animate-pulse',
-          voiceState === 'thinking' && 'animate-spin-slow',
+          voiceState === 'thinking' && 'animate-spin-slow'
         )}
       />
 
@@ -46,7 +46,7 @@ export function AgentOrb({ voiceState, size = 200 }: AgentOrbProps) {
           'relative rounded-full bg-gradient-to-br border border-white/5',
           stateColors[voiceState],
           'backdrop-blur-xl',
-          'transition-all duration-500 ease-out',
+          'transition-all duration-500 ease-out'
         )}
         style={{ width: size * 0.6, height: size * 0.6 }}
       >
@@ -61,11 +61,11 @@ export function AgentOrb({ voiceState, size = 200 }: AgentOrbProps) {
                 voiceState === 'listening' && 'animate-voice-bar',
                 voiceState === 'thinking' && 'h-2 animate-pulse',
                 voiceState === 'speaking' && 'animate-voice-bar',
-                voiceState === 'error' && 'h-1 bg-danger/60',
+                voiceState === 'error' && 'h-1 bg-danger/60'
               )}
               style={{
                 animationDelay: `${delay}s`,
-                height: voiceState === 'idle' ? 4 : undefined,
+                height: voiceState === 'idle' ? 4 : undefined
               }}
             />
           ))}
@@ -73,10 +73,12 @@ export function AgentOrb({ voiceState, size = 200 }: AgentOrbProps) {
       </div>
 
       {/* State label */}
-      <span className={cn(
-        'absolute -bottom-8 text-xs font-medium tracking-wide uppercase',
-        voiceState === 'error' ? 'text-danger' : 'text-text-secondary',
-      )}>
+      <span
+        className={cn(
+          'absolute -bottom-8 text-xs font-medium tracking-wide uppercase',
+          voiceState === 'error' ? 'text-danger' : 'text-text-secondary'
+        )}
+      >
         {voiceState}
       </span>
     </div>

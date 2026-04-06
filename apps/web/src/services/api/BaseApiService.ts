@@ -30,9 +30,7 @@ export class BaseApiService {
           : typeof body.details === 'string'
             ? body.details
             : '';
-      throw new Error(
-        [body.error ?? 'Request failed.', details].filter(Boolean).join(' ')
-      );
+      throw new Error([body.error ?? 'Request failed.', details].filter(Boolean).join(' '));
     }
 
     return body as T;

@@ -23,7 +23,9 @@ export function CommandPicker({ title, prompt, options, onApply, onDismiss }: Co
       <div className="flex items-start justify-between mb-3">
         <div>
           <span className="text-xs text-text-tertiary uppercase tracking-wider">Voice command</span>
-          <h3 className="text-sm font-semibold text-text-primary mt-1">{title ?? 'Choose an option'}</h3>
+          <h3 className="text-sm font-semibold text-text-primary mt-1">
+            {title ?? 'Choose an option'}
+          </h3>
         </div>
         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onDismiss}>
           <X size={14} />

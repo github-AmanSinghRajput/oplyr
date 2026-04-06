@@ -42,7 +42,7 @@ export function ShellScreen({ cwd, theme }: ShellScreenProps) {
         fontSize: 13,
         fontFamily: "'Geist Mono', 'SF Mono', 'Menlo', monospace",
         theme: getTerminalTheme(theme),
-        allowProposedApi: true,
+        allowProposedApi: true
       });
 
       terminal.loadAddon(fitAddon);
@@ -63,7 +63,7 @@ export function ShellScreen({ cwd, theme }: ShellScreenProps) {
         ptyId = await window.desktopShell!.createPtySession({
           cwd: cwd ?? undefined,
           cols,
-          rows,
+          rows
         });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -117,7 +117,11 @@ export function ShellScreen({ cwd, theme }: ShellScreenProps) {
         fitTimerRef.current = null;
         const fit = fitAddonRef.current as { fit?: () => void } | null;
         if (fit?.fit) {
-          try { fit.fit(); } catch { /* ignore fit errors */ }
+          try {
+            fit.fit();
+          } catch {
+            /* ignore fit errors */
+          }
         }
       }, 150);
     });
@@ -161,7 +165,9 @@ export function ShellScreen({ cwd, theme }: ShellScreenProps) {
     return (
       <div data-shell-screen className="flex flex-col gap-4">
         <div>
-          <p className="text-xs font-medium text-text-tertiary uppercase tracking-wider mb-1">Shell</p>
+          <p className="text-xs font-medium text-text-tertiary uppercase tracking-wider mb-1">
+            Shell
+          </p>
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-semibold text-text-primary">Integrated terminal</h2>
             <Badge variant="destructive">Error</Badge>
@@ -169,21 +175,32 @@ export function ShellScreen({ cwd, theme }: ShellScreenProps) {
         </div>
         <div className="rounded-[var(--radius-panel)] border border-border bg-surface-1 p-8 text-center">
           <p className="text-sm text-text-secondary">{error}</p>
-          <p className="text-xs text-text-tertiary mt-1">Check the desktop console logs for details.</p>
+          <p className="text-xs text-text-tertiary mt-1">
+            Check the desktop console logs for details.
+          </p>
         </div>
       </div>
     );
   }
 
   return (
-    <div data-shell-screen className="flex flex-col gap-4 h-[calc(100vh-var(--topbar-height)-48px)]">
+    <div
+      data-shell-screen
+      className="flex flex-col gap-4 h-[calc(100vh-var(--topbar-height)-48px)]"
+    >
       <div className="flex items-center justify-between shrink-0">
         <div>
-          <p className="text-xs font-medium text-text-tertiary uppercase tracking-wider mb-1">Shell</p>
-          <h2 className="text-lg font-semibold text-text-primary">{cwd ?? 'No project selected'}</h2>
+          <p className="text-xs font-medium text-text-tertiary uppercase tracking-wider mb-1">
+            Shell
+          </p>
+          <h2 className="text-lg font-semibold text-text-primary">
+            {cwd ?? 'No project selected'}
+          </h2>
         </div>
         {ready ? (
-          <Badge variant="outline" className="text-success border-success/30">Connected</Badge>
+          <Badge variant="outline" className="text-success border-success/30">
+            Connected
+          </Badge>
         ) : (
           <Badge variant="secondary">Starting...</Badge>
         )}
@@ -218,7 +235,7 @@ function getTerminalTheme(theme: 'dark' | 'light') {
       brightBlue: '#0b8ac2',
       brightMagenta: '#9b4de0',
       brightCyan: '#168f9d',
-      brightWhite: '#13202d',
+      brightWhite: '#13202d'
     };
   }
 
@@ -242,6 +259,6 @@ function getTerminalTheme(theme: 'dark' | 'light') {
     brightBlue: '#57c7ff',
     brightMagenta: '#ff6ac1',
     brightCyan: '#9aedfe',
-    brightWhite: '#f1f1f0',
+    brightWhite: '#f1f1f0'
   };
 }

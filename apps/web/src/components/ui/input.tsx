@@ -10,11 +10,11 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
         'text-text-primary placeholder:text-text-tertiary',
         'transition-colors focus-visible:outline-none focus-visible:border-accent-border focus-visible:ring-1 focus-visible:ring-accent-border',
         'disabled:cursor-not-allowed disabled:opacity-50',
-        className,
+        className
       )}
       ref={ref}
       {...props}
     />
-  ),
+  )
 );
 Input.displayName = 'Input';

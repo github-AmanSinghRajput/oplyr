@@ -159,6 +159,15 @@ export function buildNavigationHints(
       };
     }
 
+    if (item.id === 'settings') {
+      return {
+        ...item,
+        hint: 'Voice, models, providers',
+        badge: null,
+        active: item.id === screenId
+      };
+    }
+
     if (item.id === 'notes') {
       return {
         ...item,
@@ -234,7 +243,9 @@ export function groupMessages(messages: MessageEntry[]): MessageGroup[] {
       previousGroup.source === message.source;
     const withinWindow =
       previousMessage &&
-      Math.abs(new Date(message.createdAt).getTime() - new Date(previousMessage.createdAt).getTime()) <
+      Math.abs(
+        new Date(message.createdAt).getTime() - new Date(previousMessage.createdAt).getTime()
+      ) <
         4 * 60 * 1000;
 
     if (sameActor && withinWindow) {

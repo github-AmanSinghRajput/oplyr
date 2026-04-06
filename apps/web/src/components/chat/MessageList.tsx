@@ -12,7 +12,12 @@ interface MessageListProps {
   apiBaseUrl?: string;
 }
 
-export function MessageList({ messages, streamingMessageId, typedMessages, apiBaseUrl }: MessageListProps) {
+export function MessageList({
+  messages,
+  streamingMessageId,
+  typedMessages,
+  apiBaseUrl
+}: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);

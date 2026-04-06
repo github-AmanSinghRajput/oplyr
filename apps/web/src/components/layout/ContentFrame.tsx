@@ -11,7 +11,7 @@ const maxWidthClasses = {
   narrow: 'max-w-2xl',
   default: 'max-w-4xl',
   wide: 'max-w-6xl',
-  full: 'max-w-full',
+  full: 'max-w-full'
 } as const;
 
 export function ContentFrame({ children, maxWidth = 'default' }: ContentFrameProps) {
@@ -21,13 +21,11 @@ export function ContentFrame({ children, maxWidth = 'default' }: ContentFramePro
     <div
       className={cn(
         'fixed top-[var(--topbar-height)] bottom-0 right-0 overflow-y-auto',
-        'transition-[left] duration-300 ease-out',
+        'transition-[left] duration-300 ease-out'
       )}
       style={{ left: sidebarExpanded ? 240 : 56 }}
     >
-      <div className={cn('mx-auto px-6 py-6', maxWidthClasses[maxWidth])}>
-        {children}
-      </div>
+      <div className={cn('mx-auto px-6 py-6', maxWidthClasses[maxWidth])}>{children}</div>
     </div>
   );
 }

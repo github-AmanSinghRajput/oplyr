@@ -1,4 +1,4 @@
-import { Mic, MicOff, Square, RotateCcw, Volume2, VolumeX } from 'lucide-react';
+import { Mic, Square, RotateCcw, Volume2, VolumeX } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/cn';
 import { Button } from '@/components/ui/button';
@@ -22,7 +22,7 @@ export function VoiceControls({
   narrationMode,
   onStart,
   onStop,
-  onToggleMute,
+  onToggleMute
 }: VoiceControlsProps) {
   return (
     <TooltipProvider delayDuration={200}>
@@ -35,12 +35,16 @@ export function VoiceControls({
                 size="lg"
                 className={cn(
                   'rounded-full h-12 px-6',
-                  'bg-accent hover:bg-accent/90 text-background font-medium',
+                  'bg-accent hover:bg-accent/90 text-background font-medium'
                 )}
                 disabled={voiceActive || !audioAvailable}
                 onClick={onStart}
               >
-                {voiceState === 'error' ? <RotateCcw size={18} className="mr-2" /> : <Mic size={18} className="mr-2" />}
+                {voiceState === 'error' ? (
+                  <RotateCcw size={18} className="mr-2" />
+                ) : (
+                  <Mic size={18} className="mr-2" />
+                )}
                 {voiceState === 'error' ? 'Retry' : 'Start voice'}
               </Button>
             </motion.div>
@@ -72,7 +76,7 @@ export function VoiceControls({
               size="icon"
               className={cn(
                 'rounded-full h-10 w-10',
-                narrationMode === 'muted' && 'border-danger/30 text-danger',
+                narrationMode === 'muted' && 'border-danger/30 text-danger'
               )}
               onClick={onToggleMute}
             >

@@ -62,7 +62,9 @@ function splitLongChunk(chunk: string) {
     result.push(current);
   }
 
-  return result.flatMap((part) => (part.length <= MAX_CHUNK_LENGTH ? [part] : splitByWords(part, MAX_CHUNK_LENGTH)));
+  return result.flatMap((part) =>
+    part.length <= MAX_CHUNK_LENGTH ? [part] : splitByWords(part, MAX_CHUNK_LENGTH)
+  );
 }
 
 function splitByWords(text: string, maxLength: number) {

@@ -5,7 +5,11 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { formatTimestamp } from '@/containers/voice-console/lib/helpers';
-import type { AuthSessionEntry, NoteEntry, SystemResponse } from '@/containers/voice-console/lib/types';
+import type {
+  AuthSessionEntry,
+  NoteEntry,
+  SystemResponse
+} from '@/containers/voice-console/lib/types';
 
 interface MemoryScreenProps {
   editingNoteId: string | null;
@@ -38,15 +42,19 @@ export function MemoryScreen({
   onNoteBodyChange,
   onNoteSourceChange,
   onNoteTitleChange,
-  onResetComposer,
+  onResetComposer
 }: MemoryScreenProps) {
   return (
     <div className="flex flex-col gap-6">
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-xs font-medium text-text-tertiary uppercase tracking-wider mb-1">Memory</p>
-          <h2 className="text-lg font-semibold text-text-primary">Capture notes, decisions, and operator context in one place.</h2>
+          <p className="text-xs font-medium text-text-tertiary uppercase tracking-wider mb-1">
+            Memory
+          </p>
+          <h2 className="text-lg font-semibold text-text-primary">
+            Capture notes, decisions, and operator context in one place.
+          </h2>
         </div>
         <Badge variant="outline">{notes.length} notes ready</Badge>
       </div>
@@ -55,10 +63,16 @@ export function MemoryScreen({
       <div className="rounded-[var(--radius-panel)] border border-accent-border/30 bg-surface-1 p-5">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <span className="text-xs font-medium text-text-tertiary uppercase tracking-wider">Quick capture</span>
-            <p className="text-sm font-medium text-text-primary mt-0.5">Write down the important part before context is lost</p>
+            <span className="text-xs font-medium text-text-tertiary uppercase tracking-wider">
+              Quick capture
+            </span>
+            <p className="text-sm font-medium text-text-primary mt-0.5">
+              Write down the important part before context is lost
+            </p>
           </div>
-          <Badge variant="secondary" className="text-xs">live</Badge>
+          <Badge variant="secondary" className="text-xs">
+            live
+          </Badge>
         </div>
 
         <form className="flex flex-col gap-3" onSubmit={onCreateNote}>
@@ -97,7 +111,9 @@ export function MemoryScreen({
               {editingNoteId ? 'Update note' : 'Save note'}
             </Button>
             {editingNoteId && (
-              <Button variant="ghost" onClick={onResetComposer} type="button">Cancel edit</Button>
+              <Button variant="ghost" onClick={onResetComposer} type="button">
+                Cancel edit
+              </Button>
             )}
           </div>
         </form>
@@ -106,14 +122,20 @@ export function MemoryScreen({
       {/* Notes list */}
       <div className="rounded-[var(--radius-panel)] border border-border bg-surface-1 overflow-hidden">
         <div className="px-4 py-3 border-b border-border">
-          <span className="text-xs font-medium text-text-tertiary uppercase tracking-wider">Recent notes</span>
-          <p className="text-sm font-medium text-text-primary mt-0.5">Granola-style note-taking foundation</p>
+          <span className="text-xs font-medium text-text-tertiary uppercase tracking-wider">
+            Recent notes
+          </span>
+          <p className="text-sm font-medium text-text-primary mt-0.5">
+            Granola-style note-taking foundation
+          </p>
         </div>
 
         {notes.length === 0 ? (
           <div className="px-4 py-8 text-center">
             <p className="text-sm text-text-secondary">No notes created yet.</p>
-            <p className="text-xs text-text-tertiary mt-1">Start capturing meeting notes, code decisions, and operator context here.</p>
+            <p className="text-xs text-text-tertiary mt-1">
+              Start capturing meeting notes, code decisions, and operator context here.
+            </p>
           </div>
         ) : (
           <div className="divide-y divide-border">
@@ -122,17 +144,31 @@ export function MemoryScreen({
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 mb-1">
-                      <Badge variant="secondary" className="text-[10px]">{note.source}</Badge>
-                      <span className="text-[10px] text-text-tertiary">{formatTimestamp(note.updatedAt)}</span>
+                      <Badge variant="secondary" className="text-[10px]">
+                        {note.source}
+                      </Badge>
+                      <span className="text-[10px] text-text-tertiary">
+                        {formatTimestamp(note.updatedAt)}
+                      </span>
                     </div>
                     <p className="text-sm font-medium text-text-primary">{note.title}</p>
                     <p className="text-xs text-text-secondary mt-1 line-clamp-3">{note.body}</p>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
-                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEditNote(note)}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      onClick={() => onEditNote(note)}
+                    >
                       <Edit2 size={12} />
                     </Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-danger" onClick={() => onDeleteNote(note.id)}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-danger"
+                      onClick={() => onDeleteNote(note.id)}
+                    >
                       <Trash2 size={12} />
                     </Button>
                   </div>
@@ -148,28 +184,48 @@ export function MemoryScreen({
         <div className="rounded-[var(--radius-panel)] border border-border bg-surface-1 p-4">
           <div className="flex items-center gap-2 mb-2">
             <Key size={14} className="text-accent" />
-            <span className="text-xs font-medium text-text-tertiary uppercase tracking-wider">Operator auth</span>
+            <span className="text-xs font-medium text-text-tertiary uppercase tracking-wider">
+              Operator auth
+            </span>
           </div>
-          <p className="text-sm font-medium text-text-primary">{system?.auth.operator?.displayName ?? 'No operator linked'}</p>
-          <p className="text-xs text-text-tertiary mt-1">Local operator identity is tracked separately from CLI sessions.</p>
+          <p className="text-sm font-medium text-text-primary">
+            {system?.auth.operator?.displayName ?? 'No operator linked'}
+          </p>
+          <p className="text-xs text-text-tertiary mt-1">
+            Local operator identity is tracked separately from CLI sessions.
+          </p>
         </div>
 
         <div className="rounded-[var(--radius-panel)] border border-border bg-surface-1 p-4">
           <div className="flex items-center gap-2 mb-2">
             <BookOpen size={14} className="text-warning" />
-            <span className="text-xs font-medium text-text-tertiary uppercase tracking-wider">Product auth plan</span>
+            <span className="text-xs font-medium text-text-tertiary uppercase tracking-wider">
+              Product auth plan
+            </span>
           </div>
-          <p className="text-sm font-medium text-text-primary">{system?.auth.productAuth ?? 'Google OAuth planned'}</p>
-          <p className="text-xs text-text-tertiary mt-1">Future web/mobile login will use product auth.</p>
+          <p className="text-sm font-medium text-text-primary">
+            {system?.auth.productAuth ?? 'Google OAuth planned'}
+          </p>
+          <p className="text-xs text-text-tertiary mt-1">
+            Future web/mobile login will use product auth.
+          </p>
         </div>
 
         <div className="rounded-[var(--radius-panel)] border border-border bg-surface-1 p-4">
           <div className="flex items-center gap-2 mb-2">
             <Server size={14} className="text-success" />
-            <span className="text-xs font-medium text-text-tertiary uppercase tracking-wider">Infra guidance</span>
+            <span className="text-xs font-medium text-text-tertiary uppercase tracking-wider">
+              Infra guidance
+            </span>
           </div>
-          <p className="text-sm font-medium text-text-primary">{system?.providers.queue ?? 'inline'} queue / {system?.providers.vector ?? 'none'} vector</p>
-          <p className="text-xs text-text-tertiary mt-1">{system?.recommendations.queue ?? 'Keep infrastructure simple until usage justifies more.'}</p>
+          <p className="text-sm font-medium text-text-primary">
+            {system?.providers.queue ?? 'inline'} queue / {system?.providers.vector ?? 'none'}{' '}
+            vector
+          </p>
+          <p className="text-xs text-text-tertiary mt-1">
+            {system?.recommendations.queue ??
+              'Keep infrastructure simple until usage justifies more.'}
+          </p>
         </div>
       </div>
 
@@ -178,14 +234,20 @@ export function MemoryScreen({
       {/* Tracked sessions */}
       <div className="rounded-[var(--radius-panel)] border border-border bg-surface-1 overflow-hidden">
         <div className="px-4 py-3 border-b border-border">
-          <span className="text-xs font-medium text-text-tertiary uppercase tracking-wider">Tracked sessions</span>
-          <p className="text-sm font-medium text-text-primary mt-0.5">Local and future product session audit</p>
+          <span className="text-xs font-medium text-text-tertiary uppercase tracking-wider">
+            Tracked sessions
+          </span>
+          <p className="text-sm font-medium text-text-primary mt-0.5">
+            Local and future product session audit
+          </p>
         </div>
 
         {trackedSessions.length === 0 ? (
           <div className="px-4 py-8 text-center">
             <p className="text-sm text-text-secondary">No tracked sessions yet.</p>
-            <p className="text-xs text-text-tertiary mt-1">Connected CLI sessions and future product sessions will appear here.</p>
+            <p className="text-xs text-text-tertiary mt-1">
+              Connected CLI sessions and future product sessions will appear here.
+            </p>
           </div>
         ) : (
           <div className="divide-y divide-border">
@@ -193,11 +255,17 @@ export function MemoryScreen({
               <div key={session.id} className="px-4 py-3 flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-text-primary">{session.provider}</p>
-                  <p className="text-xs text-text-secondary mt-0.5">{session.providerSubject ?? 'Local CLI session'}</p>
+                  <p className="text-xs text-text-secondary mt-0.5">
+                    {session.providerSubject ?? 'Local CLI session'}
+                  </p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <Badge variant="outline" className="text-xs">{session.accessScope.join(', ') || 'no scope'}</Badge>
-                  <span className="text-[10px] text-text-tertiary">{formatTimestamp(session.createdAt)}</span>
+                  <Badge variant="outline" className="text-xs">
+                    {session.accessScope.join(', ') || 'no scope'}
+                  </Badge>
+                  <span className="text-[10px] text-text-tertiary">
+                    {formatTimestamp(session.createdAt)}
+                  </span>
                 </div>
               </div>
             ))}

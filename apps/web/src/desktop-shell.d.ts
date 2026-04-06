@@ -18,16 +18,12 @@ declare global {
       apiAuthToken: string | null;
       getRuntimeStatus: () => Promise<DesktopRuntimeStatus>;
       pickProjectFolder: () => Promise<string | null>;
-      subscribeRuntimeStatus: (
-        callback: (status: DesktopRuntimeStatus) => void
-      ) => () => void;
+      subscribeRuntimeStatus: (callback: (status: DesktopRuntimeStatus) => void) => () => void;
       createPtySession: (config: { cwd?: string; cols?: number; rows?: number }) => Promise<string>;
       writePty: (id: string, data: string) => void;
       resizePty: (id: string, cols: number, rows: number) => void;
       killPty: (id: string) => Promise<boolean>;
-      subscribePtyData: (
-        callback: (payload: { id: string; data: string }) => void
-      ) => () => void;
+      subscribePtyData: (callback: (payload: { id: string; data: string }) => void) => () => void;
       subscribePtyExit: (
         callback: (payload: { id: string; exitCode: number }) => void
       ) => () => void;

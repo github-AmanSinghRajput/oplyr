@@ -1,7 +1,27 @@
-export type ScreenId = 'workspace' | 'voice' | 'terminal' | 'shell' | 'review' | 'memory' | 'notes' | 'vibemusic';
+export type ScreenId =
+  | 'workspace'
+  | 'voice'
+  | 'terminal'
+  | 'shell'
+  | 'review'
+  | 'settings'
+  | 'memory'
+  | 'notes'
+  | 'vibemusic';
 export type ChatRole = 'user' | 'assistant';
 export type MessageSource = 'voice' | 'text';
 export type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
+export type ChatAttachmentKind = 'image' | 'text' | 'code' | 'file';
+
+export interface ChatAttachment {
+  id: string;
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
+  kind: ChatAttachmentKind;
+  createdAt: string;
+  excerpt: string | null;
+}
 
 export interface MessageEntry {
   id: string;
@@ -9,6 +29,7 @@ export interface MessageEntry {
   text: string;
   createdAt: string;
   source: MessageSource;
+  attachments?: ChatAttachment[];
 }
 
 export interface WorkspaceState {
@@ -133,6 +154,7 @@ export interface VoiceSettingsResponse {
 }
 
 export type CodexReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh';
+export type AssistantVoiceModelMode = 'auto' | 'fast' | 'inherit';
 
 export interface CodexReasoningOption {
   effort: CodexReasoningEffort;
@@ -150,6 +172,7 @@ export interface CodexModelOption {
 export interface CodexSettings {
   model: string | null;
   reasoningEffort: CodexReasoningEffort | null;
+  voiceModelMode: AssistantVoiceModelMode;
 }
 
 export interface ClaudeModelOption {
@@ -161,6 +184,7 @@ export interface ClaudeModelOption {
 
 export interface ClaudeSettings {
   model: string | null;
+  voiceModelMode: AssistantVoiceModelMode;
 }
 
 export interface CodexSettingsResponse {

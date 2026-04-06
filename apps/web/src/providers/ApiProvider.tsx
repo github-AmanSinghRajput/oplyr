@@ -9,7 +9,9 @@ interface ApiContextValue {
 const ApiContext = createContext<ApiContextValue | null>(null);
 
 function getApiBaseUrl() {
-  return window.desktopShell?.apiBaseUrl ?? import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8787';
+  return (
+    window.desktopShell?.apiBaseUrl ?? import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8787'
+  );
 }
 
 function getApiAuthToken() {
@@ -23,11 +25,7 @@ export function ApiProvider({ children }: { children: ReactNode }) {
     [baseUrl]
   );
 
-  return (
-    <ApiContext value={{ service, baseUrl }}>
-      {children}
-    </ApiContext>
-  );
+  return <ApiContext value={{ service, baseUrl }}>{children}</ApiContext>;
 }
 
 export function useApi() {

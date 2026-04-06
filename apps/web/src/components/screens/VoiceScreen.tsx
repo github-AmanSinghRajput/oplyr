@@ -45,7 +45,7 @@ const fallbackAudio: AudioState = {
 
 export function VoiceScreen({
   audio,
-  busyLabel,
+  busyLabel: _busyLabel,
   spokenReplyPreview,
   streamedTranscriptOverride,
   voiceSession,
@@ -60,7 +60,7 @@ export function VoiceScreen({
   onDismissCommandOptions,
   onToggleMute,
   onStart,
-  onStop,
+  onStop
 }: VoiceScreenProps) {
   const currentTranscriptLabel =
     voiceSession?.phase === 'thinking' || voiceSession?.phase === 'speaking'
@@ -79,11 +79,14 @@ export function VoiceScreen({
         <p className="text-xs font-medium text-text-tertiary uppercase tracking-wider mb-2">
           Voice session
         </p>
-        <h2 className="text-2xl font-semibold text-text-primary">
-          {getVoiceHeadline(voiceState)}
-        </h2>
+        <h2 className="text-2xl font-semibold text-text-primary">{getVoiceHeadline(voiceState)}</h2>
         <p className="text-sm text-text-secondary mt-1">
-          {getVoiceSubline(audio ?? fallbackAudio, voiceState, streamedTranscriptOverride ?? voiceSession?.liveTranscript ?? '', voiceSession?.error)}
+          {getVoiceSubline(
+            audio ?? fallbackAudio,
+            voiceState,
+            streamedTranscriptOverride ?? voiceSession?.liveTranscript ?? '',
+            voiceSession?.error
+          )}
         </p>
       </div>
 
@@ -114,17 +117,16 @@ export function VoiceScreen({
 
       {/* Activity + Last message (2 columns) */}
       <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-4">
-        <ActivityFeed
-          currentActivity={voiceActivity}
-          recentActivities={recentVoiceActivities}
-        />
+        <ActivityFeed currentActivity={voiceActivity} recentActivities={recentVoiceActivities} />
         <TranscriptCard label="Last message" text={lastTranscript} />
       </div>
 
       {/* Voice error */}
       {voiceSession?.error && (
         <div className="w-full rounded-[var(--radius-panel)] border border-danger/30 bg-danger-muted p-4">
-          <span className="text-xs font-medium text-danger uppercase tracking-wider">Voice issue</span>
+          <span className="text-xs font-medium text-danger uppercase tracking-wider">
+            Voice issue
+          </span>
           <p className="text-sm text-text-primary font-medium mt-1">{voiceSession.error}</p>
         </div>
       )}

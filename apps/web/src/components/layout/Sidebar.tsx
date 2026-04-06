@@ -28,7 +28,7 @@ const navItems: NavItemDef[] = [
   { id: 'shell', label: 'Shell', icon: Terminal },
   { id: 'review', label: 'Review', icon: GitCompare },
   { id: 'memory', label: 'Memory', icon: BrainCircuit },
-  { id: 'settings', label: 'Settings', icon: Settings },
+  { id: 'settings', label: 'Settings', icon: Settings }
 ];
 
 interface SidebarProps {
@@ -60,7 +60,7 @@ export function Sidebar({ badges }: SidebarProps) {
           'fixed top-0 left-0 h-full z-20',
           'flex flex-col py-3 gap-1',
           'bg-background-elevated/80 backdrop-blur-xl',
-          'border-r border-border',
+          'border-r border-border'
         )}
         animate={{ width: sidebarExpanded ? 240 : 56 }}
         transition={{ type: 'spring', stiffness: 300, damping: 30 }}

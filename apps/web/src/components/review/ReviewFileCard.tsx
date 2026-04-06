@@ -19,7 +19,10 @@ interface ReviewFileCardProps {
 }
 
 function toAnchorId(filePath: string) {
-  return `review-file-${filePath.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase()}`;
+  return `review-file-${filePath
+    .replace(/[^a-z0-9]+/gi, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase()}`;
 }
 
 export const ReviewFileCard = forwardRef<HTMLElement, ReviewFileCardProps>(function ReviewFileCard(
@@ -32,7 +35,7 @@ export const ReviewFileCard = forwardRef<HTMLElement, ReviewFileCardProps>(funct
     isViewed,
     onToggleCollapse,
     onToggleViewed,
-    stats,
+    stats
   },
   ref
 ) {
@@ -46,7 +49,7 @@ export const ReviewFileCard = forwardRef<HTMLElement, ReviewFileCardProps>(funct
     <article
       className={cn(
         'rounded-[var(--radius-panel)] border border-border bg-surface-1 overflow-hidden',
-        isCollapsed && 'bg-surface-1/50',
+        isCollapsed && 'bg-surface-1/50'
       )}
       id={toAnchorId(file.filePath)}
       ref={ref}
@@ -65,18 +68,30 @@ export const ReviewFileCard = forwardRef<HTMLElement, ReviewFileCardProps>(funct
         </button>
 
         <div className="flex-1 min-w-0">
-          <span className="text-[10px] text-text-tertiary uppercase tracking-wider">File {fileIndex + 1}</span>
-          <p className="text-sm font-medium text-text-primary truncate font-mono">{file.filePath}</p>
+          <span className="text-[10px] text-text-tertiary uppercase tracking-wider">
+            File {fileIndex + 1}
+          </span>
+          <p className="text-sm font-medium text-text-primary truncate font-mono">
+            {file.filePath}
+          </p>
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          {stats.additions > 0 && <Badge variant="outline" className="text-success border-success/30 text-xs">+{stats.additions}</Badge>}
-          {stats.deletions > 0 && <Badge variant="outline" className="text-danger border-danger/30 text-xs">-{stats.deletions}</Badge>}
+          {stats.additions > 0 && (
+            <Badge variant="outline" className="text-success border-success/30 text-xs">
+              +{stats.additions}
+            </Badge>
+          )}
+          {stats.deletions > 0 && (
+            <Badge variant="outline" className="text-danger border-danger/30 text-xs">
+              -{stats.deletions}
+            </Badge>
+          )}
 
           <button
             className={cn(
               'flex items-center gap-1 text-xs transition-colors',
-              isViewed ? 'text-success' : 'text-text-tertiary hover:text-text-primary',
+              isViewed ? 'text-success' : 'text-text-tertiary hover:text-text-primary'
             )}
             onClick={() => onToggleViewed(file.filePath)}
             type="button"
@@ -91,7 +106,9 @@ export const ReviewFileCard = forwardRef<HTMLElement, ReviewFileCardProps>(funct
         <>
           {explanation && (
             <div className="px-4 py-2 bg-accent-muted/10 border-b border-border/50">
-              <span className="text-[10px] text-text-tertiary uppercase tracking-wider">AI note</span>
+              <span className="text-[10px] text-text-tertiary uppercase tracking-wider">
+                AI note
+              </span>
               <p className="text-xs text-text-secondary mt-0.5">{explanation}</p>
             </div>
           )}

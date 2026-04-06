@@ -12,7 +12,7 @@
   font-display: swap;
 }
 
-@import "tailwindcss";
+@import 'tailwindcss';
 
 @theme {
   /* ── Colors ── */
@@ -34,11 +34,11 @@
   --color-accent-border: rgba(0, 212, 245, 0.24);
 
   --color-success: #6ffbbe;
-  --color-success-muted: rgba(111, 251, 190, 0.10);
+  --color-success-muted: rgba(111, 251, 190, 0.1);
   --color-warning: #f2d070;
-  --color-warning-muted: rgba(242, 208, 112, 0.10);
+  --color-warning-muted: rgba(242, 208, 112, 0.1);
   --color-danger: #ff8e98;
-  --color-danger-muted: rgba(255, 142, 152, 0.10);
+  --color-danger-muted: rgba(255, 142, 152, 0.1);
 
   /* ── Layout ── */
   --sidebar-width-collapsed: 56px;
@@ -73,21 +73,25 @@
   --color-text-secondary: #5a6a7e;
   --color-text-tertiary: #8995a6;
   --color-accent: #0891b2;
-  --color-accent-muted: rgba(8, 145, 178, 0.10);
-  --color-accent-border: rgba(8, 145, 178, 0.20);
+  --color-accent-muted: rgba(8, 145, 178, 0.1);
+  --color-accent-border: rgba(8, 145, 178, 0.2);
   --color-success: #059669;
-  --color-success-muted: rgba(5, 150, 105, 0.10);
+  --color-success-muted: rgba(5, 150, 105, 0.1);
   --color-warning: #b45309;
-  --color-warning-muted: rgba(180, 83, 9, 0.10);
+  --color-warning-muted: rgba(180, 83, 9, 0.1);
   --color-danger: #dc2626;
-  --color-danger-muted: rgba(220, 38, 38, 0.10);
+  --color-danger-muted: rgba(220, 38, 38, 0.1);
 }
 
 /* ── Base layer ── */
 @layer base {
-  * { box-sizing: border-box; }
+  * {
+    box-sizing: border-box;
+  }
 
-  html, body, #root {
+  html,
+  body,
+  #root {
     height: 100%;
     margin: 0;
     padding: 0;
@@ -102,7 +106,9 @@
     overflow: hidden;
   }
 
-  code, pre, kbd {
+  code,
+  pre,
+  kbd {
     font-family: var(--font-mono);
   }
 
@@ -114,11 +120,20 @@
 
 /* ── Custom keyframes ── */
 @keyframes voice-bar {
-  0%, 100% { height: 4px; }
-  50% { height: 24px; }
+  0%,
+  100% {
+    height: 4px;
+  }
+  50% {
+    height: 24px;
+  }
 }
 
 @keyframes spin-slow {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }

@@ -13,9 +13,7 @@ test('splitSpeechIntoChunks preserves sentence boundaries for normal replies', (
 });
 
 test('splitSpeechIntoChunks merges short sentences for smoother playback', () => {
-  const chunks = splitSpeechIntoChunks(
-    'The patch is ready. One more thing. Check the tests.'
-  );
+  const chunks = splitSpeechIntoChunks('The patch is ready. One more thing. Check the tests.');
 
   assert.deepEqual(chunks, ['The patch is ready. One more thing. Check the tests.']);
 });

@@ -3,10 +3,7 @@ import test from 'node:test';
 import { downmixChannels, encodePcm16Wav, mergePcmChunks } from './pcm-audio.js';
 
 test('downmixChannels averages multiple channels into mono', () => {
-  const mono = downmixChannels([
-    new Float32Array([1, -1, 0.5]),
-    new Float32Array([0, 0.5, -0.5])
-  ]);
+  const mono = downmixChannels([new Float32Array([1, -1, 0.5]), new Float32Array([0, 0.5, -0.5])]);
 
   assert.deepEqual(Array.from(mono), [0.5, -0.25, 0]);
 });

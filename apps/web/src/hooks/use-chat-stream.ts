@@ -7,7 +7,7 @@ import type {
   ChatAttachment,
   ChatStreamEvent,
   MessageEntry,
-  ReplyResponse,
+  ReplyResponse
 } from '@/containers/voice-console/lib/types';
 
 const TYPING_TICK_MS = 16;
@@ -33,7 +33,7 @@ export interface ChatStreamHandle {
       onStarted?: (event: Extract<ChatStreamEvent, { type: 'started' }>) => void;
       onDelta?: (event: Extract<ChatStreamEvent, { type: 'delta' }>) => void;
       onActivity?: (event: Extract<ChatStreamEvent, { type: 'activity' }>) => void;
-    },
+    }
   ) => Promise<ReplyResponse | ApprovalRequiredResponse>;
   abortActiveChatStream: () => void;
   handleAttachFiles: (files: File[]) => Promise<void>;
@@ -49,7 +49,7 @@ export function useChatStream(): ChatStreamHandle {
   const [messages, setMessages] = useState<MessageEntry[]>([]);
   const [draftAttachments, setDraftAttachments] = useState<ChatAttachment[]>([]);
   const [textInput, setTextInput] = useState('');
-  const [isSubmittingTurn, setIsSubmittingTurn] = useState(false);
+  const [isSubmittingTurn] = useState(false);
   const [typedMessageText, setTypedMessageText] = useState<Record<string, string>>({});
   const [typingTargets, setTypingTargets] = useState<Record<string, string>>({});
   const [activeChatStreamMessageId, setActiveChatStreamMessageId] = useState<string | null>(null);
@@ -74,7 +74,10 @@ export function useChatStream(): ChatStreamHandle {
           const currentText = next[messageId] ?? '';
           if (currentText === targetText) continue;
           const step = Math.max(1, Math.ceil((targetText.length - currentText.length) / 12));
-          next[messageId] = targetText.slice(0, Math.min(targetText.length, currentText.length + step));
+          next[messageId] = targetText.slice(
+            0,
+            Math.min(targetText.length, currentText.length + step)
+          );
           changed = true;
         }
         return changed ? next : current;
@@ -105,7 +108,7 @@ export function useChatStream(): ChatStreamHandle {
 
     activeChatStreamDraftRef.current = null;
     setActiveChatStreamMessageId((current) =>
-      current === draft.assistantMessageId ? null : current,
+      current === draft.assistantMessageId ? null : current
     );
     clearTypingStateForMessage(draft.assistantMessageId);
 
@@ -116,9 +119,8 @@ export function useChatStream(): ChatStreamHandle {
     if (options.removeMessages) {
       setMessages((current) =>
         current.filter(
-          (message) =>
-            message.id !== draft.userMessageId && message.id !== draft.assistantMessageId,
-        ),
+          (message) => message.id !== draft.userMessageId && message.id !== draft.assistantMessageId
+        )
       );
     }
   }
@@ -139,7 +141,7 @@ export function useChatStream(): ChatStreamHandle {
         onStarted?: (event: Extract<ChatStreamEvent, { type: 'started' }>) => void;
         onDelta?: (event: Extract<ChatStreamEvent, { type: 'delta' }>) => void;
         onActivity?: (event: Extract<ChatStreamEvent, { type: 'activity' }>) => void;
-      } = {},
+      } = {}
     ): Promise<ReplyResponse | ApprovalRequiredResponse> => {
       abortActiveChatStream();
       const abortController = new AbortController();
@@ -155,31 +157,29 @@ export function useChatStream(): ChatStreamHandle {
               if (event.type === 'started') {
                 activeChatStreamDraftRef.current = {
                   userMessageId: event.userMessage.id,
-                  assistantMessageId: event.assistantMessage.id,
+                  assistantMessageId: event.assistantMessage.id
                 };
                 setActiveChatStreamMessageId(event.assistantMessage.id);
                 setMessages((current) =>
-                  mergeUniqueMessages(current, [event.userMessage, event.assistantMessage]),
+                  mergeUniqueMessages(current, [event.userMessage, event.assistantMessage])
                 );
                 setTypingTargets((current) => ({
                   ...current,
-                  [event.assistantMessage.id]: event.assistantMessage.text,
+                  [event.assistantMessage.id]: event.assistantMessage.text
                 }));
                 setTypedMessageText((current) => ({
                   ...current,
-                  [event.assistantMessage.id]: current[event.assistantMessage.id] ?? '',
+                  [event.assistantMessage.id]: current[event.assistantMessage.id] ?? ''
                 }));
                 options.onStarted?.(event);
                 return;
               }
 
               if (event.type === 'delta') {
-                setMessages((current) =>
-                  mergeUniqueMessages(current, [event.assistantMessage]),
-                );
+                setMessages((current) => mergeUniqueMessages(current, [event.assistantMessage]));
                 setTypingTargets((current) => ({
                   ...current,
-                  [event.assistantMessage.id]: event.assistantMessage.text,
+                  [event.assistantMessage.id]: event.assistantMessage.text
                 }));
                 options.onDelta?.(event);
                 return;
@@ -195,8 +195,8 @@ export function useChatStream(): ChatStreamHandle {
                 setMessages((current) =>
                   mergeUniqueMessages(current, [
                     event.result.userMessage,
-                    event.result.assistantMessage,
-                  ]),
+                    event.result.assistantMessage
+                  ])
                 );
                 clearActiveChatStreamDraft({ removeMessages: false });
                 return;
@@ -207,8 +207,8 @@ export function useChatStream(): ChatStreamHandle {
             {
               signal: abortController.signal,
               voiceTurnId: options.voiceTurnId,
-              attachments: options.attachmentIds ?? [],
-            },
+              attachments: options.attachmentIds ?? []
+            }
           );
         } catch (streamError) {
           if (abortController.signal.aborted) throw streamError;
@@ -221,10 +221,10 @@ export function useChatStream(): ChatStreamHandle {
             message,
             source,
             options.voiceTurnId,
-            options.attachmentIds ?? [],
+            options.attachmentIds ?? []
           );
           setMessages((current) =>
-            mergeUniqueMessages(current, [batchResult.userMessage, batchResult.assistantMessage]),
+            mergeUniqueMessages(current, [batchResult.userMessage, batchResult.assistantMessage])
           );
           clearTypingStateForMessage(batchResult.assistantMessage.id);
           return batchResult;
@@ -242,7 +242,7 @@ export function useChatStream(): ChatStreamHandle {
         }
       }
     },
-    [service, abortActiveChatStream],
+    [service, abortActiveChatStream]
   );
 
   const handleAttachFiles = useCallback(
@@ -254,19 +254,23 @@ export function useChatStream(): ChatStreamHandle {
 
       try {
         const uploaded = await Promise.all(
-          nextFiles.map((file) => service.uploadChatAttachment(file)),
+          nextFiles.map((file) => service.uploadChatAttachment(file))
         );
         setDraftAttachments((current) => [...current, ...uploaded]);
       } catch {
-        pushToast('error', 'Attachment upload failed', 'VOCOD could not attach one of those files.');
+        pushToast(
+          'error',
+          'Attachment upload failed',
+          'VOCOD could not attach one of those files.'
+        );
       }
     },
-    [service, pushToast, draftAttachments.length],
+    [service, pushToast, draftAttachments.length]
   );
 
   const handleRemoveDraftAttachment = useCallback((attachmentId: string) => {
     setDraftAttachments((current) =>
-      current.filter((attachment) => attachment.id !== attachmentId),
+      current.filter((attachment) => attachment.id !== attachmentId)
     );
   }, []);
 
@@ -296,6 +300,6 @@ export function useChatStream(): ChatStreamHandle {
     handleAttachFiles,
     handleRemoveDraftAttachment,
     loadLogs,
-    activeVoiceAssistantMessageIdRef,
+    activeVoiceAssistantMessageIdRef
   };
 }

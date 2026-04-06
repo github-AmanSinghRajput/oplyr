@@ -16,7 +16,12 @@ interface FileTreePanelProps {
   onFileClick: (filePath: string) => void;
 }
 
-export function FileTreePanel({ files, viewedFiles, activeFilePath, onFileClick }: FileTreePanelProps) {
+export function FileTreePanel({
+  files,
+  viewedFiles,
+  activeFilePath,
+  onFileClick
+}: FileTreePanelProps) {
   const tree = useMemo(() => buildFileTree(files.map((f) => f.filePath)), [files]);
   const statsMap = useMemo(() => {
     const map = new Map<string, FileStats>();
@@ -31,8 +36,12 @@ export function FileTreePanel({ files, viewedFiles, activeFilePath, onFileClick 
   return (
     <nav className="rounded-[var(--radius-panel)] border border-border bg-surface-1 overflow-hidden">
       <div className="flex items-center justify-between px-3 py-2 border-b border-border">
-        <span className="text-xs font-medium text-text-tertiary uppercase tracking-wider">Files changed</span>
-        <span className="text-xs text-text-tertiary">{viewedCount} / {files.length} reviewed</span>
+        <span className="text-xs font-medium text-text-tertiary uppercase tracking-wider">
+          Files changed
+        </span>
+        <span className="text-xs text-text-tertiary">
+          {viewedCount} / {files.length} reviewed
+        </span>
       </div>
       <div className="py-1">
         {tree.map((node) => (
@@ -66,7 +75,7 @@ function FileTreeNodeView({
   viewedFiles,
   activeFilePath,
   onFileClick,
-  depth,
+  depth
 }: FileTreeNodeViewProps) {
   const [expanded, setExpanded] = useState(true);
 
@@ -80,7 +89,7 @@ function FileTreeNodeView({
         className={cn(
           'flex items-center gap-1.5 w-full text-left px-2 py-1 text-xs hover:bg-surface-2 transition-colors',
           isActive && 'bg-accent-muted/50 text-accent',
-          isViewed && 'text-text-tertiary',
+          isViewed && 'text-text-tertiary'
         )}
         style={{ paddingLeft: `${depth * 12 + 8}px` }}
         onClick={() => onFileClick(node.path)}
@@ -93,7 +102,9 @@ function FileTreeNodeView({
             {stats.deletions > 0 && <span className="text-danger">-{stats.deletions}</span>}
           </span>
         )}
-        {isViewed && <span className="w-1.5 h-1.5 rounded-full bg-success shrink-0" title="Reviewed" />}
+        {isViewed && (
+          <span className="w-1.5 h-1.5 rounded-full bg-success shrink-0" title="Reviewed" />
+        )}
       </button>
     );
   }
@@ -112,17 +123,18 @@ function FileTreeNodeView({
         />
         <span className="font-medium">{node.name}</span>
       </button>
-      {expanded && node.children.map((child) => (
-        <FileTreeNodeView
-          key={child.path}
-          node={child}
-          statsMap={statsMap}
-          viewedFiles={viewedFiles}
-          activeFilePath={activeFilePath}
-          onFileClick={onFileClick}
-          depth={depth + 1}
-        />
-      ))}
+      {expanded &&
+        node.children.map((child) => (
+          <FileTreeNodeView
+            key={child.path}
+            node={child}
+            statsMap={statsMap}
+            viewedFiles={viewedFiles}
+            activeFilePath={activeFilePath}
+            onFileClick={onFileClick}
+            depth={depth + 1}
+          />
+        ))}
     </div>
   );
 }

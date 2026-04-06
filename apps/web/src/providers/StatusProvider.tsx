@@ -4,7 +4,10 @@ import { useDesktopBridge } from '@/hooks/use-desktop-bridge';
 import type { StatusResponse, SystemResponse } from '@/containers/voice-console/lib/types';
 import type { DesktopRuntimeStatus } from '@/desktop-shell';
 
-type StatusUpdater = StatusResponse | null | ((prev: StatusResponse | null) => StatusResponse | null);
+type StatusUpdater =
+  | StatusResponse
+  | null
+  | ((prev: StatusResponse | null) => StatusResponse | null);
 
 interface StatusContextValue {
   status: StatusResponse | null;
@@ -52,15 +55,17 @@ export function StatusProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <StatusContext value={{
-      status,
-      system,
-      desktopRuntime,
-      isDesktopShell,
-      assistantReady,
-      refreshStatus,
-      setStatus: updateStatus,
-    }}>
+    <StatusContext
+      value={{
+        status,
+        system,
+        desktopRuntime,
+        isDesktopShell,
+        assistantReady,
+        refreshStatus,
+        setStatus: updateStatus
+      }}
+    >
       {children}
     </StatusContext>
   );

@@ -19,14 +19,30 @@ import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
 import { getVoiceState } from '@/containers/voice-console/lib/helpers';
 import type { StatusResponse } from '@/containers/voice-console/lib/types';
 
-const ChatScreen = lazy(() => import('@/components/screens/ChatScreen').then(m => ({ default: m.ChatScreen })));
-const VoiceScreen = lazy(() => import('@/components/screens/VoiceScreen').then(m => ({ default: m.VoiceScreen })));
-const ReviewScreen = lazy(() => import('@/components/screens/ReviewScreen').then(m => ({ default: m.ReviewScreen })));
-const WorkspaceScreen = lazy(() => import('@/components/screens/WorkspaceScreen').then(m => ({ default: m.WorkspaceScreen })));
-const ShellScreen = lazy(() => import('@/components/screens/ShellScreen').then(m => ({ default: m.ShellScreen })));
-const SettingsScreen = lazy(() => import('@/components/screens/SettingsScreen').then(m => ({ default: m.SettingsScreen })));
-const OnboardingScreen = lazy(() => import('@/components/screens/OnboardingScreen').then(m => ({ default: m.OnboardingScreen })));
-const MemoryScreen = lazy(() => import('@/components/screens/MemoryScreen').then(m => ({ default: m.MemoryScreen })));
+const ChatScreen = lazy(() =>
+  import('@/components/screens/ChatScreen').then((m) => ({ default: m.ChatScreen }))
+);
+const VoiceScreen = lazy(() =>
+  import('@/components/screens/VoiceScreen').then((m) => ({ default: m.VoiceScreen }))
+);
+const ReviewScreen = lazy(() =>
+  import('@/components/screens/ReviewScreen').then((m) => ({ default: m.ReviewScreen }))
+);
+const WorkspaceScreen = lazy(() =>
+  import('@/components/screens/WorkspaceScreen').then((m) => ({ default: m.WorkspaceScreen }))
+);
+const ShellScreen = lazy(() =>
+  import('@/components/screens/ShellScreen').then((m) => ({ default: m.ShellScreen }))
+);
+const SettingsScreen = lazy(() =>
+  import('@/components/screens/SettingsScreen').then((m) => ({ default: m.SettingsScreen }))
+);
+const OnboardingScreen = lazy(() =>
+  import('@/components/screens/OnboardingScreen').then((m) => ({ default: m.OnboardingScreen }))
+);
+const MemoryScreen = lazy(() =>
+  import('@/components/screens/MemoryScreen').then((m) => ({ default: m.MemoryScreen }))
+);
 
 function ScreenFallback() {
   return (
@@ -73,7 +89,7 @@ export function AppShell() {
     const doSubmit = async () => {
       try {
         const result = await chat.streamChatMessage(nextMessage, 'text', {
-          attachmentIds: previousAttachments.map((a) => a.id),
+          attachmentIds: previousAttachments.map((a) => a.id)
         });
         await refreshStatus();
         startTransition(() => {
@@ -123,7 +139,9 @@ export function AppShell() {
             workspace={status?.workspace ?? null}
             canBrowseProjectFolder={Boolean(window.desktopShell?.pickProjectFolder)}
             isResetting={settings.busyLabel === 'Resetting VOCOD...'}
-            onProjectInputChange={() => {/* controlled by WorkspaceScreen internally */}}
+            onProjectInputChange={() => {
+              /* controlled by WorkspaceScreen internally */
+            }}
             onBrowseProjectFolder={() => {
               if (window.desktopShell?.pickProjectFolder) {
                 void window.desktopShell.pickProjectFolder().then((folder: string | null) => {
@@ -131,7 +149,9 @@ export function AppShell() {
                 });
               }
             }}
-            onSaveProject={() => void settings.handleSaveProject(status?.workspace.projectRoot ?? '')}
+            onSaveProject={() =>
+              void settings.handleSaveProject(status?.workspace.projectRoot ?? '')
+            }
             onToggleWriteAccess={(enabled) => void settings.handleToggleWriteAccess(enabled)}
             onResetApp={() => void settings.handleResetApp()}
           />
@@ -149,11 +169,21 @@ export function AppShell() {
             pendingCommandTitle={null}
             pendingCommandPrompt={null}
             pendingCommandOptions={[]}
-            onApplyCommandOption={() => {/* voice session hook needed */}}
-            onDismissCommandOptions={() => {/* voice session hook needed */}}
-            onToggleMute={() => {/* voice session hook needed */}}
-            onStart={() => {/* voice session hook needed */}}
-            onStop={() => {/* voice session hook needed */}}
+            onApplyCommandOption={() => {
+              /* voice session hook needed */
+            }}
+            onDismissCommandOptions={() => {
+              /* voice session hook needed */
+            }}
+            onToggleMute={() => {
+              /* voice session hook needed */
+            }}
+            onStart={() => {
+              /* voice session hook needed */
+            }}
+            onStop={() => {
+              /* voice session hook needed */
+            }}
           />
         );
       case 'terminal':
@@ -176,12 +206,7 @@ export function AppShell() {
           />
         );
       case 'shell':
-        return (
-          <ShellScreen
-            cwd={status?.workspace.projectRoot ?? null}
-            theme={theme}
-          />
-        );
+        return <ShellScreen cwd={status?.workspace.projectRoot ?? null} theme={theme} />;
       case 'review':
         return (
           <ReviewScreen
@@ -205,9 +230,15 @@ export function AppShell() {
             voiceSettings={settings.voiceSettings}
             onAppSettingChange={(key, value) => void settings.handleAppSettingChange(key, value)}
             onPreferenceChange={setPreference}
-            onVoiceSettingChange={(key, value) => void settings.handleVoiceSettingChange(key, value)}
-            onCodexSettingChange={(key, value) => void settings.handleCodexSettingChange(key, value)}
-            onClaudeSettingChange={(key, value) => void settings.handleClaudeSettingChange(key, value)}
+            onVoiceSettingChange={(key, value) =>
+              void settings.handleVoiceSettingChange(key, value)
+            }
+            onCodexSettingChange={(key, value) =>
+              void settings.handleCodexSettingChange(key, value)
+            }
+            onClaudeSettingChange={(key, value) =>
+              void settings.handleClaudeSettingChange(key, value)
+            }
             onProviderChange={(id) => void settings.handleProviderChange(id)}
             onProviderDisconnect={(id) => void settings.handleProviderDisconnect(id)}
           />
@@ -249,7 +280,9 @@ export function AppShell() {
       <Topbar
         displayName={displayName}
         onRefresh={() => void refreshStatus()}
-        onDisconnect={() => {/* wired when voice session hook is available */}}
+        onDisconnect={() => {
+          /* wired when voice session hook is available */
+        }}
       />
       <ContentFrame>
         <AnimatePresence mode="wait">
@@ -260,9 +293,7 @@ export function AppShell() {
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.2 }}
           >
-            <Suspense fallback={<ScreenFallback />}>
-              {renderScreen()}
-            </Suspense>
+            <Suspense fallback={<ScreenFallback />}>{renderScreen()}</Suspense>
           </motion.div>
         </AnimatePresence>
       </ContentFrame>
@@ -281,7 +312,7 @@ export function AppShell() {
                 'px-4 py-3 rounded-[var(--radius-control)] border text-sm',
                 'bg-surface-1 border-border',
                 toast.tone === 'error' && 'border-danger/30 bg-danger-muted',
-                toast.tone === 'success' && 'border-success/30 bg-success-muted',
+                toast.tone === 'success' && 'border-success/30 bg-success-muted'
               )}
             >
               <p className="font-medium text-text-primary">{toast.title}</p>

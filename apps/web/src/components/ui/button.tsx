@@ -14,14 +14,14 @@ const variantClasses: Record<NonNullable<ButtonProps['variant']>, string> = {
   outline: 'border border-border bg-transparent hover:bg-surface-2 hover:text-text-primary',
   secondary: 'bg-surface-2 text-text-primary hover:bg-surface-3',
   ghost: 'hover:bg-surface-2 hover:text-text-primary',
-  link: 'text-accent underline-offset-4 hover:underline',
+  link: 'text-accent underline-offset-4 hover:underline'
 };
 
 const sizeClasses: Record<NonNullable<ButtonProps['size']>, string> = {
   default: 'h-9 px-4 py-2',
   sm: 'h-8 rounded-md px-3 text-xs',
   lg: 'h-10 rounded-md px-8',
-  icon: 'h-9 w-9',
+  icon: 'h-9 w-9'
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
@@ -35,12 +35,12 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
           'disabled:pointer-events-none disabled:opacity-50',
           variantClasses[variant],
           sizeClasses[size],
-          className,
+          className
         )}
         ref={ref}
         {...props}
       />
     );
-  },
+  }
 );
 Button.displayName = 'Button';

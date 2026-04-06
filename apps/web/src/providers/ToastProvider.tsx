@@ -37,11 +37,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     return () => window.clearTimeout(timeout);
   }, [toasts]);
 
-  return (
-    <ToastContext value={{ toasts, pushToast, dismissToast }}>
-      {children}
-    </ToastContext>
-  );
+  return <ToastContext value={{ toasts, pushToast, dismissToast }}>{children}</ToastContext>;
 }
 
 export function useToast() {

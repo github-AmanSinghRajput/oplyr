@@ -29,7 +29,7 @@ export function ChatComposer({
   onCancelStreaming,
   draftAttachments,
   disabled,
-  isStreaming,
+  isStreaming
 }: ChatComposerProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -68,7 +68,7 @@ export function ChatComposer({
                 'w-full resize-none rounded-[var(--radius-control)] bg-surface-1 border border-border',
                 'px-3 py-2.5 text-sm text-text-primary placeholder:text-text-tertiary',
                 'focus:outline-none focus:border-accent-border focus:ring-1 focus:ring-accent-border',
-                'min-h-[40px] max-h-[160px]',
+                'min-h-[40px] max-h-[160px]'
               )}
               disabled={disabled}
               onChange={(e) => onChange(e.target.value)}

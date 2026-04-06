@@ -8,7 +8,7 @@ import type {
   ClaudeSettingsResponse,
   CodexSettingsResponse,
   VoiceSettings,
-  VoiceSettingsResponse,
+  VoiceSettingsResponse
 } from '@/containers/voice-console/lib/types';
 
 export interface AppSettingsHandle {
@@ -21,15 +21,21 @@ export interface AppSettingsHandle {
   onboardingSelectedProviderId: AssistantProviderId | null;
   setOnboardingStep: (step: 1 | 2 | 3) => void;
   setOnboardingSelectedProviderId: (id: AssistantProviderId | null) => void;
-  handleAppSettingChange: <Key extends keyof AppSettings>(key: Key, value: AppSettings[Key]) => Promise<void>;
-  handleVoiceSettingChange: (key: keyof VoiceSettings, value: VoiceSettings[keyof VoiceSettings]) => Promise<void>;
+  handleAppSettingChange: <Key extends keyof AppSettings>(
+    key: Key,
+    value: AppSettings[Key]
+  ) => Promise<void>;
+  handleVoiceSettingChange: (
+    key: keyof VoiceSettings,
+    value: VoiceSettings[keyof VoiceSettings]
+  ) => Promise<void>;
   handleCodexSettingChange: (
     key: keyof CodexSettingsResponse['settings'],
-    value: CodexSettingsResponse['settings'][keyof CodexSettingsResponse['settings']],
+    value: CodexSettingsResponse['settings'][keyof CodexSettingsResponse['settings']]
   ) => Promise<void>;
   handleClaudeSettingChange: (
     key: keyof ClaudeSettingsResponse['settings'],
-    value: ClaudeSettingsResponse['settings'][keyof ClaudeSettingsResponse['settings']],
+    value: ClaudeSettingsResponse['settings'][keyof ClaudeSettingsResponse['settings']]
   ) => Promise<void>;
   handleProviderChange: (providerId: AssistantProviderId) => Promise<void>;
   handleProviderConnect: (providerId: AssistantProviderId) => Promise<void>;
@@ -46,7 +52,7 @@ export interface AppSettingsHandle {
 
 export function useAppSettings(): AppSettingsHandle {
   const { service } = useApi();
-  const { status, setStatus, refreshStatus } = useStatus();
+  const { setStatus, refreshStatus } = useStatus();
   const { pushToast } = useToast();
 
   const [codexSettings, setCodexSettings] = useState<CodexSettingsResponse | null>(null);
@@ -97,7 +103,7 @@ export function useAppSettings(): AppSettingsHandle {
       refreshStatus(),
       loadCodexSettings(),
       loadClaudeSettings(),
-      loadVoiceSettings(),
+      loadVoiceSettings()
     ]);
   }, [refreshStatus, loadCodexSettings, loadClaudeSettings, loadVoiceSettings]);
 
@@ -108,14 +114,16 @@ export function useAppSettings(): AppSettingsHandle {
   const handleAppSettingChange = useCallback(
     async <Key extends keyof AppSettings>(key: Key, value: AppSettings[Key]) => {
       try {
-        const nextSettings = await service.updateAppSettings({ [key]: value } as Partial<AppSettings>);
+        const nextSettings = await service.updateAppSettings({
+          [key]: value
+        } as Partial<AppSettings>);
         setStatus((current) => (current ? { ...current, appSettings: nextSettings } : current));
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unable to save app settings.');
         pushToast('error', 'Settings not saved', 'Your app preferences could not be updated.');
       }
     },
-    [service, setStatus, pushToast],
+    [service, setStatus, pushToast]
   );
 
   const handleVoiceSettingChange = useCallback(
@@ -124,7 +132,7 @@ export function useAppSettings(): AppSettingsHandle {
 
       const optimistic: VoiceSettingsResponse = {
         ...voiceSettings,
-        settings: { ...voiceSettings.settings, [key]: value },
+        settings: { ...voiceSettings.settings, [key]: value }
       };
       setVoiceSettings(optimistic);
 
@@ -136,13 +144,13 @@ export function useAppSettings(): AppSettingsHandle {
         await loadVoiceSettings();
       }
     },
-    [service, voiceSettings, pushToast, loadVoiceSettings],
+    [service, voiceSettings, pushToast, loadVoiceSettings]
   );
 
   const handleCodexSettingChange = useCallback(
     async (
       key: keyof CodexSettingsResponse['settings'],
-      value: CodexSettingsResponse['settings'][keyof CodexSettingsResponse['settings']],
+      value: CodexSettingsResponse['settings'][keyof CodexSettingsResponse['settings']]
     ) => {
       if (!codexSettings) return;
 
@@ -155,17 +163,20 @@ export function useAppSettings(): AppSettingsHandle {
         await loadCodexSettings();
       }
     },
-    [service, codexSettings, pushToast, loadCodexSettings],
+    [service, codexSettings, pushToast, loadCodexSettings]
   );
 
   const handleClaudeSettingChange = useCallback(
     async (
       key: keyof ClaudeSettingsResponse['settings'],
-      value: ClaudeSettingsResponse['settings'][keyof ClaudeSettingsResponse['settings']],
+      value: ClaudeSettingsResponse['settings'][keyof ClaudeSettingsResponse['settings']]
     ) => {
       if (!claudeSettings) return;
 
-      setClaudeSettings({ ...claudeSettings, settings: { ...claudeSettings.settings, [key]: value } });
+      setClaudeSettings({
+        ...claudeSettings,
+        settings: { ...claudeSettings.settings, [key]: value }
+      });
       try {
         const next = await service.updateClaudeSettings({ [key]: value });
         setClaudeSettings(next);
@@ -174,7 +185,7 @@ export function useAppSettings(): AppSettingsHandle {
         await loadClaudeSettings();
       }
     },
-    [service, claudeSettings, pushToast, loadClaudeSettings],
+    [service, claudeSettings, pushToast, loadClaudeSettings]
   );
 
   const handleProviderChange = useCallback(
@@ -184,14 +195,22 @@ export function useAppSettings(): AppSettingsHandle {
         const assistantProviders = await service.setActiveProvider(providerId);
         setStatus((current) => (current ? { ...current, assistantProviders } : current));
         await refreshStatus();
-        pushToast('success', 'Provider switched', `${assistantProviders.activeProvider?.name ?? 'Assistant'} is now active.`);
+        pushToast(
+          'success',
+          'Provider switched',
+          `${assistantProviders.activeProvider?.name ?? 'Assistant'} is now active.`
+        );
       } catch (err) {
-        pushToast('error', 'Provider switch failed', err instanceof Error ? err.message : 'Unable to switch provider.');
+        pushToast(
+          'error',
+          'Provider switch failed',
+          err instanceof Error ? err.message : 'Unable to switch provider.'
+        );
       } finally {
         setBusyLabel('');
       }
     },
-    [service, setStatus, refreshStatus, pushToast],
+    [service, setStatus, refreshStatus, pushToast]
   );
 
   const handleProviderConnect = useCallback(
@@ -200,14 +219,22 @@ export function useAppSettings(): AppSettingsHandle {
       try {
         await service.connectProvider(providerId);
         await refreshStatus();
-        pushToast('success', 'Provider connected', `${providerId === 'claude' ? 'Claude Code' : 'Codex'} is now available.`);
+        pushToast(
+          'success',
+          'Provider connected',
+          `${providerId === 'claude' ? 'Claude Code' : 'Codex'} is now available.`
+        );
       } catch (err) {
-        pushToast('error', 'Connect failed', err instanceof Error ? err.message : 'Login to this provider first.');
+        pushToast(
+          'error',
+          'Connect failed',
+          err instanceof Error ? err.message : 'Login to this provider first.'
+        );
       } finally {
         setBusyLabel('');
       }
     },
-    [service, refreshStatus, pushToast],
+    [service, refreshStatus, pushToast]
   );
 
   const handleProviderDisconnect = useCallback(
@@ -216,14 +243,18 @@ export function useAppSettings(): AppSettingsHandle {
       try {
         await service.disconnectProvider(providerId);
         await refreshStatus();
-        pushToast('info', `${providerId === 'claude' ? 'Claude Code' : 'Codex'} disconnected`, 'The app-level connection has been removed.');
+        pushToast(
+          'info',
+          `${providerId === 'claude' ? 'Claude Code' : 'Codex'} disconnected`,
+          'The app-level connection has been removed.'
+        );
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unable to disconnect provider.');
       } finally {
         setBusyLabel('');
       }
     },
-    [service, refreshStatus, pushToast],
+    [service, refreshStatus, pushToast]
   );
 
   const handleSaveProject = useCallback(
@@ -234,14 +265,18 @@ export function useAppSettings(): AppSettingsHandle {
         const result = await service.setProjectRoot(projectRoot.trim());
         setStatus((current) => (current ? { ...current, workspace: result.workspace } : current));
         await refreshStatus();
-        pushToast('success', 'Workspace connected', `Project set to ${result.workspace.projectRoot ?? projectRoot}.`);
+        pushToast(
+          'success',
+          'Workspace connected',
+          `Project set to ${result.workspace.projectRoot ?? projectRoot}.`
+        );
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unable to set project root.');
       } finally {
         setBusyLabel('');
       }
     },
-    [service, setStatus, refreshStatus, pushToast],
+    [service, setStatus, refreshStatus, pushToast]
   );
 
   const handleToggleWriteAccess = useCallback(
@@ -250,21 +285,25 @@ export function useAppSettings(): AppSettingsHandle {
       try {
         const result = await service.setWriteAccess(enabled);
         setStatus((current) => (current ? { ...current, workspace: result.workspace } : current));
-        pushToast('info', enabled ? 'Write access enabled' : 'Write access disabled', 'Workspace sandbox updated.');
+        pushToast(
+          'info',
+          enabled ? 'Write access enabled' : 'Write access disabled',
+          'Workspace sandbox updated.'
+        );
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unable to change write access.');
       } finally {
         setBusyLabel('');
       }
     },
-    [service, setStatus, pushToast],
+    [service, setStatus, pushToast]
   );
 
   const handleResetApp = useCallback(async () => {
     if (
       typeof window !== 'undefined' &&
       !window.confirm(
-        'Reset VOCOD completely?\n\nThis clears workspace data, chat history, notes, approvals, settings, and app-connected providers.',
+        'Reset VOCOD completely?\n\nThis clears workspace data, chat history, notes, approvals, settings, and app-connected providers.'
       )
     ) {
       return;
@@ -297,15 +336,21 @@ export function useAppSettings(): AppSettingsHandle {
         setStatus((current) => (current ? { ...current, appSettings: nextSettings } : current));
 
         if (!nextSettings.welcomedAt) {
-          const welcomed = await service.updateAppSettings({ welcomedAt: new Date().toISOString() });
+          const welcomed = await service.updateAppSettings({
+            welcomedAt: new Date().toISOString()
+          });
           setStatus((current) => (current ? { ...current, appSettings: welcomed } : current));
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unable to save your name.');
-        pushToast('error', 'Welcome setup failed', 'VOCOD could not save your first-run profile yet.');
+        pushToast(
+          'error',
+          'Welcome setup failed',
+          'VOCOD could not save your first-run profile yet.'
+        );
       }
     },
-    [service, setStatus, pushToast],
+    [service, setStatus, pushToast]
   );
 
   return {
@@ -332,6 +377,6 @@ export function useAppSettings(): AppSettingsHandle {
     initialize,
     loadCodexSettings,
     loadClaudeSettings,
-    loadVoiceSettings,
+    loadVoiceSettings
   };
 }

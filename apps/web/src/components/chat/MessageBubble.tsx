@@ -19,12 +19,14 @@ export function MessageBubble({ message, isStreaming, typedText }: MessageBubble
 
   return (
     <div className={cn('flex flex-col gap-1', isUser ? 'items-end' : 'items-start')}>
-      <div className={cn(
-        'max-w-[85%] rounded-2xl px-4 py-3',
-        isUser
-          ? 'bg-accent-muted border border-accent-border text-text-primary'
-          : 'bg-surface-1 border border-border text-text-primary',
-      )}>
+      <div
+        className={cn(
+          'max-w-[85%] rounded-2xl px-4 py-3',
+          isUser
+            ? 'bg-accent-muted border border-accent-border text-text-primary'
+            : 'bg-surface-1 border border-border text-text-primary'
+        )}
+      >
         {isUser ? (
           <p className="text-sm leading-relaxed whitespace-pre-wrap">{displayText}</p>
         ) : (
@@ -45,7 +47,10 @@ export function MessageBubble({ message, isStreaming, typedText }: MessageBubble
         {message.attachments?.length ? (
           <div className="flex flex-wrap gap-1.5 mt-2 pt-2 border-t border-border/50">
             {message.attachments.map((att) => (
-              <span key={att.id} className="text-xs px-2 py-0.5 rounded-full bg-surface-2 text-text-secondary">
+              <span
+                key={att.id}
+                className="text-xs px-2 py-0.5 rounded-full bg-surface-2 text-text-secondary"
+              >
                 {att.name}
               </span>
             ))}
@@ -53,7 +58,8 @@ export function MessageBubble({ message, isStreaming, typedText }: MessageBubble
         ) : null}
       </div>
       <span className="text-[10px] text-text-tertiary px-1">
-        {message.source === 'voice' ? '\uD83C\uDF99 ' : ''}{formatClock(message.createdAt)}
+        {message.source === 'voice' ? '\uD83C\uDF99 ' : ''}
+        {formatClock(message.createdAt)}
       </span>
     </div>
   );

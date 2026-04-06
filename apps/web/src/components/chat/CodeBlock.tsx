@@ -7,7 +7,11 @@ interface CodeBlockProps {
   className?: string;
 }
 
-export function CodeBlock({ children, className, ...props }: CodeBlockProps & React.HTMLAttributes<HTMLElement>) {
+export function CodeBlock({
+  children,
+  className,
+  ...props
+}: CodeBlockProps & React.HTMLAttributes<HTMLElement>) {
   const isInline = !className;
   const [copied, setCopied] = useState(false);
 
@@ -20,7 +24,10 @@ export function CodeBlock({ children, className, ...props }: CodeBlockProps & Re
 
   if (isInline) {
     return (
-      <code className="px-1.5 py-0.5 rounded-[var(--radius-sm)] bg-surface-2 text-accent text-[0.85em] font-mono" {...props}>
+      <code
+        className="px-1.5 py-0.5 rounded-[var(--radius-sm)] bg-surface-2 text-accent text-[0.85em] font-mono"
+        {...props}
+      >
         {children}
       </code>
     );

@@ -44,9 +44,17 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
     try {
       await service.approveChange(status.pendingApproval.id);
       await Promise.all([refreshStatus(), loadApprovals()]);
-      pushToast('success', 'Changes approved', 'The approved diff has been applied to the workspace.');
+      pushToast(
+        'success',
+        'Changes approved',
+        'The approved diff has been applied to the workspace.'
+      );
     } catch (err) {
-      pushToast('error', 'Approve failed', err instanceof Error ? err.message : 'Unable to approve changes.');
+      pushToast(
+        'error',
+        'Approve failed',
+        err instanceof Error ? err.message : 'Unable to approve changes.'
+      );
     } finally {
       setIsApproving(false);
     }
@@ -61,21 +69,27 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
       await Promise.all([refreshStatus(), loadApprovals()]);
       pushToast('info', 'Changes rejected', 'Pending write request was declined.');
     } catch (err) {
-      pushToast('error', 'Reject failed', err instanceof Error ? err.message : 'Unable to reject changes.');
+      pushToast(
+        'error',
+        'Reject failed',
+        err instanceof Error ? err.message : 'Unable to reject changes.'
+      );
     } finally {
       setIsRejecting(false);
     }
   }, [service, status?.pendingApproval, refreshStatus, loadApprovals, pushToast]);
 
   return (
-    <ApprovalContext value={{
-      approvals,
-      isApproving,
-      isRejecting,
-      loadApprovals,
-      handleApprove,
-      handleReject,
-    }}>
+    <ApprovalContext
+      value={{
+        approvals,
+        isApproving,
+        isRejecting,
+        loadApprovals,
+        handleApprove,
+        handleReject
+      }}
+    >
       {children}
     </ApprovalContext>
   );

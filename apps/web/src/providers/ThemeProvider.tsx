@@ -15,7 +15,9 @@ function loadStoredTheme(): AppTheme {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored === 'light' || stored === 'dark') return stored;
-  } catch {}
+  } catch {
+    /* localStorage unavailable */
+  }
   return 'dark';
 }
 
@@ -26,7 +28,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setThemeState(next);
     try {
       localStorage.setItem(STORAGE_KEY, next);
-    } catch {}
+    } catch {
+      /* localStorage unavailable */
+    }
   }, []);
 
   const toggleTheme = useCallback(() => {
@@ -34,7 +38,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       const next = prev === 'dark' ? 'light' : 'dark';
       try {
         localStorage.setItem(STORAGE_KEY, next);
-      } catch {}
+      } catch {
+        /* localStorage unavailable */
+      }
       return next;
     });
   }, []);
@@ -43,11 +49,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
 
-  return (
-    <ThemeContext value={{ theme, setTheme, toggleTheme }}>
-      {children}
-    </ThemeContext>
-  );
+  return <ThemeContext value={{ theme, setTheme, toggleTheme }}>{children}</ThemeContext>;
 }
 
 export function useTheme() {

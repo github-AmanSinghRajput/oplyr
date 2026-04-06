@@ -31,10 +31,7 @@ test('buildFileTree collapses single-child directories', () => {
 });
 
 test('buildFileTree does not collapse directories with multiple children', () => {
-  const tree = buildFileTree([
-    'src/app/layout.tsx',
-    'src/config/env.ts'
-  ]);
+  const tree = buildFileTree(['src/app/layout.tsx', 'src/config/env.ts']);
   assert.equal(tree.length, 1);
   assert.equal(tree[0].name, 'src');
   assert.equal(tree[0].isDirectory, true);
@@ -48,11 +45,7 @@ test('buildFileTree does not collapse directories with multiple children', () =>
 });
 
 test('buildFileTree sorts directories before files', () => {
-  const tree = buildFileTree([
-    'README.md',
-    'src/index.ts',
-    '.env.example'
-  ]);
+  const tree = buildFileTree(['README.md', 'src/index.ts', '.env.example']);
   const names = tree.map((n) => n.name);
   assert.equal(names[0], 'src');
   assert.equal(names[1], '.env.example');

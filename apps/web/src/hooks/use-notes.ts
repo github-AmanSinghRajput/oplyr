@@ -60,14 +60,14 @@ export function useNotes(): NotesHandle {
             await service.updateNote(editingNoteId, {
               title: noteTitle.trim(),
               body: noteBody.trim(),
-              source: noteSource.trim() || 'manual',
+              source: noteSource.trim() || 'manual'
             });
             pushToast('success', 'Note updated', 'Your note has been saved.');
           } else {
             await service.createNote({
               title: noteTitle.trim(),
               body: noteBody.trim(),
-              source: noteSource.trim() || 'manual',
+              source: noteSource.trim() || 'manual'
             });
             pushToast('success', 'Note created', 'Your note has been saved.');
           }
@@ -80,7 +80,7 @@ export function useNotes(): NotesHandle {
 
       void doSave();
     },
-    [service, pushToast, noteTitle, noteBody, noteSource, editingNoteId, resetComposer, loadNotes],
+    [service, pushToast, noteTitle, noteBody, noteSource, editingNoteId, resetComposer, loadNotes]
   );
 
   const onEditNote = useCallback((note: NoteEntry) => {
@@ -104,7 +104,7 @@ export function useNotes(): NotesHandle {
       };
       void doDelete();
     },
-    [service, pushToast, editingNoteId, resetComposer],
+    [service, pushToast, editingNoteId, resetComposer]
   );
 
   return {
@@ -120,6 +120,6 @@ export function useNotes(): NotesHandle {
     onEditNote,
     onDeleteNote,
     onResetComposer: resetComposer,
-    loadNotes,
+    loadNotes
   };
 }

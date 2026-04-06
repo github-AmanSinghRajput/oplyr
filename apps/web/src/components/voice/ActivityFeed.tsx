@@ -9,7 +9,9 @@ export function ActivityFeed({ currentActivity, recentActivities }: ActivityFeed
   if (!currentActivity && recentActivities.length === 0) {
     return (
       <div className="rounded-[var(--radius-panel)] border border-border bg-surface-1/50 p-4">
-        <span className="text-xs font-medium text-text-tertiary uppercase tracking-wider">Session flow</span>
+        <span className="text-xs font-medium text-text-tertiary uppercase tracking-wider">
+          Session flow
+        </span>
         <p className="text-sm text-text-secondary mt-2">
           Listen, think, speak. You can interrupt while the assistant is talking.
         </p>
@@ -19,7 +21,9 @@ export function ActivityFeed({ currentActivity, recentActivities }: ActivityFeed
 
   return (
     <div className="rounded-[var(--radius-panel)] border border-border bg-surface-1/50 p-4">
-      <span className="text-xs font-medium text-text-tertiary uppercase tracking-wider">What it's doing</span>
+      <span className="text-xs font-medium text-text-tertiary uppercase tracking-wider">
+        What it's doing
+      </span>
       <AnimatePresence mode="popLayout">
         {currentActivity && (
           <motion.p

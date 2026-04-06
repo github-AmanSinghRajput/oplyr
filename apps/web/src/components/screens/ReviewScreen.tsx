@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { parseFileDiff } from '@/containers/voice-console/lib/diff';
-import type { ApprovalHistoryEntry, DiffSummary, PendingApproval } from '@/containers/voice-console/lib/types';
+import type {
+  ApprovalHistoryEntry,
+  DiffSummary,
+  PendingApproval
+} from '@/containers/voice-console/lib/types';
 import { ApprovalHistoryList } from '@/components/review/ApprovalHistoryList';
 import { FileTreePanel } from '@/components/review/FileTreePanel';
 import { ReviewFileCard } from '@/components/review/ReviewFileCard';
@@ -16,7 +20,10 @@ interface ReviewScreenProps {
 }
 
 function toAnchorId(filePath: string) {
-  return `review-file-${filePath.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase()}`;
+  return `review-file-${filePath
+    .replace(/[^a-z0-9]+/gi, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase()}`;
 }
 
 export function ReviewScreen({
@@ -25,7 +32,7 @@ export function ReviewScreen({
   lastDiff,
   approvalHistory,
   onApprove,
-  onReject,
+  onReject
 }: ReviewScreenProps) {
   const [viewedFiles, setViewedFiles] = useState<Set<string>>(new Set());
   const [activeFilePath, setActiveFilePath] = useState<string | null>(null);
@@ -43,7 +50,7 @@ export function ReviewScreen({
       return {
         filePath: file.filePath,
         additions: parsed.stats.additions,
-        deletions: parsed.stats.deletions,
+        deletions: parsed.stats.deletions
       };
     });
   }, [lastDiff]);
@@ -51,7 +58,10 @@ export function ReviewScreen({
   const totalStats = useMemo(
     () =>
       fileStats.reduce(
-        (acc, s) => ({ additions: acc.additions + s.additions, deletions: acc.deletions + s.deletions }),
+        (acc, s) => ({
+          additions: acc.additions + s.additions,
+          deletions: acc.deletions + s.deletions
+        }),
         { additions: 0, deletions: 0 }
       ),
     [fileStats]
@@ -156,7 +166,9 @@ export function ReviewScreen({
           <div className="flex flex-col gap-4">
             {pendingApproval?.tasks && pendingApproval.tasks.length > 0 && (
               <div className="rounded-[var(--radius-panel)] border border-border bg-surface-1 p-4">
-                <span className="text-xs font-medium text-text-tertiary uppercase tracking-wider">Planned tasks</span>
+                <span className="text-xs font-medium text-text-tertiary uppercase tracking-wider">
+                  Planned tasks
+                </span>
                 <div className="flex flex-col gap-2 mt-2">
                   {pendingApproval.tasks.map((task, index) => (
                     <div className="flex items-start gap-2" key={`${task}-${index}`}>
@@ -174,7 +186,7 @@ export function ReviewScreen({
               const stats = fileStats.find((s) => s.filePath === file.filePath) ?? {
                 filePath: file.filePath,
                 additions: 0,
-                deletions: 0,
+                deletions: 0
               };
               return (
                 <ReviewFileCard
@@ -200,7 +212,9 @@ export function ReviewScreen({
         <div className="flex flex-col gap-4">
           <div className="rounded-[var(--radius-panel)] border border-border bg-surface-1 p-8 text-center">
             <p className="text-sm text-text-secondary">No diff available yet.</p>
-            <p className="text-xs text-text-tertiary mt-1">Once the assistant proposes file changes, the full review will appear here.</p>
+            <p className="text-xs text-text-tertiary mt-1">
+              Once the assistant proposes file changes, the full review will appear here.
+            </p>
           </div>
           <ApprovalHistoryList approvalHistory={approvalHistory} />
         </div>

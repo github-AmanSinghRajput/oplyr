@@ -1,6 +1,7 @@
 import { BaseApiService } from './BaseApiService';
 import type {
   AppSettings,
+  ChatAttachment,
   AssistantProvidersState,
   ApprovalHistoryResponse,
   ApprovalRequiredResponse,
@@ -138,14 +139,19 @@ export class OperatorConsoleApiService extends BaseApiService {
     });
   }
 
-  sendMessage(message: string, source: 'voice' | 'text', voiceTurnId?: string) {
+  sendMessage(
+    message: string,
+    source: 'voice' | 'text',
+    voiceTurnId?: string,
+    attachments: string[] = []
+  ) {
     return this.request<ReplyResponse | ApprovalRequiredResponse>('/api/chat/text', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...(voiceTurnId ? { 'X-Voice-Turn-Id': voiceTurnId } : {})
       },
-      body: JSON.stringify({ message, source })
+      body: JSON.stringify({ message, source, attachments })
     });
   }
 
@@ -153,7 +159,7 @@ export class OperatorConsoleApiService extends BaseApiService {
     message: string,
     source: 'voice' | 'text',
     onEvent: (event: ChatStreamEvent) => void,
-    options?: { voiceTurnId?: string; signal?: AbortSignal }
+    options?: { voiceTurnId?: string; signal?: AbortSignal; attachments?: string[] }
   ) {
     const response = await fetch(`${this.baseUrl}/api/chat/text/stream`, {
       method: 'POST',
@@ -162,7 +168,7 @@ export class OperatorConsoleApiService extends BaseApiService {
         'Content-Type': 'application/json',
         ...(options?.voiceTurnId ? { 'X-Voice-Turn-Id': options.voiceTurnId } : {})
       },
-      body: JSON.stringify({ message, source }),
+      body: JSON.stringify({ message, source, attachments: options?.attachments ?? [] }),
       signal: options?.signal
     });
 
@@ -220,6 +226,30 @@ export class OperatorConsoleApiService extends BaseApiService {
         break;
       }
     }
+  }
+
+  async uploadChatAttachment(file: File) {
+    const response = await fetch(`${this.baseUrl}/api/chat/attachments`, {
+      method: 'POST',
+      headers: {
+        ...Object.fromEntries(this.createHeaders().entries()),
+        'X-File-Name': encodeURIComponent(file.name),
+        'X-File-Type': file.type || 'application/octet-stream'
+      },
+      body: file
+    });
+
+    const body = (await response.json()) as {
+      attachment?: ChatAttachment;
+      error?: string;
+      details?: unknown;
+    };
+
+    if (!response.ok || !body.attachment) {
+      throw new Error(body.error ?? 'Unable to upload attachment.');
+    }
+
+    return body.attachment;
   }
 
   transcribeVoiceAudio(audioBlob: Blob, mimeType: string, voiceTurnId?: string) {

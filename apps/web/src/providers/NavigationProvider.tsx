@@ -19,12 +19,14 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <NavigationContext value={{
-      activeScreen,
-      setActiveScreen,
-      sidebarExpanded,
-      setSidebarExpanded,
-    }}>
+    <NavigationContext
+      value={{
+        activeScreen,
+        setActiveScreen,
+        sidebarExpanded,
+        setSidebarExpanded
+      }}
+    >
       {children}
     </NavigationContext>
   );

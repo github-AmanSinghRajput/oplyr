@@ -28,7 +28,7 @@ export function ReviewHeader({
   onToggleDiffMode,
   onApprove,
   onReject,
-  onToggleFileTree,
+  onToggleFileTree
 }: ReviewHeaderProps) {
   const waitingSince = pendingApproval?.createdAt
     ? formatRelativeTime(pendingApproval.createdAt)
@@ -39,12 +39,19 @@ export function ReviewHeader({
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
           {onToggleFileTree && (
-            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 md:hidden" onClick={onToggleFileTree}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0 md:hidden"
+              onClick={onToggleFileTree}
+            >
               <Menu size={16} />
             </Button>
           )}
           <div className="min-w-0">
-            <p className="text-xs font-medium text-text-tertiary uppercase tracking-wider mb-1">AI Review</p>
+            <p className="text-xs font-medium text-text-tertiary uppercase tracking-wider mb-1">
+              AI Review
+            </p>
             <h2 className="text-lg font-semibold text-text-primary truncate">
               {pendingApproval?.title ?? 'Review proposed changes'}
             </h2>
@@ -65,13 +72,25 @@ export function ReviewHeader({
 
       <div className="flex items-center gap-2 mt-3 flex-wrap">
         {totalFiles > 0 && <Badge variant="outline">{totalFiles} files</Badge>}
-        {totalAdditions > 0 && <Badge variant="outline" className="text-success border-success/30">+{totalAdditions}</Badge>}
-        {totalDeletions > 0 && <Badge variant="outline" className="text-danger border-danger/30">-{totalDeletions}</Badge>}
+        {totalAdditions > 0 && (
+          <Badge variant="outline" className="text-success border-success/30">
+            +{totalAdditions}
+          </Badge>
+        )}
+        {totalDeletions > 0 && (
+          <Badge variant="outline" className="text-danger border-danger/30">
+            -{totalDeletions}
+          </Badge>
+        )}
         {totalFiles > 0 && (
-          <Badge variant="secondary">{viewedCount} / {totalFiles} reviewed</Badge>
+          <Badge variant="secondary">
+            {viewedCount} / {totalFiles} reviewed
+          </Badge>
         )}
         {waitingSince && (
-          <Badge variant="secondary" className="text-warning">Waiting {waitingSince}</Badge>
+          <Badge variant="secondary" className="text-warning">
+            Waiting {waitingSince}
+          </Badge>
         )}
 
         <Button
@@ -80,7 +99,11 @@ export function ReviewHeader({
           className="ml-auto h-7 text-xs"
           onClick={onToggleDiffMode}
         >
-          {diffMode === 'split' ? <Rows3 size={12} className="mr-1.5" /> : <Columns2 size={12} className="mr-1.5" />}
+          {diffMode === 'split' ? (
+            <Rows3 size={12} className="mr-1.5" />
+          ) : (
+            <Columns2 size={12} className="mr-1.5" />
+          )}
           {diffMode === 'split' ? 'Unified' : 'Split'}
         </Button>
       </div>

@@ -7,7 +7,7 @@ const screenShortcuts: Record<string, ScreenId> = {
   '3': 'terminal',
   '4': 'shell',
   '5': 'review',
-  '6': 'settings',
+  '6': 'settings'
 };
 
 export function useKeyboardShortcuts(onNavigate: (screen: ScreenId) => void) {

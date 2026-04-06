@@ -32,7 +32,7 @@ export function Topbar({ displayName, onRefresh, onDisconnect, busyLabel, error 
           'fixed top-0 right-0 z-10 h-[var(--topbar-height)]',
           'flex items-center justify-between px-4',
           'bg-background/80 backdrop-blur-xl border-b border-border',
-          'transition-[left] duration-300 ease-out',
+          'transition-[left] duration-300 ease-out'
         )}
         style={{ left: sidebarExpanded ? 240 : 56 }}
       >
@@ -53,10 +53,14 @@ export function Topbar({ displayName, onRefresh, onDisconnect, busyLabel, error 
         {/* Right: status + actions */}
         <div className="flex items-center gap-2">
           {busyLabel && (
-            <Badge variant="secondary" className="text-xs">{busyLabel}</Badge>
+            <Badge variant="secondary" className="text-xs">
+              {busyLabel}
+            </Badge>
           )}
           {error && (
-            <Badge variant="destructive" className="text-xs">{error}</Badge>
+            <Badge variant="destructive" className="text-xs">
+              {error}
+            </Badge>
           )}
 
           {assistantReady && desktopRuntime && (
@@ -64,10 +68,12 @@ export function Topbar({ displayName, onRefresh, onDisconnect, busyLabel, error 
               variant={desktopRuntime.apiReachable ? 'outline' : 'destructive'}
               className="text-xs"
             >
-              <span className={cn(
-                'w-1.5 h-1.5 rounded-full mr-1.5',
-                desktopRuntime.apiReachable ? 'bg-success' : 'bg-danger'
-              )} />
+              <span
+                className={cn(
+                  'w-1.5 h-1.5 rounded-full mr-1.5',
+                  desktopRuntime.apiReachable ? 'bg-success' : 'bg-danger'
+                )}
+              />
               {authLabel}
             </Badge>
           )}
@@ -94,7 +100,12 @@ export function Topbar({ displayName, onRefresh, onDisconnect, busyLabel, error 
 
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setActiveScreen('settings')}>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => setActiveScreen('settings')}
+                  >
                     <Settings size={14} />
                   </Button>
                 </TooltipTrigger>
@@ -103,7 +114,12 @@ export function Topbar({ displayName, onRefresh, onDisconnect, busyLabel, error 
 
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-danger hover:text-danger" onClick={onDisconnect}>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-danger hover:text-danger"
+                    onClick={onDisconnect}
+                  >
                     <Unplug size={14} />
                   </Button>
                 </TooltipTrigger>
