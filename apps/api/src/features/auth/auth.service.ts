@@ -16,12 +16,13 @@ export class AuthService {
     this.operator = operator;
   }
 
-  async syncCliSession(provider: 'codex' | 'claude', status: ProviderStatusSnapshot) {
+  async syncCliSession(provider: 'codex' | 'claude' | 'gemini', status: ProviderStatusSnapshot) {
     const snapshot = JSON.stringify({
       loggedIn: status.loggedIn,
       authMode: status.authMode ?? null
     });
-    const sessionProvider = provider === 'claude' ? 'claude_cli' : 'codex_cli';
+    const sessionProvider =
+      provider === 'claude' ? 'claude_cli' : provider === 'gemini' ? 'gemini_cli' : 'codex_cli';
 
     if (snapshot === this.lastProviderSnapshots.get(sessionProvider)) {
       return;

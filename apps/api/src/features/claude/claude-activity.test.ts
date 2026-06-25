@@ -5,22 +5,38 @@ import { describeClaudeActivity } from '../../claude-client.js';
 const cwd = '/Users/dev/project';
 
 test('describeClaudeActivity returns reading label for Read tool', () => {
-  const result = describeClaudeActivity('Read', { file_path: '/Users/dev/project/src/index.ts' }, cwd);
+  const result = describeClaudeActivity(
+    'Read',
+    { file_path: '/Users/dev/project/src/index.ts' },
+    cwd
+  );
   assert.equal(result, 'Reading src/index.ts');
 });
 
 test('describeClaudeActivity returns editing label for Edit tool', () => {
-  const result = describeClaudeActivity('Edit', { file_path: '/Users/dev/project/src/app.ts' }, cwd);
+  const result = describeClaudeActivity(
+    'Edit',
+    { file_path: '/Users/dev/project/src/app.ts' },
+    cwd
+  );
   assert.equal(result, 'Editing src/app.ts');
 });
 
 test('describeClaudeActivity returns writing label for Write tool', () => {
-  const result = describeClaudeActivity('Write', { file_path: '/Users/dev/project/src/new-file.ts' }, cwd);
+  const result = describeClaudeActivity(
+    'Write',
+    { file_path: '/Users/dev/project/src/new-file.ts' },
+    cwd
+  );
   assert.equal(result, 'Writing src/new-file.ts');
 });
 
 test('describeClaudeActivity returns running label for Bash tool', () => {
-  const result = describeClaudeActivity('Bash', { command: 'npm run test --workspace @voice-codex/api' }, cwd);
+  const result = describeClaudeActivity(
+    'Bash',
+    { command: 'npm run test --workspace @oplyr/runtime' },
+    cwd
+  );
   assert.equal(result, 'Running npm run test');
 });
 
@@ -55,7 +71,11 @@ test('describeClaudeActivity returns generic label for unknown tool', () => {
 });
 
 test('describeClaudeActivity shows relative path for files inside project', () => {
-  const result = describeClaudeActivity('Read', { file_path: '/Users/dev/project/deep/nested/file.ts' }, cwd);
+  const result = describeClaudeActivity(
+    'Read',
+    { file_path: '/Users/dev/project/deep/nested/file.ts' },
+    cwd
+  );
   assert.equal(result, 'Reading deep/nested/file.ts');
 });
 
@@ -80,7 +100,11 @@ test('describeClaudeActivity handles missing input keys gracefully', () => {
 });
 
 test('describeClaudeActivity truncates long bash commands', () => {
-  const result = describeClaudeActivity('Bash', { command: 'find . -name "*.ts" -exec grep -l "handleSubmit" {} +' }, cwd);
+  const result = describeClaudeActivity(
+    'Bash',
+    { command: 'find . -name "*.ts" -exec grep -l "handleSubmit" {} +' },
+    cwd
+  );
   assert.equal(result, 'Running find . -name');
 });
 

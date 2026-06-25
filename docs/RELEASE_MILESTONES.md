@@ -1,6 +1,6 @@
-# VOCOD Release Milestones
+# Oplyr Release Milestones
 
-This file is the active release roadmap for VOCOD.
+This file is the active release roadmap for Oplyr.
 
 It exists to answer one question clearly:
 
@@ -14,7 +14,7 @@ Current release posture:
 
 - `0.1.0-beta.x` = invite-only beta
 - `0.2.x` = launch hardening and public-beta readiness
-- `1.0.0` = first serious public VOCOD release
+- `1.0.0` = first serious public Oplyr release
 
 ## Product phases
 
@@ -36,7 +36,7 @@ Ship a testable macOS desktop beta that feels coherent, safe enough to demo, and
 
 ### Product identity
 
-- [x] product renamed to `VOCOD`
+- [x] product renamed to `Oplyr`
 - [x] desktop-first product direction
 - [x] dynamic provider-aware UI instead of Codex-only language
 - [ ] README and repo-level naming fully cleaned up everywhere
@@ -56,16 +56,13 @@ Ship a testable macOS desktop beta that feels coherent, safe enough to demo, and
 
 ### Voice quality
 
-- [x] local TTS path
 - [x] local STT path
-- [x] Moonshine STT integration
-- [x] Whisper fallback path
-- [x] Kokoro voice selection
+- [x] Parakeet STT integration (single engine, no fallback)
 - [x] speaking/listening UI states
 - [x] streamed text visibility while the assistant responds
-- [ ] final tuning for natural TTS pacing and chunk flow
 - [ ] final tuning for barge-in sensitivity and noisy-room robustness
 - [ ] real-device validation across multiple microphones and rooms
+- [ ] TTS deferred — intentionally not shipped in 0.1; future paid provider (e.g. ElevenLabs) planned
 
 ### UI and UX
 
@@ -96,7 +93,8 @@ Ship a testable macOS desktop beta that feels coherent, safe enough to demo, and
 - [ ] first-launch dependency/model setup experience
 - [ ] install/update instructions
 - [ ] invite-only beta website/download flow
-- [ ] beta release checklist
+- [x] beta QA checklist documented in `docs/BETA_QA_CHECKLIST.md`
+- [x] voice runtime bootstrap policy documented in `docs/VOICE_RUNTIME_BOOTSTRAP.md`
 
 ---
 
@@ -124,10 +122,10 @@ Turn the private beta into something that can be downloaded and tested by broade
 
 ---
 
-## 1.0: VOCOD Public Launch
+## 1.0: Oplyr Public Launch
 
 Goal:
-Launch VOCOD as a trustworthy voice-first coding desktop app for real developer workflows.
+Launch Oplyr as a trustworthy voice-first coding desktop app for real developer workflows.
 
 ### Launch bar
 
@@ -152,7 +150,7 @@ Launch VOCOD as a trustworthy voice-first coding desktop app for real developer 
 ## 1.1: Note-Taker Foundation
 
 Goal:
-Expand VOCOD from voice coding into durable developer memory and session capture.
+Expand Oplyr from voice coding into durable developer memory and session capture.
 
 ### Scope
 
@@ -165,7 +163,22 @@ Expand VOCOD from voice coding into durable developer memory and session capture
 
 ### Why this matters
 
-This starts moving VOCOD from "voice coding app" toward "voice-native developer workspace."
+This starts moving Oplyr from "voice coding app" toward "voice-native developer workspace."
+
+---
+
+## Post-Beta TODO
+
+### Shared memory / mind map
+
+- [ ] design a durable memory schema for project knowledge
+- [ ] define cross-provider memory access rules
+- [ ] separate raw history from summaries and distilled context
+- [ ] decide whether structured local storage is enough or whether retrieval/search is needed
+- [ ] map how shared Oplyr memory should survive provider switching without leaking sensitive data
+
+This is intentionally deferred until after beta launch so bootstrap, onboarding, voice, chat, and
+provider reliability can reach demo quality first.
 
 ---
 
@@ -196,7 +209,7 @@ It should be treated with the same seriousness as the core voice-coding experien
 ## 2.0: Vibe Music
 
 Goal:
-Add an immersive, high-quality vibe/music layer that amplifies focus and makes VOCOD feel more like an intelligent coding environment.
+Add an immersive, high-quality vibe/music layer that amplifies focus and makes Oplyr feel more like an intelligent coding environment.
 
 ### Scope direction
 
@@ -217,6 +230,6 @@ This should only be pushed hard after the core coding and note-taking product is
 - [ ] keep the beta and launch experience grounded in trust and reliability
 - [ ] do not let future note-taker scope derail core voice-coding quality
 - [ ] do not let vibe/music novelty outrun product fundamentals
-- [ ] keep VOCOD desktop-first
+- [ ] keep Oplyr desktop-first
 - [ ] keep local execution and explicit user control as product pillars
 - [ ] update this file when scope changes materially

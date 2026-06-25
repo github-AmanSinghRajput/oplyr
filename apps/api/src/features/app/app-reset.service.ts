@@ -5,6 +5,7 @@ const resetStatements = [
   'DELETE FROM note_chunks',
   'DELETE FROM notes',
   'DELETE FROM approval_events',
+  'DELETE FROM conversation_attachments',
   'DELETE FROM conversation_messages',
   'DELETE FROM conversation_sessions',
   'DELETE FROM app_sessions',
@@ -18,22 +19,10 @@ export class AppResetService {
       return;
     }
 
-    await withTransaction(async (client) => {
+    await withTransaction(async (database) => {
       for (const statement of resetStatements) {
-        try {
-          await client.query(statement);
-        } catch (error) {
-          if (isMissingRelationError(error)) {
-            continue;
-          }
-
-          throw error;
-        }
+        database.exec(statement);
       }
     });
   }
-}
-
-function isMissingRelationError(error: unknown) {
-  return Boolean(error && typeof error === 'object' && 'code' in error && error.code === '42P01');
 }

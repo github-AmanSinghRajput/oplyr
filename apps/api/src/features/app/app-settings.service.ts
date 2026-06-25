@@ -26,6 +26,7 @@ function sanitizeAppSettings(input: Partial<AppSettings>): AppSettings {
   return {
     displayName: trimmedName || null,
     theme: input.theme === 'light' ? 'light' : 'dark',
-    welcomedAt: typeof input.welcomedAt === 'string' && input.welcomedAt.trim() ? input.welcomedAt : null
+    welcomedAt:
+      typeof input.welcomedAt === 'string' && input.welcomedAt.trim() ? input.welcomedAt : null
   };
 }

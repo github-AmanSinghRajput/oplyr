@@ -1,4 +1,4 @@
-import { getDatabasePool, isDatabaseConfigured } from '../../db/client.js';
+import { getDatabase, isDatabaseConfigured } from '../../db/client.js';
 
 interface UserRecord {
   id: string;
@@ -14,39 +14,40 @@ export class UserRepository {
       return null;
     }
 
-    const pool = getDatabasePool();
-    const result = await pool.query<{
-      id: string;
-      email: string | null;
-      display_name: string | null;
-      created_at: Date;
-      updated_at: Date;
-    }>(
-      `
+    const database = getDatabase();
+    const result = database
+      .prepare(
+        `
         INSERT INTO app_users (email, display_name)
-        VALUES ($1, $2)
+        VALUES (?, ?)
         ON CONFLICT (email)
         DO UPDATE SET
-          display_name = EXCLUDED.display_name,
-          updated_at = NOW()
+          display_name = excluded.display_name,
+          updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
         RETURNING id, email, display_name, created_at, updated_at
-      `,
-      [input.email, input.displayName]
-    );
-
-    return this.toRecord(result.rows[0] ?? null);
-  }
-
-  private toRecord(
-    row:
+      `
+      )
+      .get(input.email, input.displayName) as
       | {
           id: string;
           email: string | null;
           display_name: string | null;
-          created_at: Date;
-          updated_at: Date;
+          created_at: string;
+          updated_at: string;
         }
-      | null
+      | undefined;
+
+    return this.toRecord(result ?? null);
+  }
+
+  private toRecord(
+    row: {
+      id: string;
+      email: string | null;
+      display_name: string | null;
+      created_at: string;
+      updated_at: string;
+    } | null
   ): UserRecord | null {
     if (!row) {
       return null;
@@ -56,8 +57,8 @@ export class UserRepository {
       id: row.id,
       email: row.email,
       displayName: row.display_name,
-      createdAt: row.created_at.toISOString(),
-      updatedAt: row.updated_at.toISOString()
+      createdAt: new Date(row.created_at).toISOString(),
+      updatedAt: new Date(row.updated_at).toISOString()
     };
   }
 }

@@ -1,7 +1,6 @@
 import crypto from 'node:crypto';
 import cors from 'cors';
-import express from 'express';
-import type { NextFunction, Request, Response } from 'express';
+import express, { type NextFunction, type Request, type Response } from 'express';
 import {
   AssistantClientError,
   connectAssistantProvider,
@@ -19,7 +18,8 @@ import { NotesService } from '../features/notes/notes.service.js';
 import { SystemService } from '../features/system/system.service.js';
 import { UserService } from '../features/users/user.service.js';
 import { WorkspaceService } from '../features/workspaces/workspace.service.js';
-import { TtsService } from '../features/tts/tts.service.js';
+import { CodebaseMapService } from '../features/codebase-map/codebase-map.service.js';
+import { CodebaseMapRepository } from '../features/codebase-map/codebase-map.repository.js';
 import { AppError, isAppError } from '../lib/errors.js';
 import {
   asyncHandler,
@@ -36,9 +36,13 @@ import { createRateLimitMiddleware } from '../lib/rate-limit.js';
 import { VoiceSessionService } from '../features/voice/voice-session.service.js';
 import { VoiceSettingsService } from '../features/voice/voice-settings.service.js';
 import { VoiceTranscriptionService } from '../features/voice/transcription.service.js';
+import { VoiceBootstrapService } from '../features/voice/voice-bootstrap.service.js';
+import { provisionSpeechModel } from '../features/voice/speech-model-provisioner.js';
 import { CodexSettingsService } from '../features/codex/codex-settings.service.js';
 import { ClaudeSettingsService } from '../features/claude/claude-settings.service.js';
+import { GeminiSettingsService } from '../features/gemini/gemini-settings.service.js';
 import { ProviderSettingsService } from '../features/providers/provider-settings.service.js';
+import { ProviderUsageService } from '../features/providers/provider-usage.service.js';
 import { VoiceCommandService } from '../features/voice/voice-command.service.js';
 import { AppSettingsService } from '../features/app/app-settings.service.js';
 import { AppResetService } from '../features/app/app-reset.service.js';
@@ -100,11 +104,18 @@ export function createApp(options?: { apiAuthToken?: string }) {
   const notesService = new NotesService();
   const userService = new UserService();
   const workspaceService = new WorkspaceService();
-  const ttsService = new TtsService();
+  const codebaseMapService = new CodebaseMapService(new CodebaseMapRepository());
   const codexSettingsService = new CodexSettingsService();
   const claudeSettingsService = new ClaudeSettingsService();
+  const geminiSettingsService = new GeminiSettingsService();
   const providerSettingsService = new ProviderSettingsService();
-  initAssistantClient(codexSettingsService, claudeSettingsService, providerSettingsService);
+  const providerUsageService = new ProviderUsageService();
+  initAssistantClient(
+    codexSettingsService,
+    claudeSettingsService,
+    geminiSettingsService,
+    providerSettingsService
+  );
   const voiceSettingsService = new VoiceSettingsService();
   const appSettingsService = new AppSettingsService();
   const appResetService = new AppResetService();
@@ -112,9 +123,12 @@ export function createApp(options?: { apiAuthToken?: string }) {
   const voiceCommandService = new VoiceCommandService(codexSettingsService);
   const voiceSessionService = new VoiceSessionService({
     eventBus,
-    ttsService,
     voiceTranscriptionService,
     voiceSettingsService
+  });
+  const voiceBootstrapService = new VoiceBootstrapService({
+    voiceSessionService,
+    provisionSpeechModel
   });
 
   app.set('etag', false);
@@ -134,7 +148,12 @@ export function createApp(options?: { apiAuthToken?: string }) {
     response.locals.requestId = requestId;
     response.setHeader('x-request-id', requestId);
 
-    const skipDetailedLog = ['/api/health/live', '/api/health/ready', '/api/status', '/api/voice/events'].includes(request.path);
+    const skipDetailedLog = [
+      '/api/health/live',
+      '/api/health/ready',
+      '/api/status',
+      '/api/voice/events'
+    ].includes(request.path);
 
     if (!skipDetailedLog) {
       logger.info('http.request.started', {
@@ -160,7 +179,7 @@ export function createApp(options?: { apiAuthToken?: string }) {
   app.get('/api/health/live', (_request: Request, response: Response) => {
     response.json({
       ok: true,
-      service: 'voice-codex-api'
+      service: 'oplyr-api'
     });
   });
 
@@ -180,7 +199,11 @@ export function createApp(options?: { apiAuthToken?: string }) {
     }
 
     const candidate =
-      request.header(localApiAuthHeader)?.trim() || request.header('authorization')?.replace(/^Bearer\s+/i, '').trim();
+      request.header(localApiAuthHeader)?.trim() ||
+      request
+        .header('authorization')
+        ?.replace(/^Bearer\s+/i, '')
+        .trim();
 
     if (!matchesLocalApiAuthToken(candidate, expectedToken)) {
       next(new AppError(401, 'Local API authentication is required.', 'UNAUTHORIZED'));
@@ -210,16 +233,24 @@ export function createApp(options?: { apiAuthToken?: string }) {
         assistantProviders.providers.find((provider) => provider.id === 'codex') ?? null;
       const claudeStatus =
         assistantProviders.providers.find((provider) => provider.id === 'claude') ?? null;
+      const geminiStatus =
+        assistantProviders.providers.find((provider) => provider.id === 'gemini') ?? null;
       if (codexStatus) {
         await authService.syncCliSession('codex', codexStatus);
       }
       if (claudeStatus) {
         await authService.syncCliSession('claude', claudeStatus);
       }
+      if (geminiStatus) {
+        await authService.syncCliSession('gemini', geminiStatus);
+      }
       const runtime = getRuntimeState();
       const readiness = await systemService.getReadiness();
       const appSettings = await appSettingsService.getSettings();
-      const safeLastDiff = await sanitizeDiffForResponse(runtime.workspace.projectRoot, runtime.lastDiff);
+      const safeLastDiff = await sanitizeDiffForResponse(
+        runtime.workspace.projectRoot,
+        runtime.lastDiff
+      );
 
       response.json({
         codexStatus,
@@ -255,42 +286,21 @@ export function createApp(options?: { apiAuthToken?: string }) {
   });
 
   app.post(
-    '/api/voice/transcribe',
-    express.raw({
-      type: [
-        'audio/webm',
-        'audio/mp4',
-        'audio/mpeg',
-        'audio/wav',
-        'audio/x-wav',
-        'audio/ogg',
-        'application/octet-stream'
-      ],
-      limit: '25mb'
-    }),
-    asyncHandler(async (request: Request, response: Response) => {
-      const startedAt = Date.now();
-      const body = request.body;
-      const audioBuffer =
-        body instanceof Buffer ? body : Buffer.isBuffer(body) ? body : Buffer.alloc(0);
-      const mimeType = request.header('x-audio-mime-type')?.trim() || request.header('content-type')?.trim() || 'application/octet-stream';
-      const voiceTurnId = getVoiceTurnId(request);
-      const requestId =
-        typeof response.locals.requestId === 'string' ? response.locals.requestId : 'unknown';
-      const result = await voiceTranscriptionService.transcribeAudio(audioBuffer, mimeType);
-
-      logger.info('voice.transcription.request.completed', {
-        requestId,
-        ...(voiceTurnId ? { voiceTurnId } : {}),
-        durationMs: Date.now() - startedAt,
-        bytes: audioBuffer.length,
-        mimeType,
-        provider: result.provider,
-        fallbackUsed: result.fallbackUsed,
-        transcriptLength: result.transcript.length
+    '/api/voice/bootstrap/install',
+    asyncHandler(async (_request: Request, response: Response) => {
+      void voiceBootstrapService.start();
+      response.status(202).json({
+        bootstrap: await voiceBootstrapService.getStatus()
       });
+    })
+  );
 
-      response.json(result);
+  app.get(
+    '/api/voice/bootstrap',
+    asyncHandler(async (_request: Request, response: Response) => {
+      response.json({
+        bootstrap: await voiceBootstrapService.getStatus()
+      });
     })
   );
 
@@ -323,12 +333,10 @@ export function createApp(options?: { apiAuthToken?: string }) {
         displayName:
           displayNameValue === undefined
             ? undefined
-            : optionalTrimmedString(displayNameValue) ?? null,
-        welcomedAt:
-          request.body.welcomedAt === undefined
-            ? undefined
-            : welcomedAtValue ?? null,
-        theme: themeValue === 'light' || themeValue === 'dark' ? (themeValue as AppTheme) : undefined
+            : (optionalTrimmedString(displayNameValue) ?? null),
+        welcomedAt: request.body.welcomedAt === undefined ? undefined : (welcomedAtValue ?? null),
+        theme:
+          themeValue === 'light' || themeValue === 'dark' ? (themeValue as AppTheme) : undefined
       });
       response.json(nextSettings);
     })
@@ -397,20 +405,18 @@ export function createApp(options?: { apiAuthToken?: string }) {
     '/api/voice/settings',
     asyncHandler(async (request: Request, response: Response) => {
       const silenceWindowMs =
-        request.body.silenceWindowMs === undefined ? undefined : Number(request.body.silenceWindowMs);
+        request.body.silenceWindowMs === undefined
+          ? undefined
+          : Number(request.body.silenceWindowMs);
 
       const payload = await voiceSettingsService.updateSettings({
         silenceWindowMs,
         voiceLocale: optionalTrimmedString(request.body.voiceLocale),
         transcriptionLanguageCode: optionalTrimmedString(request.body.transcriptionLanguageCode),
         transcriptionModel:
-          request.body.transcriptionModel === 'multilingual-small' ||
-          request.body.transcriptionModel === 'moonshine-base' ||
-          request.body.transcriptionModel === 'moonshine-tiny' ||
-          request.body.transcriptionModel === 'default'
+          request.body.transcriptionModel === 'parakeet'
             ? request.body.transcriptionModel
             : undefined,
-        ttsVoice: optionalTrimmedString(request.body.ttsVoice),
         qualityProfile:
           request.body.qualityProfile === 'low_memory' ||
           request.body.qualityProfile === 'balanced' ||
@@ -422,12 +428,6 @@ export function createApp(options?: { apiAuthToken?: string }) {
           request.body.noiseMode === 'focused' ||
           request.body.noiseMode === 'noisy_room'
             ? request.body.noiseMode
-            : undefined,
-        narrationMode:
-          request.body.narrationMode === 'narrated' ||
-          request.body.narrationMode === 'silent_progress' ||
-          request.body.narrationMode === 'muted'
-            ? request.body.narrationMode
             : undefined,
         autoResumeAfterReply:
           request.body.autoResumeAfterReply === undefined
@@ -470,6 +470,11 @@ export function createApp(options?: { apiAuthToken?: string }) {
             | 'medium'
             | 'high'
             | 'xhigh'
+            | undefined,
+          voiceModelMode: optionalTrimmedString(request.body.voiceModelMode) as
+            | 'auto'
+            | 'fast'
+            | 'inherit'
             | undefined
         })
       );
@@ -483,12 +488,40 @@ export function createApp(options?: { apiAuthToken?: string }) {
     })
   );
 
+  app.get(
+    '/api/gemini/settings',
+    asyncHandler(async (_request: Request, response: Response) => {
+      response.json(await geminiSettingsService.getSettings());
+    })
+  );
+
   app.put(
     '/api/claude/settings',
     asyncHandler(async (request: Request, response: Response) => {
       response.json(
         await claudeSettingsService.updateSettings({
-          model: optionalTrimmedString(request.body.model)
+          model: optionalTrimmedString(request.body.model),
+          voiceModelMode: optionalTrimmedString(request.body.voiceModelMode) as
+            | 'auto'
+            | 'fast'
+            | 'inherit'
+            | undefined
+        })
+      );
+    })
+  );
+
+  app.put(
+    '/api/gemini/settings',
+    asyncHandler(async (request: Request, response: Response) => {
+      response.json(
+        await geminiSettingsService.updateSettings({
+          model: optionalTrimmedString(request.body.model),
+          voiceModelMode: optionalTrimmedString(request.body.voiceModelMode) as
+            | 'auto'
+            | 'fast'
+            | 'inherit'
+            | undefined
         })
       );
     })
@@ -543,49 +576,102 @@ export function createApp(options?: { apiAuthToken?: string }) {
   );
 
   app.post(
-    '/api/tts/synthesize',
+    '/api/workspace/project',
     asyncHandler(async (request: Request, response: Response) => {
-      const startedAt = Date.now();
-      const text = requireTrimmedString(request.body.text, 'text');
-      const requestId =
-        typeof response.locals.requestId === 'string' ? response.locals.requestId : 'unknown';
-      const voiceTurnId = getVoiceTurnId(request);
-      const result = await ttsService.synthesize(text);
+      const projectRoot = requireTrimmedString(request.body.projectRoot, 'projectRoot');
+      const workspace = await workspaceService.selectProjectRoot(projectRoot);
+      // Warm the codebase map in the background so it's ready the moment the user opens the Map
+      // screen ("the moment you connect a repo"). Fire-and-forget; never blocks the response.
+      if (workspace.projectRoot) {
+        void codebaseMapService.ensureScan(
+          workspace.projectRoot,
+          workspace.projectName ?? 'Workspace'
+        );
+      }
+      response.json({ workspace });
+    })
+  );
 
-      logger.info('voice.tts.request.completed', {
-        requestId,
-        ...(voiceTurnId ? { voiceTurnId } : {}),
-        durationMs: Date.now() - startedAt,
-        textLength: text.length,
-        provider: result.provider,
-        available: result.available,
-        mimeType: result.mimeType
-      });
+  app.get(
+    '/api/workspace/codebase-map',
+    asyncHandler(async (_request: Request, response: Response) => {
+      const workspace = getRuntimeState().workspace;
+      if (!workspace.projectRoot) {
+        response.json({ map: null });
+        return;
+      }
+      const map = await codebaseMapService.getMap(
+        workspace.projectRoot,
+        workspace.projectName ?? 'Workspace'
+      );
+      response.json({ map });
+    })
+  );
 
+  app.post(
+    '/api/workspace/codebase-map/rescan',
+    asyncHandler(async (_request: Request, response: Response) => {
+      const workspace = getRuntimeState().workspace;
+      if (!workspace.projectRoot) {
+        throw new AppError(400, 'Connect a workspace before scanning.', 'INVALID_INPUT');
+      }
+      const map = await codebaseMapService.rescan(
+        workspace.projectRoot,
+        workspace.projectName ?? 'Workspace'
+      );
+      response.json({ map });
+    })
+  );
+
+  app.post(
+    '/api/workspace/codebase-map/summary',
+    asyncHandler(async (request: Request, response: Response) => {
+      const filePath = requireTrimmedString(request.body.path, 'path');
+      const symbol = optionalTrimmedString(request.body.symbol);
+      const workspace = getRuntimeState().workspace;
+      if (!workspace.projectRoot) {
+        throw new AppError(
+          400,
+          'Connect a workspace before requesting summaries.',
+          'INVALID_INPUT'
+        );
+      }
+      const result = await codebaseMapService.summarizeFile(
+        workspace.projectRoot,
+        filePath,
+        symbol
+      );
       response.json(result);
     })
   );
 
   app.post(
-    '/api/workspace/project',
+    '/api/workspace/codebase-map/file-symbols',
     asyncHandler(async (request: Request, response: Response) => {
-      const projectRoot = requireTrimmedString(request.body.projectRoot, 'projectRoot');
-      const workspace = await workspaceService.selectProjectRoot(projectRoot);
-      response.json({ workspace });
+      const filePath = requireTrimmedString(request.body.path, 'path');
+      const workspace = getRuntimeState().workspace;
+      if (!workspace.projectRoot) {
+        throw new AppError(400, 'Connect a workspace before requesting symbols.', 'INVALID_INPUT');
+      }
+      const result = await codebaseMapService.getFileSymbols(workspace.projectRoot, filePath);
+      response.json(result);
     })
   );
 
-  app.post('/api/workspace/write-access', asyncHandler(async (request: Request, response: Response) => {
-    const enabled = requireBoolean(request.body.enabled, 'enabled');
-    const workspace = await workspaceService.updateWriteAccess(enabled);
-    response.json({ workspace });
-  }));
+  app.post(
+    '/api/workspace/write-access',
+    asyncHandler(async (request: Request, response: Response) => {
+      const enabled = requireBoolean(request.body.enabled, 'enabled');
+      const workspace = await workspaceService.updateWriteAccess(enabled);
+      response.json({ workspace });
+    })
+  );
 
   app.post(
     '/api/assistant/active-provider',
     asyncHandler(async (request: Request, response: Response) => {
       const providerId = requireTrimmedString(request.body.providerId, 'providerId');
-      if (providerId !== 'codex' && providerId !== 'claude') {
+      if (providerId !== 'codex' && providerId !== 'claude' && providerId !== 'gemini') {
         throw new AppError(400, 'Unsupported assistant provider.', 'INVALID_INPUT');
       }
 
@@ -597,7 +683,7 @@ export function createApp(options?: { apiAuthToken?: string }) {
     '/api/assistant/providers/:providerId/connect',
     asyncHandler(async (request: Request, response: Response) => {
       const providerId = getRouteParam(request.params.providerId, 'providerId');
-      if (providerId !== 'codex' && providerId !== 'claude') {
+      if (providerId !== 'codex' && providerId !== 'claude' && providerId !== 'gemini') {
         throw new AppError(400, 'Unsupported assistant provider.', 'INVALID_INPUT');
       }
 
@@ -613,15 +699,50 @@ export function createApp(options?: { apiAuthToken?: string }) {
     '/api/assistant/providers/:providerId/disconnect',
     asyncHandler(async (request: Request, response: Response) => {
       const providerId = getRouteParam(request.params.providerId, 'providerId');
-      if (providerId !== 'codex' && providerId !== 'claude') {
+      if (providerId !== 'codex' && providerId !== 'claude' && providerId !== 'gemini') {
         throw new AppError(400, 'Unsupported assistant provider.', 'INVALID_INPUT');
       }
 
       voiceSessionService.stop();
-      const assistantProviders = await disconnectAssistantProvider(providerId as AssistantProviderId);
+      const assistantProviders = await disconnectAssistantProvider(
+        providerId as AssistantProviderId
+      );
       await workspaceService.updateWriteAccess(false);
       clearPendingApproval();
       response.json({ ok: true, assistantProviders });
+    })
+  );
+
+  app.get(
+    '/api/assistant/usage',
+    asyncHandler(async (_request: Request, response: Response) => {
+      response.set('Cache-Control', 'no-store');
+      const assistantState = await getAssistantState();
+      const activeProviderId = assistantState.activeProviderId;
+
+      if (!activeProviderId) {
+        response.json({
+          usage: {
+            providerId: null,
+            providerName: null,
+            command: null,
+            capturedAt: new Date().toISOString(),
+            available: false,
+            error: 'No provider is currently connected in Oplyr.',
+            model: null,
+            accountLabel: null,
+            sessionId: null,
+            contextWindow: null,
+            meters: [],
+            details: []
+          }
+        });
+        return;
+      }
+
+      response.json({
+        usage: await providerUsageService.getUsage(activeProviderId, getRuntimeState().workspace)
+      });
     })
   );
 
@@ -631,6 +752,48 @@ export function createApp(options?: { apiAuthToken?: string }) {
       response.json({
         messages: await chatService.readRecentMessages(120)
       });
+    })
+  );
+
+  app.post(
+    '/api/chat/attachments',
+    express.raw({
+      type: () => true,
+      limit: '20mb'
+    }),
+    asyncHandler(async (request: Request, response: Response) => {
+      const encodedFileName = requireTrimmedString(request.header('x-file-name'), 'x-file-name');
+      const fileName = decodeURIComponent(encodedFileName);
+      const mimeType = request.header('x-file-type')?.trim() || 'application/octet-stream';
+      const body = request.body;
+      const fileBuffer =
+        body instanceof Buffer ? body : Buffer.isBuffer(body) ? body : Buffer.alloc(0);
+
+      if (fileBuffer.byteLength === 0) {
+        throw new AppError(400, 'Attachment body was empty.', 'INVALID_INPUT');
+      }
+
+      const attachment = await chatService.uploadAttachment(fileName, mimeType, fileBuffer);
+      response.status(201).json({ attachment });
+    })
+  );
+
+  app.get(
+    '/api/chat/attachments/:attachmentId/content',
+    asyncHandler(async (request: Request, response: Response) => {
+      const attachmentId = getRouteParam(request.params.attachmentId, 'attachmentId');
+      const content = await chatService.getAttachmentContent(attachmentId);
+
+      if (!content) {
+        throw new AppError(404, 'Attachment not found.', 'NOT_FOUND');
+      }
+
+      response.type(content.attachment.mimeType);
+      response.setHeader(
+        'Content-Disposition',
+        `${content.attachment.kind === 'image' ? 'inline' : 'attachment'}; filename="${content.attachment.name}"`
+      );
+      response.sendFile(content.storagePath);
     })
   );
 
@@ -668,7 +831,9 @@ export function createApp(options?: { apiAuthToken?: string }) {
       const body = requireTrimmedString(request.body.body, 'body');
       const source = optionalTrimmedString(request.body.source);
       const chunks =
-        request.body.chunks === undefined ? undefined : requireStringArray(request.body.chunks, 'chunks');
+        request.body.chunks === undefined
+          ? undefined
+          : requireStringArray(request.body.chunks, 'chunks');
 
       const note = await notesService.createNote({
         title,
@@ -690,7 +855,9 @@ export function createApp(options?: { apiAuthToken?: string }) {
       const body = requireTrimmedString(request.body.body, 'body');
       const source = optionalTrimmedString(request.body.source);
       const chunks =
-        request.body.chunks === undefined ? undefined : requireStringArray(request.body.chunks, 'chunks');
+        request.body.chunks === undefined
+          ? undefined
+          : requireStringArray(request.body.chunks, 'chunks');
 
       const note = await notesService.updateNote(getRouteParam(request.params.noteId, 'noteId'), {
         title,
@@ -748,117 +915,136 @@ export function createApp(options?: { apiAuthToken?: string }) {
     })
   );
 
-  app.post(
-    '/api/chat/text/stream',
-    async (request: Request, response: Response) => {
-      response.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
-      response.setHeader('Cache-Control', 'no-store');
-      response.setHeader('Connection', 'keep-alive');
-      response.flushHeaders();
+  app.post('/api/chat/text/stream', async (request: Request, response: Response) => {
+    response.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+    response.setHeader('Cache-Control', 'no-store');
+    response.setHeader('Connection', 'keep-alive');
+    response.flushHeaders();
 
-      const startedAt = Date.now();
-      const requestId =
-        typeof response.locals.requestId === 'string' ? response.locals.requestId : 'unknown';
-      const voiceTurnId = getVoiceTurnId(request);
-      const abortController = new AbortController();
+    const startedAt = Date.now();
+    const requestId =
+      typeof response.locals.requestId === 'string' ? response.locals.requestId : 'unknown';
+    const voiceTurnId = getVoiceTurnId(request);
+    const abortController = new AbortController();
 
-      response.on('close', () => {
-        if (!response.writableEnded) {
-          abortController.abort();
-        }
-      });
+    response.on('close', () => {
+      if (!response.writableEnded) {
+        abortController.abort();
+      }
+    });
 
-      try {
-        const text = requireTrimmedString(request.body.message, 'message');
-        const source: ChatSource = request.body.source === 'voice' ? 'voice' : 'text';
+    try {
+      const attachmentIds =
+        request.body.attachments === undefined
+          ? []
+          : requireStringArray(request.body.attachments, 'attachments');
+      const text = optionalTrimmedString(request.body.message) ?? '';
+      if (!text && attachmentIds.length === 0) {
+        throw new AppError(400, 'Message or attachments are required.', 'INVALID_INPUT');
+      }
+      const source: ChatSource = request.body.source === 'voice' ? 'voice' : 'text';
 
-        const result = await chatService.streamTurn(
-          text,
-          source,
-          {
-            onStarted: ({ userMessage, assistantMessage }) => {
-              if (!abortController.signal.aborted) {
-                writeNdjson(response, {
-                  type: 'started',
-                  userMessage,
-                  assistantMessage
-                });
-              }
-            },
-            onDelta: ({ assistantMessage }) => {
-              if (!abortController.signal.aborted) {
-                writeNdjson(response, {
-                  type: 'delta',
-                  assistantMessage
-                });
-              }
-            },
-            onActivity: ({ activity }) => {
-              if (!abortController.signal.aborted) {
-                writeNdjson(response, {
-                  type: 'activity',
-                  activity
-                });
-              }
+      const result = await chatService.streamTurn(
+        text,
+        source,
+        {
+          onStarted: ({ userMessage, assistantMessage }) => {
+            if (!abortController.signal.aborted) {
+              writeNdjson(response, {
+                type: 'started',
+                userMessage,
+                assistantMessage
+              });
             }
           },
-          voiceTurnId ? { voiceTurnId } : undefined,
-          abortController.signal
-        );
+          onDelta: ({ assistantMessage }) => {
+            if (!abortController.signal.aborted) {
+              writeNdjson(response, {
+                type: 'delta',
+                assistantMessage
+              });
+            }
+          },
+          onActivity: ({ activity }) => {
+            if (!abortController.signal.aborted) {
+              writeNdjson(response, {
+                type: 'activity',
+                activity
+              });
+            }
+          }
+        },
+        voiceTurnId ? { voiceTurnId } : undefined,
+        abortController.signal,
+        attachmentIds
+      );
 
-        logger.info('chat.turn.request.completed', {
+      logger.info('chat.turn.request.completed', {
+        requestId,
+        ...(voiceTurnId ? { voiceTurnId } : {}),
+        source,
+        durationMs: Date.now() - startedAt,
+        messageLength: text.length,
+        resultType: result.type,
+        streamed: result.type === 'reply'
+      });
+
+      eventBus.emit({
+        type: 'status_refresh',
+        payload: {}
+      });
+
+      writeNdjson(response, {
+        type: 'completed',
+        result
+      });
+    } catch (error) {
+      if (!abortController.signal.aborted) {
+        logger.error('http.request.failed', {
           requestId,
-          ...(voiceTurnId ? { voiceTurnId } : {}),
-          source,
-          durationMs: Date.now() - startedAt,
-          messageLength: text.length,
-          resultType: result.type,
-          streamed: result.type === 'reply'
+          method: request.method,
+          path: request.path,
+          statusCode: isAppError(error) ? error.statusCode : 500,
+          errorCode: isAppError(error) ? error.code : 'INTERNAL_SERVER_ERROR',
+          message: error instanceof Error ? error.message : 'Unhandled API error'
         });
-
-        eventBus.emit({
-          type: 'status_refresh',
-          payload: {}
-        });
-
+        const classified = error instanceof AssistantClientError ? error : null;
         writeNdjson(response, {
-          type: 'completed',
-          result
+          type: 'error',
+          error:
+            classified?.friendlyMessage ??
+            (error instanceof Error ? error.message : 'Unable to stream chat response.'),
+          errorKind: classified?.kind ?? 'unknown'
         });
-      } catch (error) {
-        if (!abortController.signal.aborted) {
-          logger.error('http.request.failed', {
-            requestId,
-            method: request.method,
-            path: request.path,
-            statusCode: isAppError(error) ? error.statusCode : 500,
-            errorCode: isAppError(error) ? error.code : 'INTERNAL_SERVER_ERROR',
-            message: error instanceof Error ? error.message : 'Unhandled API error'
-          });
-          const classified = error instanceof AssistantClientError ? error : null;
-          writeNdjson(response, {
-            type: 'error',
-            error: classified?.friendlyMessage ?? (error instanceof Error ? error.message : 'Unable to stream chat response.'),
-            errorKind: classified?.kind ?? 'unknown'
-          });
-        }
-      } finally {
-        response.end();
       }
+    } finally {
+      response.end();
     }
-  );
+  });
 
   app.post(
     '/api/chat/text',
     asyncHandler(async (request: Request, response: Response) => {
       const startedAt = Date.now();
-      const text = requireTrimmedString(request.body.message, 'message');
+      const attachmentIds =
+        request.body.attachments === undefined
+          ? []
+          : requireStringArray(request.body.attachments, 'attachments');
+      const text = optionalTrimmedString(request.body.message) ?? '';
+      if (!text && attachmentIds.length === 0) {
+        throw new AppError(400, 'Message or attachments are required.', 'INVALID_INPUT');
+      }
       const source: ChatSource = request.body.source === 'voice' ? 'voice' : 'text';
       const requestId =
         typeof response.locals.requestId === 'string' ? response.locals.requestId : 'unknown';
       const voiceTurnId = getVoiceTurnId(request);
 
-      const result = await chatService.processTurn(text, source, voiceTurnId ? { voiceTurnId } : undefined);
+      const result = await chatService.processTurn(
+        text,
+        source,
+        voiceTurnId ? { voiceTurnId } : undefined,
+        attachmentIds
+      );
       logger.info('chat.turn.request.completed', {
         requestId,
         ...(voiceTurnId ? { voiceTurnId } : {}),
@@ -902,8 +1088,13 @@ export function createApp(options?: { apiAuthToken?: string }) {
   app.post(
     '/api/approvals/:approvalId/reject',
     asyncHandler(async (request: Request, response: Response) => {
+      const rejectFeedback =
+        typeof (request.body as { feedback?: unknown })?.feedback === 'string'
+          ? (request.body as { feedback: string }).feedback
+          : undefined;
       const rejection = await chatService.rejectPending(
-        getRouteParam(request.params.approvalId, 'approvalId')
+        getRouteParam(request.params.approvalId, 'approvalId'),
+        rejectFeedback
       );
       if (!rejection) {
         throw new AppError(404, 'Pending approval not found.', 'NOT_FOUND');
@@ -938,7 +1129,9 @@ export function createApp(options?: { apiAuthToken?: string }) {
 
     const classified = error instanceof AssistantClientError ? error : null;
     response.status(isAppError(error) ? error.statusCode : 500).json({
-      error: classified?.friendlyMessage ?? (error instanceof Error ? error.message : 'Internal server error.'),
+      error:
+        classified?.friendlyMessage ??
+        (error instanceof Error ? error.message : 'Internal server error.'),
       code: isAppError(error) ? error.code : 'INTERNAL_SERVER_ERROR',
       errorKind: classified?.kind ?? undefined,
       requestId
@@ -949,9 +1142,9 @@ export function createApp(options?: { apiAuthToken?: string }) {
     app,
     authService,
     userService,
+    voiceBootstrapService,
     voiceSessionService,
     voiceTranscriptionService,
-    workspaceService,
-    ttsService
+    workspaceService
   };
 }

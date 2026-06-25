@@ -99,9 +99,5 @@ function sortNodes(nodes: FileTreeNode[]): FileTreeNode[] {
       if (!a.isDirectory && b.isDirectory) return 1;
       return a.name.localeCompare(b.name);
     })
-    .map((node) =>
-      node.isDirectory
-        ? { ...node, children: sortNodes(node.children) }
-        : node
-    );
+    .map((node) => (node.isDirectory ? { ...node, children: sortNodes(node.children) } : node));
 }

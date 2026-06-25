@@ -12,5 +12,6 @@ export const navigationItems: NavigationItem[] = [
   { id: 'voice', label: 'Voice', shortLabel: 'Talk', icon: '◉' },
   { id: 'terminal', label: 'Text Chat', shortLabel: 'Chat', icon: '💬' },
   { id: 'shell', label: 'Shell', shortLabel: 'zsh', icon: '$' },
-  { id: 'review', label: 'Review', shortLabel: 'Diff', icon: 'Δ' }
+  { id: 'review', label: 'Review', shortLabel: 'Diff', icon: 'Δ' },
+  { id: 'settings', label: 'Settings', shortLabel: 'Prefs', icon: '⚙' }
 ];

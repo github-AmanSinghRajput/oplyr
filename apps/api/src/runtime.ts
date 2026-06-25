@@ -51,10 +51,11 @@ const runtimeState: RuntimeState = {
     available: process.platform === 'darwin',
     inputDeviceLabel: null,
     outputDeviceLabel: null,
-    transcriptionEngine: process.platform === 'darwin' ? 'Desktop media capture + STT provider' : 'Unavailable',
-    speechEngine: 'TTS Provider / Browser Fallback',
+    transcriptionEngine:
+      process.platform === 'darwin' ? 'Desktop media capture + STT provider' : 'Unavailable',
     lastCheckedAt: null,
-    error: process.platform === 'darwin' ? null : 'Desktop voice capture currently supports macOS only.'
+    error:
+      process.platform === 'darwin' ? null : 'Desktop voice capture currently supports macOS only.'
   },
   voiceSession: {
     active: false,
@@ -84,11 +85,10 @@ async function detectGitRepo(projectRoot: string) {
 }
 
 function getAllowedWorkspaceRoots() {
-  const configuredRoots = env.allowedWorkspaceRoots.length > 0 ? env.allowedWorkspaceRoots : [process.env.HOME ?? ''];
+  const configuredRoots =
+    env.allowedWorkspaceRoots.length > 0 ? env.allowedWorkspaceRoots : [process.env.HOME ?? ''];
 
-  return configuredRoots
-    .map((value) => path.resolve(value))
-    .filter(Boolean);
+  return configuredRoots.map((value) => path.resolve(value)).filter(Boolean);
 }
 
 function isPathWithinAllowedRoots(resolvedPath: string, allowedRoots: string[]) {
@@ -105,7 +105,9 @@ export async function validateProjectRoot(inputPath: string) {
   }
 
   if (resolved === '/' || resolved === path.resolve(process.env.HOME ?? '/')) {
-    throw new Error('Select a specific project directory, not your filesystem root or home directory.');
+    throw new Error(
+      'Select a specific project directory, not your filesystem root or home directory.'
+    );
   }
 
   const realProjectRoot = await fs.realpath(resolved);

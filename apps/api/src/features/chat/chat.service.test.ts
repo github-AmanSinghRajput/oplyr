@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { PendingApproval, WorkspaceState } from '../../types.js';
+import { AppError } from '../../lib/errors.js';
 import { ChatService } from './chat.service.js';
 
 class ChatRepositoryStub {
@@ -186,7 +187,8 @@ test('ChatService records approval decisions with workspace and conversation lin
       files: [
         {
           filePath: 'src/App.tsx',
-          diff: '@@'
+          diff: '@@\n-old\n+new',
+          status: 'modified'
         }
       ]
     })
@@ -194,7 +196,12 @@ test('ChatService records approval decisions with workspace and conversation lin
 
   const result = await service.approvePending('approval-1');
 
-  assert.equal(result?.assistantMessage.text, 'Applied the UI change.');
+  // Apply-then-review: the change was already applied at propose time, so approving keeps it.
+  assert.equal(
+    result?.assistantMessage.text,
+    'Approved and kept the changes: Apply UI change.\n\nSummary: 1 file changed (1 additions, 1 deletions): src/App.tsx.'
+  );
+  assert.equal(runtime.getLastDiff(), null);
   assert.equal(approvals.decisions.length, 1);
   assert.deepEqual(approvals.decisions[0], {
     workspaceId: 'workspace-1',
@@ -203,4 +210,140 @@ test('ChatService records approval decisions with workspace and conversation lin
     taskSummary: 'Update UI styles.',
     approved: true
   });
+});
+
+test('ChatService.rejectPending clears lastDiff so the review screen is not stale', async () => {
+  const repository = new ChatRepositoryStub();
+  const approvals = new ApprovalRepositoryStub();
+  const runtime = createChatRuntime(
+    createWorkspaceState({
+      id: 'workspace-1',
+      projectRoot: '/tmp/project',
+      projectName: 'project',
+      isGitRepo: true,
+      writeAccessEnabled: true
+    })
+  );
+
+  // Seed a stale diff that should be replaced when the write is rejected.
+  runtime.setLastDiff({
+    isGitRepo: true,
+    changedFiles: ['src/Stale.tsx'],
+    files: [{ filePath: 'src/Stale.tsx', diff: '@@', status: 'modified' }]
+  });
+
+  runtime.createPendingApproval({
+    projectRoot: '/tmp/project',
+    userRequest: 'Make the change',
+    title: 'Apply UI change',
+    summary: 'Update UI styles.',
+    tasks: ['Edit CSS'],
+    agents: ['frontend'],
+    baselineRef: 'HEAD',
+    baselineUntracked: []
+  });
+
+  let collectCalled = false;
+  let revertCalled = false;
+  const service = new ChatService(repository as never, approvals as never, runtime as never, {
+    generateAssistantReply: async () => ({ text: 'unused' }),
+    streamAssistantReply: async () => ({ text: 'unused' }),
+    decideWriteIntent: async () => ({
+      intent: 'reply',
+      assistant_text: 'unused',
+      proposal_title: '',
+      proposal_summary: '',
+      tasks: [],
+      agents: []
+    }),
+    executeApprovedWrite: async () => ({ text: 'unused' }),
+    collectGitDiff: async () => {
+      throw new Error('Should use turn-scoped diff.');
+    },
+    collectGitDiffSince: async () => {
+      collectCalled = true;
+      return {
+        isGitRepo: true,
+        changedFiles: ['src/App.tsx'],
+        files: [{ filePath: 'src/App.tsx', diff: '@@\n-old\n+new', status: 'modified' }]
+      };
+    },
+    revertWorkingTree: async () => {
+      revertCalled = true;
+    }
+  });
+
+  const result = await service.rejectPending('approval-1');
+
+  assert.equal(
+    result?.assistantMessage.text,
+    'Rejected and reverted the changes: Apply UI change.\n\nSummary: 1 file changed (1 additions, 1 deletions): src/App.tsx.'
+  );
+  assert.equal(collectCalled, true);
+  assert.equal(revertCalled, true);
+  assert.equal(runtime.getLastDiff(), null);
+  assert.equal(approvals.decisions.length, 1);
+  assert.equal(approvals.decisions[0]?.approved, false);
+});
+
+test('ChatService.approvePending rejects with 403 when write access is disabled after proposal', async () => {
+  const repository = new ChatRepositoryStub();
+  const approvals = new ApprovalRepositoryStub();
+  const runtime = createChatRuntime(
+    createWorkspaceState({
+      id: 'workspace-1',
+      projectRoot: '/tmp/project',
+      projectName: 'project',
+      isGitRepo: true,
+      writeAccessEnabled: true
+    })
+  );
+
+  runtime.createPendingApproval({
+    projectRoot: '/tmp/project',
+    userRequest: 'Make the change',
+    title: 'Apply UI change',
+    summary: 'Update UI styles.',
+    tasks: ['Edit CSS'],
+    agents: ['frontend']
+  });
+
+  // Write access is turned off between proposal and approval.
+  runtime.getWorkspaceState().writeAccessEnabled = false;
+
+  let executeCalled = false;
+  const service = new ChatService(repository as never, approvals as never, runtime as never, {
+    generateAssistantReply: async () => ({ text: 'unused' }),
+    streamAssistantReply: async () => ({ text: 'unused' }),
+    decideWriteIntent: async () => ({
+      intent: 'reply',
+      assistant_text: 'unused',
+      proposal_title: '',
+      proposal_summary: '',
+      tasks: [],
+      agents: []
+    }),
+    executeApprovedWrite: async () => {
+      executeCalled = true;
+      return { text: 'should not run' };
+    },
+    collectGitDiff: async () => ({
+      isGitRepo: true,
+      changedFiles: [],
+      files: []
+    })
+  });
+
+  await assert.rejects(
+    () => service.approvePending('approval-1'),
+    (error: unknown) => {
+      assert.ok(error instanceof AppError);
+      assert.equal(error.statusCode, 403);
+      assert.equal(error.code, 'WRITE_ACCESS_DISABLED');
+      return true;
+    }
+  );
+
+  assert.equal(executeCalled, false);
+  assert.equal(approvals.decisions.length, 0);
 });

@@ -69,5 +69,8 @@ test('buildFileExplanation handles pure deletion diff', () => {
  keep`;
 
   const result = buildFileExplanation('src/cleanup.ts', [], diff);
-  assert.ok(result.includes('-3') || result.includes('Removed'), `Expected deletion info, got: ${result}`);
+  assert.ok(
+    result.includes('-3') || result.includes('Removed'),
+    `Expected deletion info, got: ${result}`
+  );
 });

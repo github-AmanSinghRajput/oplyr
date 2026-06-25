@@ -1,12 +1,15 @@
 import path from 'node:path';
 import {
   collectGitDiff,
+  collectGitDiffSince,
   decideWriteIntent as decideCodexWriteIntent,
   executeApprovedWrite as executeCodexApprovedWrite,
   generateAssistantReply as generateCodexReply,
   getCodexStatus,
   initCodexClient,
   revertProtectedGitChanges,
+  revertWorkingTree,
+  snapshotWorkingTree,
   streamAssistantReply as streamCodexReply
 } from './codex-client.js';
 import {
@@ -17,6 +20,14 @@ import {
   initClaudeClient,
   streamClaudeReply
 } from './claude-client.js';
+import {
+  decideGeminiWriteIntent,
+  executeGeminiApprovedWrite,
+  generateGeminiReply,
+  getGeminiStatus,
+  initGeminiClient,
+  streamGeminiReply
+} from './gemini-client.js';
 import { getRootDir } from './store.js';
 import { logger } from './lib/logger.js';
 import { getRuntimeState, setActiveProviderId } from './runtime.js';
@@ -29,6 +40,7 @@ import type {
 } from './types.js';
 import type { CodexSettingsService } from './features/codex/codex-settings.service.js';
 import type { ClaudeSettingsService } from './features/claude/claude-settings.service.js';
+import type { GeminiSettingsService } from './features/gemini/gemini-settings.service.js';
 import { ProviderSettingsService } from './features/providers/provider-settings.service.js';
 
 export type AssistantErrorKind = 'auth' | 'rate_limit' | 'service' | 'unknown';
@@ -143,21 +155,50 @@ const providers: Record<AssistantProviderId, CodingAssistantProvider> = {
     streamReply: streamClaudeReply,
     decideWriteIntent: decideClaudeWriteIntent,
     executeApprovedWrite: executeClaudeApprovedWrite
+  },
+  gemini: {
+    id: 'gemini',
+    name: 'Google Gemini CLI',
+    loginCommand: 'gemini',
+    logoutCommand: null,
+    async checkStatus() {
+      const status = await getGeminiStatus();
+      return {
+        id: 'gemini',
+        name: 'Google Gemini CLI',
+        loginCommand: 'gemini',
+        logoutCommand: null,
+        canSwitchAccount: true,
+        appConnected: false,
+        connectedAt: null,
+        ...status
+      };
+    },
+    generateReply: generateGeminiReply,
+    streamReply: streamGeminiReply,
+    decideWriteIntent: decideGeminiWriteIntent,
+    executeApprovedWrite: executeGeminiApprovedWrite
   }
 };
 
 export function initAssistantClient(
   codexSettings: CodexSettingsService,
   claudeSettings: ClaudeSettingsService,
+  geminiSettings: GeminiSettingsService,
   nextProviderSettingsService: ProviderSettingsService
 ) {
   initCodexClient(codexSettings);
   initClaudeClient(claudeSettings);
+  initGeminiClient(geminiSettings);
   providerSettingsService = nextProviderSettingsService;
 }
 
 export async function getAssistantStatuses() {
-  const statuses = await Promise.all([providers.codex.checkStatus(), providers.claude.checkStatus()]);
+  const statuses = await Promise.all([
+    providers.codex.checkStatus(),
+    providers.claude.checkStatus(),
+    providers.gemini.checkStatus()
+  ]);
   const providerState = await providerSettingsService?.getState();
   return hydrateProviderStatuses(statuses, providerState ?? null);
 }
@@ -165,7 +206,11 @@ export async function getAssistantStatuses() {
 export async function getAssistantState() {
   const providerState = await providerSettingsService?.getState();
   const statuses = hydrateProviderStatuses(
-    await Promise.all([providers.codex.checkStatus(), providers.claude.checkStatus()]),
+    await Promise.all([
+      providers.codex.checkStatus(),
+      providers.claude.checkStatus(),
+      providers.gemini.checkStatus()
+    ]),
     providerState ?? null
   );
   const activeProviderId = resolveActiveProviderId(
@@ -234,29 +279,22 @@ export async function connectAssistantProvider(providerId: AssistantProviderId) 
   }
 
   await providerSettingsService?.connectProvider(providerId);
-  const state = await getAssistantState();
-  if (!state.activeProviderId) {
-    await providerSettingsService?.setActiveProviderPreference(providerId);
-    setActiveProviderId(providerId);
-    return getAssistantState();
-  }
-
-  return state;
+  setActiveProviderId(providerId);
+  return getAssistantState();
 }
 
 export async function disconnectAssistantProvider(providerId: AssistantProviderId) {
   await providerSettingsService?.disconnectProvider(providerId);
-  setActiveProviderId(null);
-  const statuses = await getAssistantStatuses();
-  const nextActiveProviderId = resolveActiveProviderId(null, statuses);
-  await providerSettingsService?.setActiveProviderPreference(nextActiveProviderId);
-  setActiveProviderId(nextActiveProviderId);
   return getAssistantState();
 }
 
 export function getAssistantProviderName(providerId: AssistantProviderId | null | undefined) {
   if (providerId === 'claude') {
     return 'Claude Code';
+  }
+
+  if (providerId === 'gemini') {
+    return 'Gemini CLI';
   }
 
   return 'Codex';
@@ -302,7 +340,13 @@ export async function executeApprovedWrite(
   return provider.executeApprovedWrite(approval, history, workspace, options);
 }
 
-export { collectGitDiff, revertProtectedGitChanges };
+export {
+  collectGitDiff,
+  collectGitDiffSince,
+  revertProtectedGitChanges,
+  snapshotWorkingTree,
+  revertWorkingTree
+};
 
 async function getActiveProvider() {
   const state = await getAssistantState();
@@ -310,7 +354,7 @@ async function getActiveProvider() {
     throw new AssistantClientError(
       'auth',
       'No assistant provider is connected in this app.',
-      'Connect Codex or Claude Code from the onboarding screen before using the assistant.'
+      'Connect Codex, Claude Code, or Gemini CLI from the onboarding screen before using the assistant.'
     );
   }
 
@@ -352,7 +396,9 @@ function resolveActiveProviderId(
   statuses: AssistantProviderStatus[]
 ): AssistantProviderId | null {
   const preferred =
-    preferredProviderId && statuses.find((status) => status.id === preferredProviderId) ? preferredProviderId : null;
+    preferredProviderId && statuses.find((status) => status.id === preferredProviderId)
+      ? preferredProviderId
+      : null;
 
   if (preferred) {
     const preferredStatus = statuses.find((status) => status.id === preferred)!;
@@ -361,9 +407,9 @@ function resolveActiveProviderId(
     }
   }
 
-  const connected = statuses.find((status) => status.appConnected);
-  if (connected) {
-    return connected.id;
+  const connected = statuses.filter((status) => status.appConnected);
+  if (connected.length > 0) {
+    return connected[0]!.id;
   }
 
   return null;

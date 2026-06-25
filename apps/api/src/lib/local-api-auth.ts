@@ -5,7 +5,7 @@ import { getRootDir } from '../store.js';
 
 const tokenFileName = '.local-api-auth-token';
 
-export const localApiAuthHeader = 'x-vocod-local-auth';
+export const localApiAuthHeader = 'x-oplyr-local-auth';
 
 export function getLocalApiTokenFilePath() {
   return path.join(getRootDir(), tokenFileName);

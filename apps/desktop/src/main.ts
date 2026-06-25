@@ -24,6 +24,9 @@ const trustedDevOrigin = new URL(rendererUrl).origin;
 const packagedRendererUrl = pathToFileURL(path.join(__dirname, '../../web/dist/index.html')).toString();
 const openDevTools = process.env.ELECTRON_OPEN_DEVTOOLS === 'true';
 
+app.setName('Oplyr');
+app.setPath('userData', path.join(app.getPath('appData'), 'Oplyr'));
+
 type ApiOwner = 'electron' | 'external' | 'none';
 type ApiPhase = 'idle' | 'starting' | 'running' | 'failed' | 'stopped';
 
@@ -54,6 +57,47 @@ let runtimeStatus: DesktopRuntimeStatus = {
 
 const ptyProcesses = new Map<string, pty.IPty>();
 let ptyIdCounter = 0;
+
+function getRuntimeAppRoot() {
+  return path.join(__dirname, '../../..');
+}
+
+function getRuntimeModelsDir() {
+  const configuredModelsDir = process.env.OPLYR_LOCAL_MODELS_DIR?.trim();
+  if (configuredModelsDir) {
+    return configuredModelsDir;
+  }
+
+  if (isDevelopment) {
+    return path.join(getRuntimeAppRoot(), 'local-models');
+  }
+
+  return path.join(app.getPath('userData'), 'models');
+}
+
+function getBundledModelSeedDir() {
+  const configuredSeedDir = process.env.OPLYR_MODEL_SEED_DIR?.trim();
+  if (configuredSeedDir) {
+    return configuredSeedDir;
+  }
+
+  if (isDevelopment) {
+    return path.join(getRuntimeAppRoot(), 'local-models');
+  }
+
+  return path.join(process.resourcesPath, 'local-models');
+}
+
+function getRuntimeScriptDir() {
+  const configuredScriptRoot = process.env.OPLYR_SCRIPT_ROOT?.trim();
+  if (configuredScriptRoot) {
+    return configuredScriptRoot;
+  }
+
+  return isDevelopment
+    ? path.join(getRuntimeAppRoot(), 'apps/api/scripts')
+    : path.join(process.resourcesPath, 'apps/api/scripts');
+}
 
 function isTrustedRendererUrl(url: string) {
   if (!url) {
@@ -96,7 +140,7 @@ function createWindow() {
     minWidth: 1200,
     minHeight: 760,
     backgroundColor: '#0b0d11',
-    title: 'VOCOD',
+    title: 'Oplyr',
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -221,13 +265,18 @@ async function ensureLocalApi() {
   });
 
   const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  apiProcess = spawn(npmCommand, ['run', 'dev', '--workspace', '@voice-codex/api'], {
-    cwd: path.join(__dirname, '../../..'),
-    stdio: 'ignore',
+  apiProcess = spawn(npmCommand, ['run', 'dev', '--workspace', '@oplyr/runtime'], {
+    cwd: getRuntimeAppRoot(),
+    stdio: isDevelopment ? 'inherit' : 'ignore',
     env: {
       ...process.env,
       API_HOST: '127.0.0.1',
-      LOCAL_API_AUTH_TOKEN: process.env.LOCAL_API_AUTH_TOKEN ?? ''
+      LOCAL_API_AUTH_TOKEN: process.env.LOCAL_API_AUTH_TOKEN ?? '',
+      OPLYR_APP_ROOT: getRuntimeAppRoot(),
+      OPLYR_USER_DATA_DIR: app.getPath('userData'),
+      OPLYR_LOCAL_MODELS_DIR: getRuntimeModelsDir(),
+      OPLYR_MODEL_SEED_DIR: getBundledModelSeedDir(),
+      OPLYR_SCRIPT_ROOT: getRuntimeScriptDir()
     }
   });
   apiProcessOwnedByElectron = true;

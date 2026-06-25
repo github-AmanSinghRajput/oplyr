@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-Voice Codex Local — a local-first, voice-native coding assistant wrapping Anthropic's Codex CLI. Users talk to Codex via voice or text, see interactions as visible logs, select an explicit project root, and approve file changes before execution.
+Oplyr — a desktop-first, voice-native AI coding workspace. Users talk to Codex or Claude Code via voice or text, work inside an explicit project boundary, and approve file changes before execution.
 
 ## Commands
 
@@ -13,38 +13,46 @@ Voice Codex Local — a local-first, voice-native coding assistant wrapping Anth
 npm run dev
 
 # Individual apps
-npm run dev --workspace @voice-codex/api
-npm run dev --workspace @voice-codex/web
+npm run dev --workspace @oplyr/runtime
+npm run dev --workspace @oplyr/web
 
 # Build
 npm run build
 
 # Tests (Node.js native test runner)
-npm run test --workspace @voice-codex/api
-npm run test --workspace @voice-codex/web
+npm run test --workspace @oplyr/runtime
+npm run test --workspace @oplyr/web
 
 # Database
-npm run db:migrate --workspace @voice-codex/api
-npm run db:ready --workspace @voice-codex/api
+npm run db:migrate --workspace @oplyr/runtime
+npm run db:ready --workspace @oplyr/runtime
 ```
 
 ## Environment
 
-Copy `.env.example` to `.env`. Required: `DATABASE_URL` (Postgres). API runs on port 8787, web on 5173. Config validated strictly in `apps/api/src/config/env.ts`.
+Copy `.env.example` to `.env`. The local runtime uses embedded SQLite via `RUNTIME_DATABASE_PATH`; the cloud control plane uses Postgres via `CLOUD_DATABASE_URL`. Runtime config is validated in `apps/api/src/config/env.ts`, and cloud config is validated in `apps/cloud-api/src/config/env.ts`.
 
 ## Architecture
 
-**Monorepo** with npm workspaces (`@voice-codex/api`, `@voice-codex/web`, `@voice-codex/desktop`) and local speech runtimes.
+**Monorepo** with npm workspaces (`@oplyr/runtime`, `@oplyr/cloud-api`, `@oplyr/web`, `@oplyr/desktop`) and local speech runtimes.
 
 ### Backend (`apps/api`)
 
 - **Entry**: `src/index.ts` → validates env, calls `src/app/createApp.ts` (Express app factory, all routes + middleware)
 - **Feature modules** in `src/features/` — each has service + repository layers: `auth`, `users`, `workspaces`, `chat`, `voice`, `notes`, `system`, `approvals`
 - **Codex integration**: `src/codex-client.ts` — wraps CLI commands (`codex exec`) with sandbox modes (`read-only` / `workspace-write`), manages conversation context (last 12 messages), enforces secret policy
-- **Lazy voice runtime**: local Whisper and Kokoro workers are warmed on voice session start and cooled down after 5 minutes of idle — not kept resident at all times
+- **Claude integration**: `src/claude-client.ts` — wraps Claude Code CLI execution and activity streaming
+- **STT**: `src/features/voice/transcription.service.ts` — single local provider (Parakeet v3 on the Apple Neural Engine via the native `oplyr-stt` binary / FluidAudio CoreML, no fallback, no Python). The binary lives at `apps/stt/` (SwiftPM); the runtime resolves and spawns it via `runtime-paths.ts`. It speaks framed stdin / JSON-line stdout (see `docs/superpowers/plans/2026-06-14-native-coreml-stt.md`).
+- **Lazy voice runtime**: the `oplyr-stt` worker is spawned on voice session start (per WebSocket connection) and torn down when the socket closes — not kept resident at all times
 - **Runtime state**: `src/runtime.ts` — in-memory singleton (`runtimeState`) holding workspace, pendingApproval, lastDiff, audio, voiceSession state
 - **Shared libs**: `src/lib/` — logger (structured JSON), AppError class, Express helpers (asyncHandler, validators), EventBus (SSE), rate limiter
-- **Database**: `src/db/client.ts` (pg pool), migrations in `database/postgres/` (4 files). Schema: app_users, workspaces, conversation_sessions/messages, notes/note_chunks, approval_events, app_sessions, app_preferences
+- **Database**: `src/db/client.ts` embeds SQLite for local runtime data, with migrations in `database/sqlite/`
+
+### Cloud control plane (`apps/cloud-api`)
+
+- **Entry**: `src/index.ts` → validates env, calls `src/app/createApp.ts`
+- **Responsibilities**: beta leads, invite validation, releases, download tracking, install registration, feedback
+- **Database**: Postgres via `src/db/client.ts`, with migrations in `database/postgres/`
 
 ### Frontend (`apps/web`)
 
@@ -66,5 +74,5 @@ Copy `.env.example` to `.env`. Required: `DATABASE_URL` (Postgres). API runs on 
 ## Known Issues
 
 - The product direction has pivoted to a desktop-first Electron app distributed via DMG. Browser-based development remains the fastest shell, but it is no longer the public runtime target.
-- Desktop STT now uses renderer mic capture plus local `whisper.cpp`, with AssemblyAI only as an explicit fallback.
-- The `native/` directory (Apple Speech bridge) has been removed — STT is now fully handled by whisper.cpp and AssemblyAI fallback.
+- Desktop STT uses renderer mic capture plus a single local engine: Parakeet v3 (`parakeet-tdt-0.6b-v3`) running natively on the Apple Neural Engine via the `oplyr-stt` Swift binary (FluidAudio CoreML). There is no fallback — a failure surfaces a generic "Something went wrong" to the user and logs the real error to the server console. Apple Silicon only.
+- The STT engine is native Swift/CoreML — no Python, no MLX, no venv (this removed the previous `parakeet-mlx` worker). The `native/` Apple Speech bridge, Moonshine, whisper.cpp, and the AssemblyAI fallback were all removed earlier in favor of Parakeet-only STT.

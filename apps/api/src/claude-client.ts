@@ -4,6 +4,7 @@ import type { ChatMessage, PendingApproval, WorkspaceState } from './types.js';
 import type { ClaudeSettingsService } from './features/claude/claude-settings.service.js';
 import { logger } from './lib/logger.js';
 import { getRootDir } from './store.js';
+import { getPortableAssistantCwd } from './runtime-paths.js';
 
 let claudeSettingsService: ClaudeSettingsService | null = null;
 
@@ -26,6 +27,7 @@ export class ClaudeClientError extends Error {
 }
 
 interface StreamReplyOptions {
+  voiceTurnId?: string;
   signal?: AbortSignal;
   onTextSnapshot?: (text: string) => void;
   onActivityUpdate?: (activity: string) => void;
@@ -33,6 +35,11 @@ interface StreamReplyOptions {
 
 function execClaudeCommand(args: string[], cwd: string) {
   return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+    const startedAt = Date.now();
+    logger.info('claude.command.started', {
+      command: args[0] ?? 'unknown',
+      cwd
+    });
     const child = execFile(
       getClaudeCommand(),
       args,
@@ -47,10 +54,22 @@ function execClaudeCommand(args: string[], cwd: string) {
           const nextError = error as Error & { stdout?: string; stderr?: string };
           nextError.stdout = typeof stdout === 'string' ? stdout : String(stdout ?? '');
           nextError.stderr = typeof stderr === 'string' ? stderr : String(stderr ?? '');
+          logger.error('claude.command.failed', {
+            command: args[0] ?? 'unknown',
+            cwd,
+            durationMs: Date.now() - startedAt,
+            error: nextError.message,
+            stderr: nextError.stderr?.slice(0, 300) ?? null
+          });
           reject(nextError);
           return;
         }
 
+        logger.info('claude.command.completed', {
+          command: args[0] ?? 'unknown',
+          cwd,
+          durationMs: Date.now() - startedAt
+        });
         resolve({
           stdout: typeof stdout === 'string' ? stdout : String(stdout ?? ''),
           stderr: typeof stderr === 'string' ? stderr : String(stderr ?? '')
@@ -64,6 +83,12 @@ function execClaudeCommand(args: string[], cwd: string) {
 
 function execClaudeCommandWithStdin(args: string[], cwd: string, stdinData: string) {
   return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+    const startedAt = Date.now();
+    logger.info('claude.command.started', {
+      command: args[0] ?? 'unknown',
+      cwd,
+      withStdin: true
+    });
     const child = execFile(
       getClaudeCommand(),
       args,
@@ -78,10 +103,23 @@ function execClaudeCommandWithStdin(args: string[], cwd: string, stdinData: stri
           const nextError = error as Error & { stdout?: string; stderr?: string };
           nextError.stdout = typeof stdout === 'string' ? stdout : String(stdout ?? '');
           nextError.stderr = typeof stderr === 'string' ? stderr : String(stderr ?? '');
+          logger.error('claude.command.failed', {
+            command: args[0] ?? 'unknown',
+            cwd,
+            durationMs: Date.now() - startedAt,
+            error: nextError.message,
+            stderr: nextError.stderr?.slice(0, 300) ?? null
+          });
           reject(nextError);
           return;
         }
 
+        logger.info('claude.command.completed', {
+          command: args[0] ?? 'unknown',
+          cwd,
+          durationMs: Date.now() - startedAt,
+          withStdin: true
+        });
         resolve({
           stdout: typeof stdout === 'string' ? stdout : String(stdout ?? ''),
           stderr: typeof stderr === 'string' ? stderr : String(stderr ?? '')
@@ -100,8 +138,14 @@ function getClaudeCommand() {
   return process.env.CLAUDE_COMMAND ?? 'claude';
 }
 
-async function getExecutionOverrides() {
-  return claudeSettingsService?.getExecutionOverrides() ?? Promise.resolve({ model: null });
+async function getExecutionOverrides(context?: {
+  surface?: 'voice' | 'text';
+  intent?: 'discussion' | 'write';
+}) {
+  return (
+    claudeSettingsService?.getExecutionOverrides(context) ??
+    Promise.resolve({ model: null, voiceModelMode: 'auto' })
+  );
 }
 
 function normalizeStatusText(output: string) {
@@ -178,11 +222,7 @@ function classifyClaudeError(error: unknown) {
   const lower = message.toLowerCase();
 
   if (/you'?ve hit your limit|usage limit|resets\s+\d/i.test(lower)) {
-    return new ClaudeClientError(
-      'rate_limit',
-      message,
-      message
-    );
+    return new ClaudeClientError('rate_limit', message, message);
   }
 
   if (/not logged in|login|auth|unauthorized|forbidden|session expired/i.test(lower)) {
@@ -239,7 +279,10 @@ function extractClaudeErrorMessage(error: unknown) {
 
     const limitLineIndex = lines.findIndex((line) => /you'?ve hit your limit/i.test(line));
     if (limitLineIndex >= 0) {
-      return lines.slice(limitLineIndex, limitLineIndex + 2).join(' ').trim();
+      return lines
+        .slice(limitLineIndex, limitLineIndex + 2)
+        .join(' ')
+        .trim();
     }
 
     const usefulLine = lines.find(
@@ -262,14 +305,22 @@ function buildConversation(history: ChatMessage[]) {
 
 function workspaceLine(workspace: WorkspaceState) {
   if (!workspace.projectRoot) {
-    return 'No project root selected. General assistant mode only.';
+    return 'No project root selected. General assistant mode only. Do not inspect local files or assume repository context.';
   }
 
   return `Selected workspace: ${workspace.projectRoot}`;
 }
 
+function resolveAssistantCwd(workspace: WorkspaceState) {
+  return workspace.projectRoot ?? getPortableAssistantCwd();
+}
+
+function getAssistantProjectLabel(workspace: WorkspaceState, cwd: string) {
+  return workspace.projectRoot ? path.basename(cwd) : 'general-assistant';
+}
+
 const systemPrompt = [
-  'You are VOCOD Voice Buddy, a sharp coding assistant.',
+  'You are Oplyr Voice Buddy, a sharp coding assistant.',
   'Respond as if you are speaking to one engineer live.',
   'Be concise, practical, and technically strong.',
   'Prefer short explanations, direct recommendations, and code-minded reasoning.',
@@ -289,7 +340,12 @@ function buildReadOnlyPrompt(userText: string, history: ChatMessage[], workspace
     workspaceLine(workspace),
     `Write access enabled: ${workspace.writeAccessEnabled ? 'yes' : 'no'}.`,
     `Never read or edit files that look like secrets. Blocked patterns: ${workspace.secretPolicy.join(', ')}.`,
-    'Operate in advisory/read-only mode only.',
+    !workspace.projectRoot
+      ? 'No workspace is mounted. Answer from general knowledge and the conversation only. Do not scan files, inspect folders, or infer anything from the current directory.'
+      : null,
+    workspace.writeAccessEnabled
+      ? 'This workspace is approval-gated: file changes are ENABLED, and every edit is applied only after the user approves it. Respond to this message conversationally without editing files right now; when the user asks for a change, it will be routed through the approval flow and applied once they approve. Do NOT tell the user you are read-only or that you cannot edit files — you can, through the approval flow.'
+      : 'File changes are turned OFF for this workspace. Operate in advisory mode: inspect, explain, and propose, but do not edit files.',
     '',
     conversation ? `Conversation so far:\n${conversation}\n` : '',
     `Latest user message:\n${userText}`,
@@ -300,7 +356,11 @@ function buildReadOnlyPrompt(userText: string, history: ChatMessage[], workspace
     .join('\n');
 }
 
-function buildWriteDecisionPrompt(userText: string, history: ChatMessage[], workspace: WorkspaceState) {
+function buildWriteDecisionPrompt(
+  userText: string,
+  history: ChatMessage[],
+  workspace: WorkspaceState
+) {
   const conversation = buildConversation(history);
 
   return [
@@ -323,7 +383,11 @@ function buildWriteDecisionPrompt(userText: string, history: ChatMessage[], work
     .join('\n');
 }
 
-function buildWriteExecutionPrompt(approval: PendingApproval, history: ChatMessage[], workspace: WorkspaceState) {
+function buildWriteExecutionPrompt(
+  approval: PendingApproval,
+  history: ChatMessage[],
+  workspace: WorkspaceState
+) {
   const conversation = buildConversation(history);
 
   return [
@@ -383,11 +447,14 @@ export async function getClaudeStatus() {
       installed: true,
       loggedIn,
       accountLabel: loggedIn ? extractAccountLabel(normalized, parsed) : null,
-      authMode: loggedIn ? (authMode || 'configured') : null,
-      statusText: loggedIn ? (normalized || 'Claude Code connected.') : 'Claude Code is installed but not logged in.'
+      authMode: loggedIn ? authMode || 'configured' : null,
+      statusText: loggedIn
+        ? normalized || 'Claude Code connected.'
+        : 'Claude Code is installed but not logged in.'
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unable to determine Claude Code login status.';
+    const message =
+      error instanceof Error ? error.message : 'Unable to determine Claude Code login status.';
     if (/ENOENT/.test(message)) {
       return {
         installed: false,
@@ -416,21 +483,26 @@ export async function logoutClaude() {
 export async function generateClaudeReply(
   userText: string,
   history: ChatMessage[],
-  workspace: WorkspaceState
+  workspace: WorkspaceState,
+  options?: { voiceTurnId?: string }
 ) {
   await assertClaudeReady();
-  const cwd = workspace.projectRoot ?? getRootDir();
+  const cwd = resolveAssistantCwd(workspace);
   const startedAt = Date.now();
   const text = await runClaudePrompt({
     cwd,
     prompt: buildReadOnlyPrompt(userText, history, workspace),
-    allowedTools: 'Read'
+    allowedTools: 'Read',
+    executionContext: {
+      surface: options?.voiceTurnId ? 'voice' : 'text',
+      intent: 'discussion'
+    }
   });
 
   logger.info('claude.prompt.completed', {
     operation: 'generate_reply',
     durationMs: Date.now() - startedAt,
-    projectName: path.basename(cwd),
+    projectName: getAssistantProjectLabel(workspace, cwd),
     promptLength: userText.length,
     responseLength: text.length
   });
@@ -445,7 +517,7 @@ export async function streamClaudeReply(
   options?: StreamReplyOptions
 ) {
   await assertClaudeReady();
-  const cwd = workspace.projectRoot ?? getRootDir();
+  const cwd = resolveAssistantCwd(workspace);
   const startedAt = Date.now();
   const prompt = buildReadOnlyPrompt(userText, history, workspace);
 
@@ -456,13 +528,17 @@ export async function streamClaudeReply(
       allowedTools: 'Read',
       signal: options?.signal,
       onTextSnapshot: options?.onTextSnapshot,
-      onActivityUpdate: options?.onActivityUpdate
+      onActivityUpdate: options?.onActivityUpdate,
+      executionContext: {
+        surface: options?.voiceTurnId ? 'voice' : 'text',
+        intent: 'discussion'
+      }
     });
 
     logger.info('claude.prompt.completed', {
       operation: 'stream_reply',
       durationMs: Date.now() - startedAt,
-      projectName: path.basename(cwd),
+      projectName: getAssistantProjectLabel(workspace, cwd),
       promptLength: userText.length,
       responseLength: text.length
     });
@@ -472,7 +548,7 @@ export async function streamClaudeReply(
     logger.error('claude.stream.failed', {
       operation: 'stream_reply',
       durationMs: Date.now() - startedAt,
-      projectName: path.basename(cwd),
+      projectName: getAssistantProjectLabel(workspace, cwd),
       error: error instanceof Error ? error.message : String(error)
     });
     throw error;
@@ -486,6 +562,7 @@ async function runClaudePromptStream(options: {
   signal?: AbortSignal;
   onTextSnapshot?: (text: string) => void;
   onActivityUpdate?: (activity: string) => void;
+  executionContext?: { surface: 'voice' | 'text'; intent: 'discussion' | 'write' };
 }) {
   return new Promise<string>((resolve, reject) => {
     const baseArgs = [
@@ -550,15 +627,20 @@ async function runClaudePromptStream(options: {
           options.onActivityUpdate?.('Thinking through the request');
         }
 
-        const msg = message.message as { content?: Array<{ type?: string; text?: string; name?: string; input?: Record<string, unknown> }> } | undefined;
+        const msg = message.message as
+          | {
+              content?: Array<{
+                type?: string;
+                text?: string;
+                name?: string;
+                input?: Record<string, unknown>;
+              }>;
+            }
+          | undefined;
         if (msg?.content) {
           for (const block of msg.content) {
             if (block.type === 'tool_use' && typeof block.name === 'string') {
-              const activity = describeClaudeActivity(
-                block.name,
-                block.input ?? {},
-                options.cwd
-              );
+              const activity = describeClaudeActivity(block.name, block.input ?? {}, options.cwd);
               options.onActivityUpdate?.(activity);
             }
           }
@@ -577,7 +659,8 @@ async function runClaudePromptStream(options: {
 
       if (message.type === 'result') {
         if (message.is_error === true) {
-          const errorText = typeof message.result === 'string' ? message.result : 'Claude returned an error.';
+          const errorText =
+            typeof message.result === 'string' ? message.result : 'Claude returned an error.';
           rejectOnce(classifyClaudeError(new Error(errorText)));
           child?.kill('SIGTERM');
           return;
@@ -651,8 +734,18 @@ async function runClaudePromptStream(options: {
 
       if (options.signal) {
         abortListener = () => {
-          try { child?.kill('SIGTERM'); } catch {}
-          setTimeout(() => { try { child?.kill('SIGKILL'); } catch {} }, 3000).unref();
+          try {
+            child?.kill('SIGTERM');
+          } catch {
+            // Ignore cleanup failures while aborting the stream.
+          }
+          setTimeout(() => {
+            try {
+              child?.kill('SIGKILL');
+            } catch {
+              // Ignore cleanup failures while aborting the stream.
+            }
+          }, 3000).unref();
           rejectOnce(new Error('Claude stream aborted.'));
         };
         if (options.signal.aborted) {
@@ -666,7 +759,7 @@ async function runClaudePromptStream(options: {
       nextChild.stdin?.end();
     };
 
-    void getExecutionOverrides()
+    void getExecutionOverrides(options.executionContext)
       .then((executionSettings) => {
         const args = [...baseArgs];
         if (executionSettings?.model) {
@@ -688,7 +781,8 @@ async function runClaudePromptStream(options: {
 export async function decideClaudeWriteIntent(
   userText: string,
   history: ChatMessage[],
-  workspace: WorkspaceState
+  workspace: WorkspaceState,
+  options?: { voiceTurnId?: string }
 ) {
   await assertClaudeReady();
   const cwd = workspace.projectRoot ?? getRootDir();
@@ -710,7 +804,11 @@ export async function decideClaudeWriteIntent(
     cwd,
     prompt: buildWriteDecisionPrompt(userText, history, workspace),
     allowedTools: 'Read',
-    outputSchema: schema
+    outputSchema: schema,
+    executionContext: {
+      surface: options?.voiceTurnId ? 'voice' : 'text',
+      intent: 'write'
+    }
   });
 
   logger.info('claude.prompt.completed', {
@@ -723,26 +821,35 @@ export async function decideClaudeWriteIntent(
 
   const parsed = JSON.parse(raw) as Record<string, unknown>;
   return {
-    intent: parsed.intent === 'propose_write' ? 'propose_write' as const : 'reply' as const,
+    intent: parsed.intent === 'propose_write' ? ('propose_write' as const) : ('reply' as const),
     assistant_text: typeof parsed.assistant_text === 'string' ? parsed.assistant_text : '',
     proposal_title: typeof parsed.proposal_title === 'string' ? parsed.proposal_title : '',
     proposal_summary: typeof parsed.proposal_summary === 'string' ? parsed.proposal_summary : '',
-    tasks: Array.isArray(parsed.tasks) ? parsed.tasks.filter((t): t is string => typeof t === 'string') : [],
-    agents: Array.isArray(parsed.agents) ? parsed.agents.filter((a): a is string => typeof a === 'string') : []
+    tasks: Array.isArray(parsed.tasks)
+      ? parsed.tasks.filter((t): t is string => typeof t === 'string')
+      : [],
+    agents: Array.isArray(parsed.agents)
+      ? parsed.agents.filter((a): a is string => typeof a === 'string')
+      : []
   };
 }
 
 export async function executeClaudeApprovedWrite(
   approval: PendingApproval,
   history: ChatMessage[],
-  workspace: WorkspaceState
+  workspace: WorkspaceState,
+  options?: { voiceTurnId?: string }
 ) {
   await assertClaudeReady();
   const startedAt = Date.now();
   const text = await runClaudePrompt({
     cwd: approval.projectRoot,
     prompt: buildWriteExecutionPrompt(approval, history, workspace),
-    allowedTools: 'Read,Edit,Bash'
+    allowedTools: 'Read,Edit,Bash',
+    executionContext: {
+      surface: options?.voiceTurnId ? 'voice' : 'text',
+      intent: 'write'
+    }
   });
 
   logger.info('claude.prompt.completed', {
@@ -761,22 +868,16 @@ async function runClaudePrompt(options: {
   prompt: string;
   allowedTools: string;
   outputSchema?: unknown;
+  executionContext?: { surface: 'voice' | 'text'; intent: 'discussion' | 'write' };
 }) {
-  const args = [
-    '--print',
-    '-',
-    '--allowedTools',
-    options.allowedTools,
-    '--output-format',
-    'json'
-  ];
+  const args = ['--print', '-', '--allowedTools', options.allowedTools, '--output-format', 'json'];
 
   if (options.outputSchema) {
     args.push('--json-schema', JSON.stringify(options.outputSchema));
   }
 
   try {
-    const executionSettings = await getExecutionOverrides();
+    const executionSettings = await getExecutionOverrides(options.executionContext);
     if (executionSettings?.model) {
       args.push('--model', executionSettings.model);
     }

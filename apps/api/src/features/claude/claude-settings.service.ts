@@ -1,4 +1,4 @@
-import type { ClaudeModelOption, ClaudeSettings } from '../../types.js';
+import type { AssistantVoiceModelMode, ClaudeModelOption, ClaudeSettings } from '../../types.js';
 import { ClaudeSettingsRepository } from './claude-settings.repository.js';
 
 export interface ClaudeSettingsPayload {
@@ -43,14 +43,16 @@ const knownClaudeModels: ClaudeModelOption[] = [
 ] as const;
 
 export class ClaudeSettingsService {
-  constructor(private readonly repository: ClaudeSettingsRepository = new ClaudeSettingsRepository()) {}
+  constructor(
+    private readonly repository: ClaudeSettingsRepository = new ClaudeSettingsRepository()
+  ) {}
 
   async getSettings(): Promise<ClaudeSettingsPayload> {
     const appSettings = await this.repository.get();
     const settings = sanitizeClaudeSettings(appSettings);
     return {
       settings,
-      source: appSettings?.model ? 'app' : 'default',
+      source: appSettings?.model || appSettings?.voiceModelMode ? 'app' : 'default',
       options: {
         models: [...knownClaudeModels]
       }
@@ -72,15 +74,50 @@ export class ClaudeSettingsService {
     };
   }
 
-  async getExecutionOverrides(): Promise<ClaudeSettings> {
+  async getExecutionOverrides(context?: {
+    surface?: 'voice' | 'text';
+    intent?: 'discussion' | 'write';
+  }): Promise<ClaudeSettings> {
     const payload = await this.getSettings();
-    return payload.settings;
+    return resolveExecutionOverrides(payload, context);
   }
 }
 
 function sanitizeClaudeSettings(input: Partial<ClaudeSettings> | null | undefined): ClaudeSettings {
   const model = typeof input?.model === 'string' ? input.model.trim() : '';
   return {
-    model: model || null
+    model: model || null,
+    voiceModelMode: sanitizeVoiceModelMode(input?.voiceModelMode) ?? 'auto'
   };
+}
+
+function resolveExecutionOverrides(
+  payload: ClaudeSettingsPayload,
+  context?: { surface?: 'voice' | 'text'; intent?: 'discussion' | 'write' }
+): ClaudeSettings {
+  const settings = payload.settings;
+  if (context?.surface !== 'voice') {
+    return settings;
+  }
+
+  if (settings.voiceModelMode === 'inherit') {
+    return settings;
+  }
+
+  if (context.intent === 'write' && settings.voiceModelMode === 'auto') {
+    return settings;
+  }
+
+  return {
+    ...settings,
+    model: payload.options.models.find((option) => option.slug === 'haiku')?.slug ?? settings.model
+  };
+}
+
+function sanitizeVoiceModelMode(value: unknown): AssistantVoiceModelMode | null {
+  if (value === 'auto' || value === 'fast' || value === 'inherit') {
+    return value;
+  }
+
+  return null;
 }

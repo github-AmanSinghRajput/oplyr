@@ -23,7 +23,6 @@ function createWorkspaceRuntime(initialWorkspace?: Partial<WorkspaceState>) {
       inputDeviceLabel: null,
       outputDeviceLabel: null,
       transcriptionEngine: 'test',
-      speechEngine: 'test',
       lastCheckedAt: null,
       error: null
     },
@@ -44,7 +43,7 @@ function createWorkspaceRuntime(initialWorkspace?: Partial<WorkspaceState>) {
       runtime.workspace = {
         ...runtime.workspace,
         projectRoot,
-        projectName: 'voice-codex-local',
+        projectName: 'oplyr',
         isGitRepo: true
       };
       return runtime.workspace;
@@ -69,13 +68,11 @@ function createWorkspaceRuntime(initialWorkspace?: Partial<WorkspaceState>) {
 }
 
 class WorkspaceRepositoryStub {
-  latestWorkspace:
-    | {
-        id: string;
-        root_path: string;
-        write_access_enabled: boolean;
-      }
-    | null = null;
+  latestWorkspace: {
+    id: string;
+    root_path: string;
+    write_access_enabled: boolean;
+  } | null = null;
 
   upsertCalls: Array<{
     name: string;
@@ -128,7 +125,7 @@ test('WorkspaceService persists selected project roots', async () => {
   assert.equal(workspace.projectRoot, '/tmp/workspace-a');
   assert.equal(repository.upsertCalls.length, 1);
   assert.deepEqual(repository.upsertCalls[0], {
-    name: 'voice-codex-local',
+    name: 'oplyr',
     rootPath: '/tmp/workspace-a',
     writeAccessEnabled: false
   });
@@ -140,7 +137,7 @@ test('WorkspaceService persists write access changes for the active workspace', 
   const runtime = createWorkspaceRuntime({
     id: 'workspace-1',
     projectRoot: '/tmp/workspace-a',
-    projectName: 'voice-codex-local',
+    projectName: 'oplyr',
     isGitRepo: true,
     writeAccessEnabled: false
   });
@@ -151,7 +148,7 @@ test('WorkspaceService persists write access changes for the active workspace', 
   assert.equal(workspace.writeAccessEnabled, true);
   assert.equal(repository.upsertCalls.length, 1);
   assert.deepEqual(repository.upsertCalls[0], {
-    name: 'voice-codex-local',
+    name: 'oplyr',
     rootPath: '/tmp/workspace-a',
     writeAccessEnabled: true
   });

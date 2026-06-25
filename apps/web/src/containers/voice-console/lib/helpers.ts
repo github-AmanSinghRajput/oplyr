@@ -101,7 +101,7 @@ export function getVoiceSubline(
     return audio.error;
   }
 
-  return `${audio.transcriptionEngine} in, ${audio.speechEngine} out`;
+  return `${audio.transcriptionEngine}`;
 }
 
 export function buildNavigationHints(
@@ -155,6 +155,15 @@ export function buildNavigationHints(
             ? `${status.lastDiff.changedFiles.length} file changes`
             : 'No pending changes',
         badge: status?.pendingApproval ? 'pending' : null,
+        active: item.id === screenId
+      };
+    }
+
+    if (item.id === 'settings') {
+      return {
+        ...item,
+        hint: 'Voice, models, providers',
+        badge: null,
         active: item.id === screenId
       };
     }
@@ -234,7 +243,9 @@ export function groupMessages(messages: MessageEntry[]): MessageGroup[] {
       previousGroup.source === message.source;
     const withinWindow =
       previousMessage &&
-      Math.abs(new Date(message.createdAt).getTime() - new Date(previousMessage.createdAt).getTime()) <
+      Math.abs(
+        new Date(message.createdAt).getTime() - new Date(previousMessage.createdAt).getTime()
+      ) <
         4 * 60 * 1000;
 
     if (sameActor && withinWindow) {

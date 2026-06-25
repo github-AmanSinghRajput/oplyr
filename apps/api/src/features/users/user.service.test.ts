@@ -30,10 +30,10 @@ test('UserService creates a local operator identity from system user context', a
 
     const operator = await service.initializeLocalOperator();
 
-    assert.equal(operator?.email, 'local+aman-singh@voice-codex.local');
+    assert.equal(operator?.email, 'local+aman-singh@oplyr.local');
     assert.equal(operator?.displayName, 'Aman');
     assert.deepEqual(repository.input, {
-      email: 'local+aman-singh@voice-codex.local',
+      email: 'local+aman-singh@oplyr.local',
       displayName: 'Aman'
     });
   } finally {

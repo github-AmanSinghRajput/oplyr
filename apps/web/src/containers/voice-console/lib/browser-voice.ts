@@ -40,12 +40,13 @@ interface BrowserAudioSnapshot {
 }
 
 function getSpeechRecognitionConstructor() {
-  const candidate = (
-    window as Window & {
-      webkitSpeechRecognition?: BrowserSpeechRecognitionConstructor;
-      SpeechRecognition?: BrowserSpeechRecognitionConstructor;
-    }
-  ).webkitSpeechRecognition ??
+  const candidate =
+    (
+      window as Window & {
+        webkitSpeechRecognition?: BrowserSpeechRecognitionConstructor;
+        SpeechRecognition?: BrowserSpeechRecognitionConstructor;
+      }
+    ).webkitSpeechRecognition ??
     (
       window as Window & {
         webkitSpeechRecognition?: BrowserSpeechRecognitionConstructor;
@@ -69,7 +70,9 @@ export function createBrowserSpeechRecognition() {
   return new Recognition();
 }
 
-export async function readBrowserAudioSnapshot(requestPermission = false): Promise<BrowserAudioSnapshot> {
+export async function readBrowserAudioSnapshot(
+  requestPermission = false
+): Promise<BrowserAudioSnapshot> {
   if (typeof navigator === 'undefined' || !navigator.mediaDevices) {
     return {
       available: false,
@@ -105,8 +108,7 @@ export async function readBrowserAudioSnapshot(requestPermission = false): Promi
       };
     }
 
-    const defaultInput =
-      inputs.find((device) => device.deviceId === 'default') ?? inputs[0];
+    const defaultInput = inputs.find((device) => device.deviceId === 'default') ?? inputs[0];
 
     return {
       available: true,

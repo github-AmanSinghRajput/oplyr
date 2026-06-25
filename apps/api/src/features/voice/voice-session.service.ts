@@ -6,13 +6,11 @@ import {
 } from '../../runtime.js';
 import type { EventBus } from '../../lib/event-bus.js';
 import { logger } from '../../lib/logger.js';
-import type { TtsService } from '../tts/tts.service.js';
 import type { VoiceTranscriptionService } from './transcription.service.js';
 import type { VoiceSettingsService } from './voice-settings.service.js';
 
 interface VoiceSessionDependencies {
   eventBus: EventBus;
-  ttsService: TtsService;
   voiceTranscriptionService: VoiceTranscriptionService;
   voiceSettingsService: VoiceSettingsService;
 }
@@ -21,14 +19,16 @@ export class VoiceSessionService {
   constructor(private readonly dependencies: VoiceSessionDependencies) {}
 
   async refreshAudioState() {
-    const runtime = getRuntimeState();
-    const transcriptionConfig = await this.dependencies.voiceSettingsService.getResolvedTranscriptionConfig();
+    const transcriptionConfig =
+      await this.dependencies.voiceSettingsService.getResolvedTranscriptionConfig();
     setAudioState({
       available: process.platform === 'darwin',
       platform: process.platform,
-      transcriptionEngine: describeSttEngine(transcriptionConfig.provider, transcriptionConfig.modelProfile),
-      speechEngine: runtime.audio.speechEngine,
-      error: process.platform === 'darwin' ? null : 'Desktop voice capture currently supports macOS only.'
+      transcriptionEngine: describeSttEngine(transcriptionConfig.provider),
+      error:
+        process.platform === 'darwin'
+          ? null
+          : 'Desktop voice capture currently supports macOS only.'
     });
     logger.info('voice.audio_state.refreshed', {
       available: getRuntimeState().audio.available,
@@ -74,10 +74,7 @@ export class VoiceSessionService {
     this.emitVoiceState();
 
     try {
-      await Promise.all([
-        this.dependencies.voiceTranscriptionService.warmup(),
-        this.dependencies.ttsService.warmup()
-      ]);
+      await this.dependencies.voiceTranscriptionService.warmup();
       return getRuntimeState().voiceSession;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to warm voice services.';
@@ -97,7 +94,6 @@ export class VoiceSessionService {
   stop() {
     logger.info('voice.session.stop.requested');
     this.dependencies.voiceTranscriptionService.beginIdleCooldown();
-    this.dependencies.ttsService.beginIdleCooldown();
     resetVoiceSessionState('idle');
     setVoiceSessionState({
       transport: process.platform === 'darwin' ? 'desktop-media' : 'unsupported'
@@ -107,10 +103,7 @@ export class VoiceSessionService {
   }
 
   async enableBackgroundWarmup() {
-    await Promise.all([
-      this.dependencies.voiceTranscriptionService.enablePersistentWarmup(),
-      this.dependencies.ttsService.enablePersistentWarmup()
-    ]);
+    await this.dependencies.voiceTranscriptionService.enablePersistentWarmup();
 
     logger.info('voice.session.background_warmup.enabled');
     return {
@@ -120,7 +113,6 @@ export class VoiceSessionService {
 
   disableBackgroundWarmup() {
     this.dependencies.voiceTranscriptionService.disablePersistentWarmup();
-    this.dependencies.ttsService.disablePersistentWarmup();
     logger.info('voice.session.background_warmup.disabled');
     return {
       ok: true
@@ -164,25 +156,14 @@ export class VoiceSessionService {
   }
 }
 
-function describeSttEngine(
-  provider: 'whisper-local' | 'moonshine-local',
-  modelProfile: 'default' | 'multilingual-small' | 'moonshine-base' | 'moonshine-tiny'
-) {
+function describeSttEngine(provider: 'parakeet-local') {
   if (process.platform !== 'darwin') {
     return 'Unavailable';
   }
 
-  if (provider === 'moonshine-local') {
-    return modelProfile === 'moonshine-tiny'
-      ? 'Desktop media capture + Moonshine tiny'
-      : 'Desktop media capture + Moonshine base';
+  if (provider === 'parakeet-local') {
+    return 'On-device speech';
   }
 
-  if (provider === 'whisper-local') {
-    return modelProfile === 'multilingual-small'
-      ? 'Desktop media capture + Whisper multilingual'
-      : 'Desktop media capture + whisper.cpp';
-  }
-
-  return 'Desktop media capture + STT provider';
+  return 'On-device speech';
 }

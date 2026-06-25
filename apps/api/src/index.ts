@@ -1,13 +1,15 @@
-import { closeDatabasePool } from './db/client.js';
+import { closeDatabasePool, initializeDatabase } from './db/client.js';
 import { env, validateEnv } from './config/env.js';
 import { createApp } from './app/createApp.js';
 import { logger } from './lib/logger.js';
 import { resolveLocalApiAuthToken } from './lib/local-api-auth.js';
+import { attachVoiceStreamGateway } from './features/voice/voice-stream.gateway.js';
 
 void bootstrap();
 
 async function bootstrap() {
   validateEnv();
+  await initializeDatabase();
   const apiAuthToken = await resolveLocalApiAuthToken(env.localApiAuthToken);
   const {
     app,
@@ -15,8 +17,7 @@ async function bootstrap() {
     userService,
     voiceSessionService,
     voiceTranscriptionService,
-    workspaceService,
-    ttsService
+    workspaceService
   } = createApp({ apiAuthToken });
 
   const server = app.listen(env.port, env.host, async () => {
@@ -24,7 +25,6 @@ async function bootstrap() {
     authService.setOperator(operator);
     await workspaceService.initialize();
     await voiceTranscriptionService.initialize();
-    await ttsService.initialize();
     await voiceSessionService.refreshAudioState();
     logger.info('server.started', {
       port: env.port,
@@ -33,11 +33,15 @@ async function bootstrap() {
       url: `http://${env.host}:${env.port}`
     });
   });
+  const voiceStreamServer = attachVoiceStreamGateway(server);
 
   async function shutdown() {
+    for (const client of voiceStreamServer.clients) {
+      client.terminate();
+    }
+    voiceStreamServer.close();
     server.close(async () => {
       await voiceTranscriptionService.shutdown();
-      await ttsService.shutdown();
       await closeDatabasePool();
       logger.info('server.stopped');
       process.exit(0);

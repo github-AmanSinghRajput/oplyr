@@ -1,8 +1,4 @@
-export function buildFileExplanation(
-  filePath: string,
-  tasks: string[],
-  diff: string
-): string {
+export function buildFileExplanation(filePath: string, tasks: string[], diff: string): string {
   const taskMatch = matchTask(filePath, tasks);
   if (taskMatch) {
     return taskMatch;
@@ -100,7 +96,10 @@ function extractAddedImports(diff: string): string[] {
       const named = importMatch[1];
       const defaultName = importMatch[2];
       if (named) {
-        const first = named.split(',')[0].trim().replace(/\s+as\s+\w+/, '');
+        const first = named
+          .split(',')[0]
+          .trim()
+          .replace(/\s+as\s+\w+/, '');
         if (first) names.push(first);
       } else if (defaultName) {
         names.push(defaultName);

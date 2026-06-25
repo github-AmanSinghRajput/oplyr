@@ -1,0 +1,37 @@
+name: Frontend CI
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check Prettier formatting
+        run: npm run format:check:frontend
+
+      - name: Lint frontend
+        run: npm run lint:frontend
+
+      - name: Type-check frontend
+        run: npm run typecheck:frontend
+
+      - name: Build frontend
+        run: npm run build --workspace @oplyr/web

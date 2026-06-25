@@ -1,6 +1,7 @@
 import { BaseApiService } from './BaseApiService';
 import type {
   AppSettings,
+  ChatAttachment,
   AssistantProvidersState,
   ApprovalHistoryResponse,
   ApprovalRequiredResponse,
@@ -9,20 +10,24 @@ import type {
   ChatStreamEvent,
   ClaudeSettingsResponse,
   CodexSettingsResponse,
+  GeminiSettingsResponse,
   ClearResponse,
+  CodebaseMapResponse,
+  CodebaseFileSummaryResponse,
+  CodebaseFileSymbolsResponse,
   CreateNoteInput,
   CreateNoteResponse,
   LogsResponse,
   NotesResponse,
+  ProviderUsageResponse,
   ReplyResponse,
   SetWorkspaceResponse,
   StatusResponse,
   SystemResponse,
-  TtsSynthesisResponse,
+  VoiceBootstrapResponse,
   VoiceCommandAction,
   VoiceCommandApplyResponse,
   VoiceCommandResolveResponse,
-  VoiceTranscriptionResponse,
   VoiceSettingsResponse,
   VoiceSessionResponse
 } from '../../containers/voice-console/lib/types';
@@ -88,7 +93,7 @@ export class OperatorConsoleApiService extends BaseApiService {
     });
   }
 
-  setActiveProvider(providerId: 'codex' | 'claude') {
+  setActiveProvider(providerId: 'codex' | 'claude' | 'gemini') {
     return this.request<AssistantProvidersState>('/api/assistant/active-provider', {
       method: 'POST',
       headers: {
@@ -98,14 +103,32 @@ export class OperatorConsoleApiService extends BaseApiService {
     });
   }
 
-  connectProvider(providerId: 'codex' | 'claude') {
+  connectProvider(providerId: 'codex' | 'claude' | 'gemini') {
     return this.request<ClearResponse>(`/api/assistant/providers/${providerId}/connect`, {
       method: 'POST'
     });
   }
 
-  disconnectProvider(providerId: 'codex' | 'claude') {
+  disconnectProvider(providerId: 'codex' | 'claude' | 'gemini') {
     return this.request<ClearResponse>(`/api/assistant/providers/${providerId}/disconnect`, {
+      method: 'POST'
+    });
+  }
+
+  getAssistantUsage() {
+    return this.request<ProviderUsageResponse>('/api/assistant/usage', {
+      cache: 'no-store'
+    });
+  }
+
+  getVoiceBootstrapStatus() {
+    return this.request<VoiceBootstrapResponse>('/api/voice/bootstrap', {
+      cache: 'no-store'
+    });
+  }
+
+  startVoiceBootstrap() {
+    return this.request<VoiceBootstrapResponse>('/api/voice/bootstrap/install', {
       method: 'POST'
     });
   }
@@ -138,14 +161,33 @@ export class OperatorConsoleApiService extends BaseApiService {
     });
   }
 
-  sendMessage(message: string, source: 'voice' | 'text', voiceTurnId?: string) {
+  getGeminiSettings() {
+    return this.request<GeminiSettingsResponse>('/api/gemini/settings');
+  }
+
+  updateGeminiSettings(input: Partial<GeminiSettingsResponse['settings']>) {
+    return this.request<GeminiSettingsResponse>('/api/gemini/settings', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(input)
+    });
+  }
+
+  sendMessage(
+    message: string,
+    source: 'voice' | 'text',
+    voiceTurnId?: string,
+    attachments: string[] = []
+  ) {
     return this.request<ReplyResponse | ApprovalRequiredResponse>('/api/chat/text', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...(voiceTurnId ? { 'X-Voice-Turn-Id': voiceTurnId } : {})
       },
-      body: JSON.stringify({ message, source })
+      body: JSON.stringify({ message, source, attachments })
     });
   }
 
@@ -153,7 +195,7 @@ export class OperatorConsoleApiService extends BaseApiService {
     message: string,
     source: 'voice' | 'text',
     onEvent: (event: ChatStreamEvent) => void,
-    options?: { voiceTurnId?: string; signal?: AbortSignal }
+    options?: { voiceTurnId?: string; signal?: AbortSignal; attachments?: string[] }
   ) {
     const response = await fetch(`${this.baseUrl}/api/chat/text/stream`, {
       method: 'POST',
@@ -162,7 +204,7 @@ export class OperatorConsoleApiService extends BaseApiService {
         'Content-Type': 'application/json',
         ...(options?.voiceTurnId ? { 'X-Voice-Turn-Id': options.voiceTurnId } : {})
       },
-      body: JSON.stringify({ message, source }),
+      body: JSON.stringify({ message, source, attachments: options?.attachments ?? [] }),
       signal: options?.signal
     });
 
@@ -222,16 +264,28 @@ export class OperatorConsoleApiService extends BaseApiService {
     }
   }
 
-  transcribeVoiceAudio(audioBlob: Blob, mimeType: string, voiceTurnId?: string) {
-    return this.request<VoiceTranscriptionResponse>('/api/voice/transcribe', {
+  async uploadChatAttachment(file: File) {
+    const response = await fetch(`${this.baseUrl}/api/chat/attachments`, {
       method: 'POST',
       headers: {
-        'Content-Type': mimeType,
-        'X-Audio-Mime-Type': mimeType,
-        ...(voiceTurnId ? { 'X-Voice-Turn-Id': voiceTurnId } : {})
+        ...Object.fromEntries(this.createHeaders().entries()),
+        'X-File-Name': encodeURIComponent(file.name),
+        'X-File-Type': file.type || 'application/octet-stream'
       },
-      body: audioBlob
+      body: file
     });
+
+    const body = (await response.json()) as {
+      attachment?: ChatAttachment;
+      error?: string;
+      details?: unknown;
+    };
+
+    if (!response.ok || !body.attachment) {
+      throw new Error(body.error ?? 'Unable to upload attachment.');
+    }
+
+    return body.attachment;
   }
 
   startVoiceSession() {
@@ -298,26 +352,48 @@ export class OperatorConsoleApiService extends BaseApiService {
     });
   }
 
-  synthesizeSpeech(text: string, voiceTurnId?: string) {
-    return this.request<TtsSynthesisResponse>('/api/tts/synthesize', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(voiceTurnId ? { 'X-Voice-Turn-Id': voiceTurnId } : {})
-      },
-      body: JSON.stringify({ text })
-    });
-  }
-
   approveChange(approvalId: string) {
     return this.request<ApprovalResponse>(`/api/approvals/${approvalId}/approve`, {
       method: 'POST'
     });
   }
 
-  rejectChange(approvalId: string) {
+  rejectChange(approvalId: string, feedback?: string) {
     return this.request<ApprovalResponse>(`/api/approvals/${approvalId}/reject`, {
+      method: 'POST',
+      ...(feedback && feedback.trim()
+        ? { body: JSON.stringify({ feedback: feedback.trim() }) }
+        : {})
+    });
+  }
+
+  getCodebaseMap() {
+    return this.request<CodebaseMapResponse>('/api/workspace/codebase-map');
+  }
+
+  rescanCodebaseMap() {
+    return this.request<CodebaseMapResponse>('/api/workspace/codebase-map/rescan', {
       method: 'POST'
+    });
+  }
+
+  summarizeCodebaseFile(path: string, symbol?: string) {
+    return this.request<CodebaseFileSummaryResponse>('/api/workspace/codebase-map/summary', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(symbol ? { path, symbol } : { path })
+    });
+  }
+
+  getCodebaseFileSymbols(path: string) {
+    return this.request<CodebaseFileSymbolsResponse>('/api/workspace/codebase-map/file-symbols', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ path })
     });
   }
 

@@ -1,5 +1,4 @@
-import { getDatabasePool, isDatabaseConfigured } from '../../db/client.js';
-import { logger } from '../../lib/logger.js';
+import { getDatabase, isDatabaseConfigured } from '../../db/client.js';
 import type { AssistantProviderId } from '../../types.js';
 
 export interface ProviderConnectionRecord {
@@ -14,6 +13,7 @@ export interface ProviderConnectionState {
 
 const preferenceKey = 'assistant.providers';
 let inMemoryFallback: ProviderConnectionState = getDefaultState();
+const providerIds: AssistantProviderId[] = ['codex', 'claude', 'gemini'];
 
 export class ProviderSettingsRepository {
   async get(): Promise<ProviderConnectionState> {
@@ -21,28 +21,18 @@ export class ProviderSettingsRepository {
       return inMemoryFallback;
     }
 
-    try {
-      const pool = getDatabasePool();
-      const result = await pool.query<{ value: Record<string, unknown> }>(
+    const database = getDatabase();
+    const result = database
+      .prepare(
         `
-          SELECT value
-          FROM app_preferences
-          WHERE preference_key = $1
-        `,
-        [preferenceKey]
-      );
+        SELECT value
+        FROM app_preferences
+        WHERE preference_key = ?
+      `
+      )
+      .get(preferenceKey) as { value: string } | undefined;
 
-      return normalizeState(result.rows[0]?.value);
-    } catch (error) {
-      if (isMissingPreferencesTableError(error)) {
-        logger.warn('assistant.provider.preferences_table_missing', {
-          table: 'app_preferences'
-        });
-        return inMemoryFallback;
-      }
-
-      throw error;
-    }
+    return normalizeState(parsePreference(result?.value ?? null));
   }
 
   async save(state: ProviderConnectionState) {
@@ -51,30 +41,19 @@ export class ProviderSettingsRepository {
       return;
     }
 
-    try {
-      const pool = getDatabasePool();
-      await pool.query(
+    const database = getDatabase();
+    database
+      .prepare(
         `
-          INSERT INTO app_preferences (preference_key, value, updated_at)
-          VALUES ($1, $2::jsonb, NOW())
-          ON CONFLICT (preference_key)
-          DO UPDATE SET
-            value = EXCLUDED.value,
-            updated_at = NOW()
-        `,
-        [preferenceKey, JSON.stringify(normalizeState(state))]
-      );
-    } catch (error) {
-      if (isMissingPreferencesTableError(error)) {
-        logger.warn('assistant.provider.preferences_table_missing_on_save', {
-          table: 'app_preferences'
-        });
-        inMemoryFallback = normalizeState(state);
-        return;
-      }
-
-      throw error;
-    }
+        INSERT INTO app_preferences (preference_key, value, updated_at)
+        VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        ON CONFLICT (preference_key)
+        DO UPDATE SET
+          value = excluded.value,
+          updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+      `
+      )
+      .run(preferenceKey, JSON.stringify(normalizeState(state)));
   }
 }
 
@@ -89,20 +68,29 @@ function getDefaultState(): ProviderConnectionState {
       claude: {
         connected: false,
         connectedAt: null
+      },
+      gemini: {
+        connected: false,
+        connectedAt: null
       }
     }
   };
 }
 
 function normalizeProviderId(value: unknown): AssistantProviderId | null {
-  return value === 'codex' || value === 'claude' ? value : null;
+  return value === 'codex' || value === 'claude' || value === 'gemini' ? value : null;
 }
 
 function normalizeConnectionRecord(value: unknown): ProviderConnectionRecord {
   return {
-    connected: Boolean(value && typeof value === 'object' && 'connected' in value && value.connected === true),
+    connected: Boolean(
+      value && typeof value === 'object' && 'connected' in value && value.connected === true
+    ),
     connectedAt:
-      value && typeof value === 'object' && 'connectedAt' in value && typeof value.connectedAt === 'string'
+      value &&
+      typeof value === 'object' &&
+      'connectedAt' in value &&
+      typeof value.connectedAt === 'string'
         ? value.connectedAt
         : null
   };
@@ -115,9 +103,11 @@ function normalizeState(value: unknown): ProviderConnectionState {
     return defaultState;
   }
 
-  const legacyActiveProvider = 'activeProvider' in value ? normalizeProviderId(value.activeProvider) : null;
+  const legacyActiveProvider =
+    'activeProvider' in value ? normalizeProviderId(value.activeProvider) : null;
   const activeProviderId =
-    ('activeProviderId' in value ? normalizeProviderId(value.activeProviderId) : null) ?? legacyActiveProvider;
+    ('activeProviderId' in value ? normalizeProviderId(value.activeProviderId) : null) ??
+    legacyActiveProvider;
   const connectionsValue =
     'connections' in value && value.connections && typeof value.connections === 'object'
       ? value.connections
@@ -127,10 +117,12 @@ function normalizeState(value: unknown): ProviderConnectionState {
     activeProviderId,
     connections: {
       codex: normalizeConnectionRecord((connectionsValue as Record<string, unknown>).codex),
-      claude: normalizeConnectionRecord((connectionsValue as Record<string, unknown>).claude)
+      claude: normalizeConnectionRecord((connectionsValue as Record<string, unknown>).claude),
+      gemini: normalizeConnectionRecord((connectionsValue as Record<string, unknown>).gemini)
     }
   };
 
+  // Multiple providers may be connected at once; only `activeProviderId` is single.
   if (legacyActiveProvider && !normalized.connections[legacyActiveProvider].connected) {
     normalized.connections[legacyActiveProvider] = {
       connected: true,
@@ -138,13 +130,33 @@ function normalizeState(value: unknown): ProviderConnectionState {
     };
   }
 
-  if (normalized.activeProviderId && !normalized.connections[normalized.activeProviderId].connected) {
+  if (
+    normalized.activeProviderId &&
+    !normalized.connections[normalized.activeProviderId].connected
+  ) {
     normalized.activeProviderId = null;
+  }
+
+  if (!normalized.activeProviderId) {
+    const connectedProviderId = providerIds.find(
+      (providerId) => normalized.connections[providerId].connected
+    );
+    if (connectedProviderId) {
+      normalized.activeProviderId = connectedProviderId;
+    }
   }
 
   return normalized;
 }
 
-function isMissingPreferencesTableError(error: unknown) {
-  return Boolean(error && typeof error === 'object' && 'code' in error && error.code === '42P01');
+function parsePreference(value: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(value) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
 }
