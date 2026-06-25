@@ -1,5 +1,7 @@
-const ENDPOINTING_TRIM_MS = 150;
-const MIN_ENDPOINTING_DELAY_MS = 450;
+const ENDPOINTING_TRIM_MS = 0;
+// Minimum pause before auto-finalizing a spoken turn. Kept generous so a brief
+// thinking pause mid-sentence does not send a half-spoken message to the AI.
+const MIN_ENDPOINTING_DELAY_MS = 1800;
 
 export const desktopVadConfig = {
   minSpeechMs: 160,

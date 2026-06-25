@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- provider hooks / Radix re-exports are intentionally co-located; this rule is hot-reload DX only */
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 
 export interface ToastItem {

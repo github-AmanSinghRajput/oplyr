@@ -1,5 +1,4 @@
-import { getDatabasePool, isDatabaseConfigured } from '../../db/client.js';
-import { logger } from '../../lib/logger.js';
+import { getDatabase, isDatabaseConfigured } from '../../db/client.js';
 import type { ClaudeSettings } from '../../types.js';
 
 const preferenceKey = 'claude.settings';
@@ -11,28 +10,18 @@ export class ClaudeSettingsRepository {
       return inMemoryFallback;
     }
 
-    try {
-      const pool = getDatabasePool();
-      const result = await pool.query<{ value: Partial<ClaudeSettings> }>(
+    const database = getDatabase();
+    const result = database
+      .prepare(
         `
-          SELECT value
-          FROM app_preferences
-          WHERE preference_key = $1
-        `,
-        [preferenceKey]
-      );
+        SELECT value
+        FROM app_preferences
+        WHERE preference_key = ?
+      `
+      )
+      .get(preferenceKey) as { value: string } | undefined;
 
-      return result.rows[0]?.value ?? null;
-    } catch (error) {
-      if (isMissingPreferencesTableError(error)) {
-        logger.warn('claude.settings.preferences_table_missing', {
-          table: 'app_preferences'
-        });
-        return null;
-      }
-
-      throw error;
-    }
+    return parsePreference<Partial<ClaudeSettings>>(result?.value ?? null) ?? inMemoryFallback;
   }
 
   async save(settings: ClaudeSettings) {
@@ -41,32 +30,30 @@ export class ClaudeSettingsRepository {
       return;
     }
 
-    try {
-      const pool = getDatabasePool();
-      await pool.query(
+    const database = getDatabase();
+    database
+      .prepare(
         `
-          INSERT INTO app_preferences (preference_key, value, updated_at)
-          VALUES ($1, $2::jsonb, NOW())
-          ON CONFLICT (preference_key)
-          DO UPDATE SET
-            value = EXCLUDED.value,
-            updated_at = NOW()
-        `,
-        [preferenceKey, JSON.stringify(settings)]
-      );
-    } catch (error) {
-      if (isMissingPreferencesTableError(error)) {
-        logger.warn('claude.settings.preferences_table_missing_on_save', {
-          table: 'app_preferences'
-        });
-        return;
-      }
-
-      throw error;
-    }
+        INSERT INTO app_preferences (preference_key, value, updated_at)
+        VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        ON CONFLICT (preference_key)
+        DO UPDATE SET
+          value = excluded.value,
+          updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+      `
+      )
+      .run(preferenceKey, JSON.stringify(settings));
   }
 }
 
-function isMissingPreferencesTableError(error: unknown) {
-  return Boolean(error && typeof error === 'object' && 'code' in error && error.code === '42P01');
+function parsePreference<T>(value: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return null;
+  }
 }

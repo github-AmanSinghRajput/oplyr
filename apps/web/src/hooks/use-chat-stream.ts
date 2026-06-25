@@ -87,7 +87,7 @@ export function useChatStream(): ChatStreamHandle {
     return () => window.clearInterval(interval);
   }, [typingTargets]);
 
-  function clearTypingStateForMessage(messageId: string) {
+  const clearTypingStateForMessage = useCallback((messageId: string) => {
     setTypingTargets((current) => {
       if (!(messageId in current)) return current;
       const next = { ...current };
@@ -100,36 +100,40 @@ export function useChatStream(): ChatStreamHandle {
       delete next[messageId];
       return next;
     });
-  }
+  }, []);
 
-  function clearActiveChatStreamDraft(options: { removeMessages: boolean }) {
-    const draft = activeChatStreamDraftRef.current;
-    if (!draft) return;
+  const clearActiveChatStreamDraft = useCallback(
+    (options: { removeMessages: boolean }) => {
+      const draft = activeChatStreamDraftRef.current;
+      if (!draft) return;
 
-    activeChatStreamDraftRef.current = null;
-    setActiveChatStreamMessageId((current) =>
-      current === draft.assistantMessageId ? null : current
-    );
-    clearTypingStateForMessage(draft.assistantMessageId);
-
-    if (activeVoiceAssistantMessageIdRef.current === draft.assistantMessageId) {
-      activeVoiceAssistantMessageIdRef.current = null;
-    }
-
-    if (options.removeMessages) {
-      setMessages((current) =>
-        current.filter(
-          (message) => message.id !== draft.userMessageId && message.id !== draft.assistantMessageId
-        )
+      activeChatStreamDraftRef.current = null;
+      setActiveChatStreamMessageId((current) =>
+        current === draft.assistantMessageId ? null : current
       );
-    }
-  }
+      clearTypingStateForMessage(draft.assistantMessageId);
+
+      if (activeVoiceAssistantMessageIdRef.current === draft.assistantMessageId) {
+        activeVoiceAssistantMessageIdRef.current = null;
+      }
+
+      if (options.removeMessages) {
+        setMessages((current) =>
+          current.filter(
+            (message) =>
+              message.id !== draft.userMessageId && message.id !== draft.assistantMessageId
+          )
+        );
+      }
+    },
+    [clearTypingStateForMessage]
+  );
 
   const abortActiveChatStream = useCallback(() => {
     chatStreamAbortRef.current?.abort();
     chatStreamAbortRef.current = null;
     clearActiveChatStreamDraft({ removeMessages: true });
-  }, []);
+  }, [clearActiveChatStreamDraft]);
 
   const streamChatMessage = useCallback(
     async (
@@ -242,7 +246,7 @@ export function useChatStream(): ChatStreamHandle {
         }
       }
     },
-    [service, abortActiveChatStream]
+    [service, abortActiveChatStream, clearActiveChatStreamDraft, clearTypingStateForMessage]
   );
 
   const handleAttachFiles = useCallback(
@@ -261,7 +265,7 @@ export function useChatStream(): ChatStreamHandle {
         pushToast(
           'error',
           'Attachment upload failed',
-          'VOCOD could not attach one of those files.'
+          'Oplyr could not attach one of those files.'
         );
       }
     },

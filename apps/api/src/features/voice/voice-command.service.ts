@@ -13,6 +13,10 @@ import {
   ClaudeSettingsService,
   type ClaudeSettingsPayload
 } from '../claude/claude-settings.service.js';
+import {
+  GeminiSettingsService,
+  type GeminiSettingsPayload
+} from '../gemini/gemini-settings.service.js';
 
 export type VoiceCommandScreen = 'voice' | 'workspace' | 'review' | 'terminal';
 
@@ -24,6 +28,10 @@ export type VoiceCommandAction =
     }
   | {
       type: 'set_claude_model';
+      model: string;
+    }
+  | {
+      type: 'set_gemini_model';
       model: string;
     };
 
@@ -69,6 +77,7 @@ export class VoiceCommandService {
   constructor(
     private readonly codexSettingsService: CodexSettingsService = new CodexSettingsService(),
     private readonly claudeSettingsService: ClaudeSettingsService = new ClaudeSettingsService(),
+    private readonly geminiSettingsService: GeminiSettingsService = new GeminiSettingsService(),
     private readonly repository: ChatRepository = new ChatRepository()
   ) {}
 
@@ -127,13 +136,15 @@ export class VoiceCommandService {
           userMessage,
           providerContext.providerId === 'claude'
             ? 'I could not find any Claude Code models to show right now.'
-            : 'I could not find any locally cached Codex models yet. Open Codex once from the CLI, then ask again.',
+            : providerContext.providerId === 'gemini'
+              ? 'I could not find any Gemini CLI models to show right now.'
+              : 'I could not find any locally cached Codex models yet. Open Codex once from the CLI, then ask again.',
           'voice'
         );
       }
       const assistantMessage = createChatMessage(
         'assistant',
-        `I pulled the available ${providerContext.providerId === 'claude' ? 'Claude Code' : 'Codex'} models. Pick one from the list on screen and I will switch to it.`,
+        `I pulled the available ${getProviderCommandLabel(providerContext.providerId)} models. Pick one from the list on screen and I will switch to it.`,
         'voice'
       );
       await this.repository.appendMessages([assistantMessage]);
@@ -142,7 +153,7 @@ export class VoiceCommandService {
         status: 'options_required',
         userMessage,
         assistantMessage,
-        commandTitle: `Choose ${providerContext.providerId === 'claude' ? 'Claude Code' : 'Codex'} model`,
+        commandTitle: `Choose ${getProviderCommandLabel(providerContext.providerId)} model`,
         commandPrompt: 'Select a model to use for the next turns.',
         options: createModelOptions(providerContext.providerId, payload),
         suggestedScreen: 'voice'
@@ -165,18 +176,26 @@ export class VoiceCommandService {
           status: 'options_required',
           userMessage,
           assistantMessage,
-          commandTitle: `Choose ${providerContext.providerId === 'claude' ? 'Claude Code' : 'Codex'} model`,
+          commandTitle: `Choose ${getProviderCommandLabel(providerContext.providerId)} model`,
           commandPrompt: 'Select one of the detected models.',
           options: createModelOptions(providerContext.providerId, payload),
           suggestedScreen: 'voice'
         };
       }
 
-      const next = await this.applyProviderModelChange(providerContext.providerId, payload, command);
+      const next = await this.applyProviderModelChange(
+        providerContext.providerId,
+        payload,
+        command
+      );
 
       return this.persistHandled(
         userMessage,
-        describeModelSwitch(providerContext.providerId, next.settings.model, 'reasoningEffort' in next.settings ? next.settings.reasoningEffort : null),
+        describeModelSwitch(
+          providerContext.providerId,
+          next.settings.model,
+          'reasoningEffort' in next.settings ? next.settings.reasoningEffort : null
+        ),
         'voice'
       );
     }
@@ -226,16 +245,35 @@ export class VoiceCommandService {
       };
     }
 
+    if (action.type === 'set_gemini_model') {
+      const next = await this.geminiSettingsService.updateSettings({
+        model: action.model
+      });
+      const assistantMessage = createChatMessage(
+        'assistant',
+        describeModelSwitch('gemini', next.settings.model, null),
+        'voice'
+      );
+      await this.repository.appendMessages([assistantMessage]);
+
+      return {
+        assistantMessage,
+        suggestedScreen: 'voice'
+      };
+    }
+
     throw new Error('Unsupported voice command action.');
   }
 
   private async getProviderCommandContext() {
     const assistantState = await getAssistantState();
-    const providerId: AssistantProviderId = assistantState.activeProviderId === 'claude' ? 'claude' : 'codex';
+    const providerId = assistantState.activeProviderId ?? 'codex';
     const payload =
       providerId === 'claude'
         ? await this.claudeSettingsService.getSettings()
-        : await this.codexSettingsService.getSettings();
+        : providerId === 'gemini'
+          ? await this.geminiSettingsService.getSettings()
+          : await this.codexSettingsService.getSettings();
 
     return {
       providerId,
@@ -245,7 +283,7 @@ export class VoiceCommandService {
 
   private async applyProviderModelChange(
     providerId: AssistantProviderId,
-    payload: CodexSettingsPayload | ClaudeSettingsPayload,
+    payload: CodexSettingsPayload | ClaudeSettingsPayload | GeminiSettingsPayload,
     command: { model: string; reasoningEffort: CodexReasoningEffort | null }
   ) {
     const targetModel = findModelOption(payload, command.model);
@@ -259,10 +297,18 @@ export class VoiceCommandService {
       });
     }
 
+    if (providerId === 'gemini') {
+      return this.geminiSettingsService.updateSettings({
+        model: targetModel.slug
+      });
+    }
+
     const codexPayload = payload as CodexSettingsPayload;
     const reasoningEffort =
       command.reasoningEffort ??
-      ('defaultReasoningEffort' in targetModel ? targetModel.defaultReasoningEffort ?? null : null) ??
+      ('defaultReasoningEffort' in targetModel
+        ? (targetModel.defaultReasoningEffort ?? null)
+        : null) ??
       codexPayload.settings.reasoningEffort ??
       null;
     return this.codexSettingsService.updateSettings({
@@ -312,18 +358,21 @@ export class VoiceCommandService {
     const agentsPath = path.join(workspace.projectRoot, 'AGENTS.md');
     const projectLabel = workspace.projectName ?? path.basename(workspace.projectRoot);
     try {
-      await fs.writeFile(
-        agentsPath,
-        buildAgentsTemplate(projectLabel),
-        { encoding: 'utf8', flag: 'wx' }
-      );
+      await fs.writeFile(agentsPath, buildAgentsTemplate(projectLabel), {
+        encoding: 'utf8',
+        flag: 'wx'
+      });
       return this.persistHandled(
         userMessage,
         `Created AGENTS.md in ${projectLabel}. Review it before the next coding turn.`,
         'voice'
       );
     } catch (error) {
-      if (error instanceof Error && 'code' in error && (error as NodeJS.ErrnoException).code === 'EEXIST') {
+      if (
+        error instanceof Error &&
+        'code' in error &&
+        (error as NodeJS.ErrnoException).code === 'EEXIST'
+      ) {
         return this.persistHandled(
           userMessage,
           `AGENTS.md already exists in ${projectLabel}.`,
@@ -339,14 +388,16 @@ export class VoiceCommandService {
     rawTranscript: string,
     providerContext: {
       providerId: AssistantProviderId;
-      payload: CodexSettingsPayload | ClaudeSettingsPayload;
+      payload: CodexSettingsPayload | ClaudeSettingsPayload | GeminiSettingsPayload;
     }
   ) {
     const payload = providerContext.payload;
     const reasoningEffort = findReasoningEffort(normalizedTranscript);
 
     if (
-      /\binit(ialize)?\s+(codex|agents|this\s+(project|repo|workspace))\b/.test(normalizedTranscript) ||
+      /\binit(ialize)?\s+(codex|agents|this\s+(project|repo|workspace))\b/.test(
+        normalizedTranscript
+      ) ||
       /\b(run|generate|create|write)\b.*\bagents\.md\b/.test(normalizedTranscript) ||
       /\brun\s+init\b/.test(normalizedTranscript)
     ) {
@@ -356,7 +407,9 @@ export class VoiceCommandService {
     }
 
     if (
-      /\b(current model|which model|what model|model currently|what's the model|what is the model)\b/.test(normalizedTranscript)
+      /\b(current model|which model|what model|model currently|what's the model|what is the model)\b/.test(
+        normalizedTranscript
+      )
     ) {
       return {
         kind: 'current_model'
@@ -364,7 +417,9 @@ export class VoiceCommandService {
     }
 
     if (
-      /\b(available models|list models|show models|choose model|switch model|change model)\b/.test(normalizedTranscript)
+      /\b(available models|list models|show models|choose model|switch model|change model)\b/.test(
+        normalizedTranscript
+      )
     ) {
       return {
         kind: 'list_models'
@@ -372,7 +427,9 @@ export class VoiceCommandService {
     }
 
     if (
-      /\b(limit|limits|usage limit|rate limit|quota|session limit|remaining limit|remaining quota)\b/.test(normalizedTranscript)
+      /\b(limit|limits|usage limit|rate limit|quota|session limit|remaining limit|remaining quota)\b/.test(
+        normalizedTranscript
+      )
     ) {
       return {
         kind: 'limits'
@@ -392,10 +449,7 @@ export class VoiceCommandService {
       } as const;
     }
 
-    if (
-      explicitModel &&
-      /\b(use|switch to|set to)\b/.test(normalizedTranscript)
-    ) {
+    if (explicitModel && /\b(use|switch to|set to)\b/.test(normalizedTranscript)) {
       return {
         kind: 'set_model',
         model: explicitModel.slug,
@@ -404,7 +458,9 @@ export class VoiceCommandService {
     }
 
     if (
-      /\b(status|session config|what is set|what('?s| is) (configured|active))\b/.test(normalizedTranscript) &&
+      /\b(status|session config|what is set|what('?s| is) (configured|active))\b/.test(
+        normalizedTranscript
+      ) &&
       !/\bmodel\b/.test(normalizedTranscript)
     ) {
       return {
@@ -427,7 +483,7 @@ export class VoiceCommandService {
 
 function createModelOptions(
   providerId: AssistantProviderId,
-  payload: CodexSettingsPayload | ClaudeSettingsPayload
+  payload: CodexSettingsPayload | ClaudeSettingsPayload | GeminiSettingsPayload
 ): VoiceCommandOption[] {
   return payload.options.models.map((entry) => ({
     id: entry.slug,
@@ -442,28 +498,39 @@ function createModelOptions(
             type: 'set_claude_model',
             model: entry.slug
           }
-        : {
-            type: 'set_codex_model',
-            model: entry.slug,
-            reasoningEffort:
-              (payload as CodexSettingsPayload).settings.reasoningEffort ??
-              ('defaultReasoningEffort' in entry ? entry.defaultReasoningEffort ?? null : null)
-          }
+        : providerId === 'gemini'
+          ? {
+              type: 'set_gemini_model',
+              model: entry.slug
+            }
+          : {
+              type: 'set_codex_model',
+              model: entry.slug,
+              reasoningEffort:
+                (payload as CodexSettingsPayload).settings.reasoningEffort ??
+                ('defaultReasoningEffort' in entry ? (entry.defaultReasoningEffort ?? null) : null)
+            }
   }));
 }
 
 function describeCurrentModel(
   providerId: AssistantProviderId,
-  payload: CodexSettingsPayload | ClaudeSettingsPayload
+  payload: CodexSettingsPayload | ClaudeSettingsPayload | GeminiSettingsPayload
 ) {
   if (!payload.settings.model) {
     return providerId === 'claude'
       ? 'Claude Code is using its default model selection for this app session.'
-      : 'No Codex model is pinned for this app session yet.';
+      : providerId === 'gemini'
+        ? 'Gemini CLI is using its default model selection for this app session.'
+        : 'No Codex model is pinned for this app session yet.';
   }
 
   if (providerId === 'claude') {
     return `Current Claude Code model is ${payload.settings.model}. Source: ${payload.source}.`;
+  }
+
+  if (providerId === 'gemini') {
+    return `Current Gemini CLI model is ${payload.settings.model}. Source: ${payload.source}.`;
   }
 
   const codexPayload = payload as CodexSettingsPayload;
@@ -471,21 +538,31 @@ function describeCurrentModel(
 }
 
 function findMentionedModel(
-  payload: CodexSettingsPayload | ClaudeSettingsPayload,
+  payload: CodexSettingsPayload | ClaudeSettingsPayload | GeminiSettingsPayload,
   normalizedTranscript: string
 ) {
-  return payload.options.models.find((entry) => {
-    const slug = entry.slug.toLowerCase();
-    const displayName = entry.displayName.toLowerCase();
-    return normalizedTranscript.includes(slug) || normalizedTranscript.includes(displayName);
-  }) ?? null;
+  return (
+    payload.options.models.find((entry) => {
+      const slug = entry.slug.toLowerCase();
+      const displayName = entry.displayName.toLowerCase();
+      return normalizedTranscript.includes(slug) || normalizedTranscript.includes(displayName);
+    }) ?? null
+  );
 }
 
-function findModelOption(payload: CodexSettingsPayload | ClaudeSettingsPayload, input: string) {
+function findModelOption(
+  payload: CodexSettingsPayload | ClaudeSettingsPayload | GeminiSettingsPayload,
+  input: string
+) {
   const normalizedInput = normalizeTranscript(input);
-  return payload.options.models.find((entry) => {
-    return normalizedInput === entry.slug.toLowerCase() || normalizedInput === entry.displayName.toLowerCase();
-  }) ?? findMentionedModel(payload, normalizedInput);
+  return (
+    payload.options.models.find((entry) => {
+      return (
+        normalizedInput === entry.slug.toLowerCase() ||
+        normalizedInput === entry.displayName.toLowerCase()
+      );
+    }) ?? findMentionedModel(payload, normalizedInput)
+  );
 }
 
 function describeModelSwitch(
@@ -497,19 +574,39 @@ function describeModelSwitch(
     return `Switched Claude Code to ${model ?? 'the default model'}.`;
   }
 
+  if (providerId === 'gemini') {
+    return `Switched Gemini CLI to ${model ?? 'the default model'}.`;
+  }
+
   return `Switched Codex to ${model}${reasoningEffort ? ` with ${reasoningEffort} reasoning.` : '.'}`;
 }
 
 function describeLimitVisibility(providerId: AssistantProviderId) {
   if (providerId === 'claude') {
-    return 'Claude Code does not expose exact remaining session quota to VOCOD through the local CLI right now. If Claude reports a limit reset time, I will say it out loud when that happens.';
+    return 'Claude Code exposes session spend and token usage through /cost. Oplyr will surface exact CLI values there, and I will still call out any reset or limit warnings if Claude reports them.';
   }
 
-  return 'Codex does not expose exact remaining session quota to VOCOD through the local CLI right now. If Codex reports a retry window or reset time, I will say it out loud when that happens.';
+  if (providerId === 'gemini') {
+    return 'Gemini CLI exposes usage details through /stats. Oplyr will use that as the source of truth for Gemini usage and quota visibility.';
+  }
+
+  return 'Codex exposes session configuration, context pressure, and rate-limit state through /status. Oplyr will use that command for Codex usage visibility and I will still call out any retry or reset windows if Codex reports them.';
+}
+
+function getProviderCommandLabel(providerId: AssistantProviderId) {
+  if (providerId === 'claude') {
+    return 'Claude Code';
+  }
+
+  if (providerId === 'gemini') {
+    return 'Gemini CLI';
+  }
+
+  return 'Codex';
 }
 
 function extractModelSlug(transcript: string) {
-  const match = transcript.match(/\b([a-z][a-z0-9]*(?:[-\.][a-z0-9]+)+)\b/i);
+  const match = transcript.match(/\b([a-z][a-z0-9]*(?:[-.][a-z0-9]+)+)\b/i);
   return match?.[1] ?? null;
 }
 
@@ -534,7 +631,11 @@ function findReasoningEffort(transcript: string): CodexReasoningEffort | null {
 }
 
 function normalizeTranscript(transcript: string) {
-  return transcript.toLowerCase().replace(/[^\w.\-\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  return transcript
+    .toLowerCase()
+    .replace(/[^\w.\-\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function createChatMessage(

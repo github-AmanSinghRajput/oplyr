@@ -7,7 +7,7 @@ export class BaseApiService {
   protected createHeaders(headers?: HeadersInit) {
     const nextHeaders = new Headers(headers);
     if (this.apiAuthToken) {
-      nextHeaders.set('x-vocod-local-auth', this.apiAuthToken);
+      nextHeaders.set('x-oplyr-local-auth', this.apiAuthToken);
     }
     return nextHeaders;
   }

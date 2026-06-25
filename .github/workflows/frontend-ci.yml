@@ -34,4 +34,4 @@ jobs:
         run: npm run typecheck:frontend
 
       - name: Build frontend
-        run: npm run build --workspace @voice-codex/web
+        run: npm run build --workspace @oplyr/web

@@ -39,6 +39,7 @@ export function useNotes(): NotesHandle {
   }, [service]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional mount-time data load
     void loadNotes();
   }, [loadNotes]);
 

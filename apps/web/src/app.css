@@ -33,6 +33,10 @@
   --color-accent-muted: rgba(0, 212, 245, 0.12);
   --color-accent-border: rgba(0, 212, 245, 0.24);
 
+  --color-logo-track: #14241d;
+  --color-logo-loop: #0b5d3b;
+  --color-logo-signal: #f2fcff;
+
   --color-success: #6ffbbe;
   --color-success-muted: rgba(111, 251, 190, 0.1);
   --color-warning: #f2d070;
@@ -46,9 +50,9 @@
   --topbar-height: 44px;
 
   /* ── Radius ── */
-  --radius-panel: 16px;
-  --radius-control: 10px;
-  --radius-sm: 8px;
+  --radius-panel: 20px;
+  --radius-control: 14px;
+  --radius-sm: 10px;
   --radius-pill: 999px;
 
   /* ── Fonts ── */
@@ -75,6 +79,9 @@
   --color-accent: #0891b2;
   --color-accent-muted: rgba(8, 145, 178, 0.1);
   --color-accent-border: rgba(8, 145, 178, 0.2);
+  --color-logo-track: #dce8e1;
+  --color-logo-loop: #004225;
+  --color-logo-signal: #0b1820;
   --color-success: #059669;
   --color-success-muted: rgba(5, 150, 105, 0.1);
   --color-warning: #b45309;
@@ -136,4 +143,151 @@
   to {
     transform: rotate(360deg);
   }
+}
+
+/* Website-style voice equalizer variant for the Voice page. */
+.voice-listening-strip {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--color-accent-border);
+  border-radius: var(--radius-panel);
+  background:
+    radial-gradient(
+      circle at 18% 0%,
+      color-mix(in srgb, var(--color-accent) 20%, transparent),
+      transparent 34%
+    ),
+    linear-gradient(135deg, var(--color-accent-muted), transparent 48%), var(--color-surface-1);
+  padding: 0.95rem 1rem 1.05rem;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.voice-listening-strip::before {
+  content: '';
+  position: absolute;
+  inset: auto 10% 1.1rem;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--color-accent);
+  filter: blur(30px);
+  opacity: 0.16;
+  pointer-events: none;
+}
+
+.voice-listening-strip.is-active::before {
+  opacity: 0.28;
+}
+
+.voice-listening-strip__meta {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+  color: var(--color-text-tertiary);
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.voice-listening-strip.is-active .voice-listening-strip__meta span:first-child {
+  color: var(--color-accent);
+}
+
+.voice-listening-strip__rail {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(2px, 0.55vw, 7px);
+  min-height: 54px;
+  padding: 0 0.15rem;
+}
+
+.voice-listening-strip__rail span {
+  width: clamp(2px, 0.42vw, 5px);
+  height: 5px;
+  border-radius: 999px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-accent) 90%, white),
+    var(--color-accent)
+  );
+  box-shadow:
+    0 0 12px color-mix(in srgb, var(--color-accent) 70%, transparent),
+    0 0 2px var(--color-accent);
+  opacity: 0.42;
+  transform-origin: center;
+  transition:
+    opacity 90ms linear,
+    transform 90ms linear;
+}
+
+/*
+ * Diff syntax highlighting. The DiffViewer imports the dark highlight.js theme (atom-one-dark)
+ * as the default; these rules override the token colours in light mode (atom-one-light palette)
+ * so code reads correctly on a light background. Code cells force a transparent background so the
+ * +/- diff row colours always show through.
+ */
+:root[data-theme='light'] .hljs {
+  color: #383a42;
+  background: transparent;
+}
+:root[data-theme='light'] .hljs-comment,
+:root[data-theme='light'] .hljs-quote {
+  color: #a0a1a7;
+  font-style: italic;
+}
+:root[data-theme='light'] .hljs-keyword,
+:root[data-theme='light'] .hljs-formula,
+:root[data-theme='light'] .hljs-doctag {
+  color: #a626a4;
+}
+:root[data-theme='light'] .hljs-section,
+:root[data-theme='light'] .hljs-name,
+:root[data-theme='light'] .hljs-selector-tag,
+:root[data-theme='light'] .hljs-deletion,
+:root[data-theme='light'] .hljs-subst {
+  color: #e45649;
+}
+:root[data-theme='light'] .hljs-literal,
+:root[data-theme='light'] .hljs-type,
+:root[data-theme='light'] .hljs-built_in,
+:root[data-theme='light'] .hljs-title.class_,
+:root[data-theme='light'] .hljs-class .hljs-title {
+  color: #0184bb;
+}
+:root[data-theme='light'] .hljs-string,
+:root[data-theme='light'] .hljs-regexp,
+:root[data-theme='light'] .hljs-addition,
+:root[data-theme='light'] .hljs-attribute,
+:root[data-theme='light'] .hljs-meta .hljs-string {
+  color: #50a14f;
+}
+:root[data-theme='light'] .hljs-attr,
+:root[data-theme='light'] .hljs-variable,
+:root[data-theme='light'] .hljs-template-variable,
+:root[data-theme='light'] .hljs-selector-class,
+:root[data-theme='light'] .hljs-selector-attr,
+:root[data-theme='light'] .hljs-selector-pseudo,
+:root[data-theme='light'] .hljs-number {
+  color: #986801;
+}
+:root[data-theme='light'] .hljs-symbol,
+:root[data-theme='light'] .hljs-bullet,
+:root[data-theme='light'] .hljs-link,
+:root[data-theme='light'] .hljs-meta,
+:root[data-theme='light'] .hljs-selector-id,
+:root[data-theme='light'] .hljs-title {
+  color: #4078f2;
+}
+:root[data-theme='light'] .hljs-emphasis {
+  font-style: italic;
+}
+:root[data-theme='light'] .hljs-strong {
+  font-weight: 700;
 }

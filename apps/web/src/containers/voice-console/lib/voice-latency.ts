@@ -9,9 +9,6 @@ interface VoiceLatencySummary {
   sttDurationMs: number | null;
   sttToChatRequestMs: number | null;
   chatDurationMs: number | null;
-  replyReadyToTtsStartMs: number | null;
-  ttsDurationMs: number | null;
-  playbackStartDelayMs: number | null;
   details?: Record<string, unknown>;
 }
 
@@ -60,9 +57,6 @@ export class VoiceLatencyTrace {
       sttDurationMs: this.durationBetween('stt_request_started', 'stt_request_completed'),
       sttToChatRequestMs: this.durationBetween('stt_request_completed', 'chat_request_started'),
       chatDurationMs: this.durationBetween('chat_request_started', 'chat_request_completed'),
-      replyReadyToTtsStartMs: this.durationBetween('chat_request_completed', 'tts_request_started'),
-      ttsDurationMs: this.durationBetween('tts_request_started', 'tts_request_completed'),
-      playbackStartDelayMs: this.durationBetween('tts_request_completed', 'playback_started'),
       details
     };
 

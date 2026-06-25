@@ -4,7 +4,18 @@ import { cn } from '@/lib/cn';
 import { Badge } from '@/components/ui/badge';
 import { DiffViewer } from './DiffViewer';
 import { buildFileExplanation } from '@/containers/voice-console/lib/file-explanation';
-import type { DiffFileBlock, PendingApproval } from '@/containers/voice-console/lib/types';
+import type {
+  DiffFileBlock,
+  DiffFileStatus,
+  PendingApproval
+} from '@/containers/voice-console/lib/types';
+
+const STATUS_BADGE: Record<DiffFileStatus, { label: string; className: string }> = {
+  added: { label: 'Added', className: 'text-success border-success/30' },
+  modified: { label: 'Modified', className: 'text-accent border-accent/30' },
+  deleted: { label: 'Deleted', className: 'text-danger border-danger/30' },
+  renamed: { label: 'Renamed', className: 'text-text-secondary border-border' }
+};
 
 interface ReviewFileCardProps {
   file: DiffFileBlock;
@@ -39,11 +50,12 @@ export const ReviewFileCard = forwardRef<HTMLElement, ReviewFileCardProps>(funct
   },
   ref
 ) {
-  const tasks = pendingApproval?.tasks ?? [];
   const explanation = useMemo(
-    () => buildFileExplanation(file.filePath, tasks, file.diff),
-    [file.filePath, tasks, file.diff]
+    () => buildFileExplanation(file.filePath, pendingApproval?.tasks ?? [], file.diff),
+    [file.filePath, pendingApproval?.tasks, file.diff]
   );
+
+  const badge = STATUS_BADGE[file.status] ?? STATUS_BADGE.modified;
 
   return (
     <article
@@ -77,6 +89,9 @@ export const ReviewFileCard = forwardRef<HTMLElement, ReviewFileCardProps>(funct
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          <Badge variant="outline" className={cn('text-xs', badge.className)}>
+            {badge.label}
+          </Badge>
           {stats.additions > 0 && (
             <Badge variant="outline" className="text-success border-success/30 text-xs">
               +{stats.additions}

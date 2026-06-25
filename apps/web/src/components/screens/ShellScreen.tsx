@@ -14,6 +14,10 @@ export function ShellScreen({ cwd, theme }: ShellScreenProps) {
   const ptyIdRef = useRef<string | null>(null);
   const fitTimerRef = useRef<number | null>(null);
   const initRef = useRef(false);
+  // Latest theme, read when the terminal is first created. Live theme changes are applied by
+  // the separate effect below, so the setup effect intentionally does not depend on `theme`.
+  const themeRef = useRef(theme);
+  themeRef.current = theme;
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,7 +45,7 @@ export function ShellScreen({ cwd, theme }: ShellScreenProps) {
         cursorBlink: true,
         fontSize: 13,
         fontFamily: "'Geist Mono', 'SF Mono', 'Menlo', monospace",
-        theme: getTerminalTheme(theme),
+        theme: getTerminalTheme(themeRef.current),
         allowProposedApi: true
       });
 
@@ -152,7 +156,7 @@ export function ShellScreen({ cwd, theme }: ShellScreenProps) {
       terminalRef.current = null;
       fitAddonRef.current = null;
     };
-  }, [cwd, theme]);
+  }, [cwd]);
 
   useEffect(() => {
     const terminal = terminalRef.current as { options?: { theme?: unknown } } | null;
@@ -206,9 +210,11 @@ export function ShellScreen({ cwd, theme }: ShellScreenProps) {
         )}
       </div>
       <div
-        className="flex-1 rounded-[var(--radius-panel)] border border-border overflow-hidden"
-        ref={wrapperRef}
-      />
+        className="flex-1 overflow-hidden rounded-[var(--radius-control)] border border-border p-3"
+        style={{ backgroundColor: getTerminalTheme(theme).background }}
+      >
+        <div className="h-full w-full" ref={wrapperRef} />
+      </div>
     </div>
   );
 }

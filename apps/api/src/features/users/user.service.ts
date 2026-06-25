@@ -10,7 +10,10 @@ export interface AppOperator {
 }
 
 function sanitizeIdentifier(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 }
 
 export class UserService {
@@ -19,7 +22,7 @@ export class UserService {
   async initializeLocalOperator(): Promise<AppOperator | null> {
     const systemUsername = process.env.USER?.trim() || os.userInfo().username.trim() || 'operator';
     const displayName = process.env.USER_NAME?.trim() || systemUsername;
-    const email = `local+${sanitizeIdentifier(systemUsername)}@voice-codex.local`;
+    const email = `local+${sanitizeIdentifier(systemUsername)}@oplyr.local`;
 
     return this.repository.upsertLocalOperator({
       email,

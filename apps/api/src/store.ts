@@ -2,8 +2,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const srcDir = path.dirname(fileURLToPath(import.meta.url));
-const appRoot = path.resolve(srcDir, '../../..');
+const bundledRoot = path.resolve(srcDir, '../../..');
 
 export function getRootDir() {
-  return appRoot;
+  const configuredRoot = process.env.OPLYR_APP_ROOT?.trim();
+  if (configuredRoot) {
+    return path.resolve(configuredRoot);
+  }
+
+  return bundledRoot;
 }

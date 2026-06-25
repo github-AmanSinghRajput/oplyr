@@ -10,20 +10,24 @@ import type {
   ChatStreamEvent,
   ClaudeSettingsResponse,
   CodexSettingsResponse,
+  GeminiSettingsResponse,
   ClearResponse,
+  CodebaseMapResponse,
+  CodebaseFileSummaryResponse,
+  CodebaseFileSymbolsResponse,
   CreateNoteInput,
   CreateNoteResponse,
   LogsResponse,
   NotesResponse,
+  ProviderUsageResponse,
   ReplyResponse,
   SetWorkspaceResponse,
   StatusResponse,
   SystemResponse,
-  TtsSynthesisResponse,
+  VoiceBootstrapResponse,
   VoiceCommandAction,
   VoiceCommandApplyResponse,
   VoiceCommandResolveResponse,
-  VoiceTranscriptionResponse,
   VoiceSettingsResponse,
   VoiceSessionResponse
 } from '../../containers/voice-console/lib/types';
@@ -89,7 +93,7 @@ export class OperatorConsoleApiService extends BaseApiService {
     });
   }
 
-  setActiveProvider(providerId: 'codex' | 'claude') {
+  setActiveProvider(providerId: 'codex' | 'claude' | 'gemini') {
     return this.request<AssistantProvidersState>('/api/assistant/active-provider', {
       method: 'POST',
       headers: {
@@ -99,14 +103,32 @@ export class OperatorConsoleApiService extends BaseApiService {
     });
   }
 
-  connectProvider(providerId: 'codex' | 'claude') {
+  connectProvider(providerId: 'codex' | 'claude' | 'gemini') {
     return this.request<ClearResponse>(`/api/assistant/providers/${providerId}/connect`, {
       method: 'POST'
     });
   }
 
-  disconnectProvider(providerId: 'codex' | 'claude') {
+  disconnectProvider(providerId: 'codex' | 'claude' | 'gemini') {
     return this.request<ClearResponse>(`/api/assistant/providers/${providerId}/disconnect`, {
+      method: 'POST'
+    });
+  }
+
+  getAssistantUsage() {
+    return this.request<ProviderUsageResponse>('/api/assistant/usage', {
+      cache: 'no-store'
+    });
+  }
+
+  getVoiceBootstrapStatus() {
+    return this.request<VoiceBootstrapResponse>('/api/voice/bootstrap', {
+      cache: 'no-store'
+    });
+  }
+
+  startVoiceBootstrap() {
+    return this.request<VoiceBootstrapResponse>('/api/voice/bootstrap/install', {
       method: 'POST'
     });
   }
@@ -131,6 +153,20 @@ export class OperatorConsoleApiService extends BaseApiService {
 
   updateClaudeSettings(input: Partial<ClaudeSettingsResponse['settings']>) {
     return this.request<ClaudeSettingsResponse>('/api/claude/settings', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(input)
+    });
+  }
+
+  getGeminiSettings() {
+    return this.request<GeminiSettingsResponse>('/api/gemini/settings');
+  }
+
+  updateGeminiSettings(input: Partial<GeminiSettingsResponse['settings']>) {
+    return this.request<GeminiSettingsResponse>('/api/gemini/settings', {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json'
@@ -252,18 +288,6 @@ export class OperatorConsoleApiService extends BaseApiService {
     return body.attachment;
   }
 
-  transcribeVoiceAudio(audioBlob: Blob, mimeType: string, voiceTurnId?: string) {
-    return this.request<VoiceTranscriptionResponse>('/api/voice/transcribe', {
-      method: 'POST',
-      headers: {
-        'Content-Type': mimeType,
-        'X-Audio-Mime-Type': mimeType,
-        ...(voiceTurnId ? { 'X-Voice-Turn-Id': voiceTurnId } : {})
-      },
-      body: audioBlob
-    });
-  }
-
   startVoiceSession() {
     return this.request<VoiceSessionResponse>('/api/voice/session/start', {
       method: 'POST'
@@ -328,26 +352,48 @@ export class OperatorConsoleApiService extends BaseApiService {
     });
   }
 
-  synthesizeSpeech(text: string, voiceTurnId?: string) {
-    return this.request<TtsSynthesisResponse>('/api/tts/synthesize', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(voiceTurnId ? { 'X-Voice-Turn-Id': voiceTurnId } : {})
-      },
-      body: JSON.stringify({ text })
-    });
-  }
-
   approveChange(approvalId: string) {
     return this.request<ApprovalResponse>(`/api/approvals/${approvalId}/approve`, {
       method: 'POST'
     });
   }
 
-  rejectChange(approvalId: string) {
+  rejectChange(approvalId: string, feedback?: string) {
     return this.request<ApprovalResponse>(`/api/approvals/${approvalId}/reject`, {
+      method: 'POST',
+      ...(feedback && feedback.trim()
+        ? { body: JSON.stringify({ feedback: feedback.trim() }) }
+        : {})
+    });
+  }
+
+  getCodebaseMap() {
+    return this.request<CodebaseMapResponse>('/api/workspace/codebase-map');
+  }
+
+  rescanCodebaseMap() {
+    return this.request<CodebaseMapResponse>('/api/workspace/codebase-map/rescan', {
       method: 'POST'
+    });
+  }
+
+  summarizeCodebaseFile(path: string, symbol?: string) {
+    return this.request<CodebaseFileSummaryResponse>('/api/workspace/codebase-map/summary', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(symbol ? { path, symbol } : { path })
+    });
+  }
+
+  getCodebaseFileSymbols(path: string) {
+    return this.request<CodebaseFileSymbolsResponse>('/api/workspace/codebase-map/file-symbols', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ path })
     });
   }
 

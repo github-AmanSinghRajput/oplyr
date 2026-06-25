@@ -43,7 +43,7 @@ export class WorkspaceService {
         projectRoot: validated.projectRoot,
         projectName: validated.projectName,
         isGitRepo: validated.isGitRepo,
-        writeAccessEnabled: latest.write_access_enabled
+        writeAccessEnabled: Boolean(latest.write_access_enabled)
       });
     } catch (error) {
       logger.warn('workspace.restore_failed', {

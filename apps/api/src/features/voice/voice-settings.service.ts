@@ -1,28 +1,22 @@
-import fs from 'node:fs/promises';
-import path from 'node:path';
 import { env } from '../../config/env.js';
 import type {
   AudioBridgeState,
   TranscriptionLanguageOption,
   TranscriptionModelOption,
-  VoiceOption,
+  TranscriptionRuntimeConfig,
   VoiceNoiseMode,
-  VoiceNarrationMode,
   VoiceQualityProfile,
   VoiceSettings,
   VoiceSettingsCapabilities
 } from '../../types.js';
-import { listAvailableKokoroVoices } from '../tts/kokoro-voices.js';
 import { VoiceSettingsRepository } from './voice-settings.repository.js';
 
 const defaultVoiceSettings: VoiceSettings = {
-  silenceWindowMs: 800,
+  silenceWindowMs: 1800,
   voiceLocale: env.voiceLocale,
   autoResumeAfterReply: true,
   transcriptionLanguageCode: env.transcriptionLanguageCode,
   transcriptionModel: getInitialTranscriptionModel(),
-  ttsVoice: env.kokoroVoice,
-  narrationMode: 'silent_progress',
   qualityProfile: 'demo',
   noiseMode: 'focused'
 };
@@ -33,28 +27,26 @@ interface UpdateVoiceSettingsInput {
   autoResumeAfterReply?: boolean;
   transcriptionLanguageCode?: string;
   transcriptionModel?: VoiceSettings['transcriptionModel'];
-  ttsVoice?: string;
-  narrationMode?: VoiceNarrationMode;
   qualityProfile?: VoiceQualityProfile;
   noiseMode?: VoiceNoiseMode;
 }
 
 export class VoiceSettingsService {
-  constructor(private readonly repository: VoiceSettingsRepository = new VoiceSettingsRepository()) {}
+  constructor(
+    private readonly repository: VoiceSettingsRepository = new VoiceSettingsRepository()
+  ) {}
 
   async getSettings() {
-    const [persisted, voices, transcriptionModels] = await Promise.all([
+    const [persisted, transcriptionModels] = await Promise.all([
       this.repository.get(),
-      getVoiceOptions(),
       getTranscriptionModelOptions()
     ]);
-    const settings = mergeVoiceSettings(persisted, voices);
+    const settings = mergeVoiceSettings(persisted);
 
     return {
       settings,
-      capabilities: buildCapabilities(voices),
+      capabilities: buildCapabilities(),
       options: {
-        voices,
         transcriptionModels,
         transcriptionLanguages: getTranscriptionLanguageOptions()
       }
@@ -62,12 +54,11 @@ export class VoiceSettingsService {
   }
 
   async updateSettings(input: UpdateVoiceSettingsInput) {
-    const [persisted, voices, transcriptionModels] = await Promise.all([
+    const [persisted, transcriptionModels] = await Promise.all([
       this.repository.get(),
-      getVoiceOptions(),
       getTranscriptionModelOptions()
     ]);
-    const current = mergeVoiceSettings(persisted, voices);
+    const current = mergeVoiceSettings(persisted);
     const draft = {
       ...current,
       ...input
@@ -86,18 +77,14 @@ export class VoiceSettingsService {
       }
     }
 
-    const nextSettings = sanitizeVoiceSettings(
-      draft,
-      voices
-    );
+    const nextSettings = sanitizeVoiceSettings(draft);
 
     await this.repository.save(nextSettings);
 
     return {
       settings: nextSettings,
-      capabilities: buildCapabilities(voices),
+      capabilities: buildCapabilities(),
       options: {
-        voices,
         transcriptionModels,
         transcriptionLanguages: getTranscriptionLanguageOptions()
       }
@@ -105,8 +92,8 @@ export class VoiceSettingsService {
   }
 
   async getResolvedSettings() {
-    const [persisted, voices] = await Promise.all([this.repository.get(), getVoiceOptions()]);
-    return mergeVoiceSettings(persisted, voices);
+    const persisted = await this.repository.get();
+    return mergeVoiceSettings(persisted);
   }
 
   async buildSettingsPayload(audio: AudioBridgeState) {
@@ -121,74 +108,25 @@ export class VoiceSettingsService {
     };
   }
 
-  async getResolvedTranscriptionConfig() {
+  async getResolvedTranscriptionConfig(): Promise<TranscriptionRuntimeConfig> {
     const settings = await this.getResolvedSettings();
-    const multilingualModelPath = await findMultilingualWhisperModelPath();
-    const moonshineAvailable = Boolean(env.moonshineWorkerCommand);
-    const wantsMoonshine =
-      settings.transcriptionModel === 'moonshine-base' || settings.transcriptionModel === 'moonshine-tiny';
-
-    if (wantsMoonshine && moonshineAvailable) {
-      return {
-        provider: 'moonshine-local' as const,
-        modelPath: '',
-        languageCode:
-          settings.transcriptionLanguageCode === 'auto' ? 'en' : settings.transcriptionLanguageCode,
-        modelProfile: settings.transcriptionModel,
-        multilingualAvailable: true,
-        warnings:
-          settings.transcriptionLanguageCode === 'auto'
-            ? ['Moonshine is currently tuned for English in this app. Falling back to English.']
-            : [],
-        moonshineModelName:
-          settings.transcriptionModel === 'moonshine-tiny' ? 'moonshine/tiny' : env.moonshineModel
-      };
-    }
-
-    const useMultilingualModel =
-      settings.transcriptionModel === 'multilingual-small' && Boolean(multilingualModelPath);
-    const languageDowngraded =
-      !useMultilingualModel && settings.transcriptionLanguageCode === 'auto';
-    const warnings: string[] = [];
-
-    if (wantsMoonshine && !moonshineAvailable) {
-      warnings.push('Moonshine is not configured. Falling back to Whisper.');
-    }
-
-    if (languageDowngraded) {
-      warnings.push('Auto language detection requires the multilingual model. Falling back to English.');
-    }
 
     return {
-      provider: 'whisper-local' as const,
-      modelPath: useMultilingualModel ? multilingualModelPath ?? env.whisperModelPath : env.whisperModelPath,
-      languageCode: useMultilingualModel
-        ? settings.transcriptionLanguageCode
-        : languageDowngraded
-          ? 'en'
-          : settings.transcriptionLanguageCode,
-      modelProfile: useMultilingualModel ? ('multilingual-small' as const) : ('default' as const),
-      multilingualAvailable: Boolean(multilingualModelPath),
-      warnings,
-      moonshineModelName: null
+      provider: 'parakeet-local',
+      speechModelVersion: env.speechModelVersion,
+      languageCode: settings.transcriptionLanguageCode
     };
   }
 }
 
-function mergeVoiceSettings(
-  persisted: Partial<VoiceSettings> | null | undefined,
-  voices: VoiceOption[]
-): VoiceSettings {
-  return sanitizeVoiceSettings(
-    {
-      ...defaultVoiceSettings,
-      ...persisted
-    },
-    voices
-  );
+function mergeVoiceSettings(persisted: Partial<VoiceSettings> | null | undefined): VoiceSettings {
+  return sanitizeVoiceSettings({
+    ...defaultVoiceSettings,
+    ...persisted
+  });
 }
 
-function sanitizeVoiceSettings(settings: Partial<VoiceSettings>, voices: VoiceOption[]): VoiceSettings {
+function sanitizeVoiceSettings(settings: Partial<VoiceSettings>): VoiceSettings {
   const qualityProfile = sanitizeQualityProfile(settings.qualityProfile);
   const noiseMode = sanitizeNoiseMode(settings.noiseMode);
   const profileDefaults = getVoiceProfileDefaults(qualityProfile);
@@ -198,53 +136,36 @@ function sanitizeVoiceSettings(settings: Partial<VoiceSettings>, voices: VoiceOp
     5000,
     profileDefaults.silenceWindowMs
   );
-  const voiceLocale = typeof settings.voiceLocale === 'string' && settings.voiceLocale.trim()
-    ? settings.voiceLocale.trim()
-    : defaultVoiceSettings.voiceLocale;
+  const voiceLocale =
+    typeof settings.voiceLocale === 'string' && settings.voiceLocale.trim()
+      ? settings.voiceLocale.trim()
+      : defaultVoiceSettings.voiceLocale;
   const transcriptionLanguageCode = sanitizeTranscriptionLanguageCode(
     settings.transcriptionLanguageCode,
     profileDefaults.transcriptionLanguageCode
   );
-  const transcriptionModel =
-    sanitizeTranscriptionModel(settings.transcriptionModel, profileDefaults.transcriptionModel);
-  const narrationMode = sanitizeNarrationMode(settings.narrationMode);
-  const fallbackVoice = voices[0]?.id ?? defaultVoiceSettings.ttsVoice;
-  const requestedVoice =
-    typeof settings.ttsVoice === 'string' && settings.ttsVoice.trim()
-      ? settings.ttsVoice.trim()
-      : fallbackVoice;
-  const ttsVoice =
-    voices.length === 0 || voices.some((voice) => voice.id === requestedVoice)
-      ? requestedVoice
-      : fallbackVoice;
+  const transcriptionModel = sanitizeTranscriptionModel(
+    settings.transcriptionModel,
+    profileDefaults.transcriptionModel
+  );
 
   return {
     silenceWindowMs,
     voiceLocale,
-    autoResumeAfterReply: settings.autoResumeAfterReply ?? defaultVoiceSettings.autoResumeAfterReply,
+    autoResumeAfterReply:
+      settings.autoResumeAfterReply ?? defaultVoiceSettings.autoResumeAfterReply,
     transcriptionLanguageCode,
     transcriptionModel,
-    ttsVoice,
-    narrationMode,
     qualityProfile,
     noiseMode
   };
 }
 
-function buildCapabilities(voices: VoiceOption[]): VoiceSettingsCapabilities {
+function buildCapabilities(): VoiceSettingsCapabilities {
   return {
     deviceSelection: false,
-    voiceSelection: env.ttsProvider === 'kokoro' && voices.length > 0,
     interruption: true
   };
-}
-
-async function getVoiceOptions() {
-  if (env.ttsProvider !== 'kokoro') {
-    return [] as VoiceOption[];
-  }
-
-  return listAvailableKokoroVoices();
 }
 
 function clampNumber(value: number | undefined, min: number, max: number, fallback: number) {
@@ -269,27 +190,12 @@ function sanitizeTranscriptionLanguageCode(value: unknown, fallback: string) {
 }
 
 function sanitizeTranscriptionModel(
-  value: unknown,
-  fallback: VoiceSettings['transcriptionModel']
-) {
-  if (
-    value === 'default' ||
-    value === 'multilingual-small' ||
-    value === 'moonshine-base' ||
-    value === 'moonshine-tiny'
-  ) {
-    return value;
-  }
-
-  return fallback;
-}
-
-function sanitizeNarrationMode(value: unknown): VoiceNarrationMode {
-  if (value === 'silent_progress' || value === 'muted') {
-    return value;
-  }
-
-  return 'narrated';
+  _value: unknown,
+  _fallback: VoiceSettings['transcriptionModel']
+): VoiceSettings['transcriptionModel'] {
+  // Oplyr ships a single local STT model (Parakeet). Any persisted legacy value
+  // (e.g. an old Moonshine/Whisper selection) is normalized to 'parakeet'.
+  return 'parakeet';
 }
 
 function sanitizeQualityProfile(value: unknown): VoiceQualityProfile {
@@ -309,120 +215,54 @@ function sanitizeNoiseMode(value: unknown): VoiceNoiseMode {
 }
 
 function getVoiceProfileDefaults(qualityProfile: VoiceQualityProfile) {
-  const multilingualAvailable = Boolean(env.whisperMultilingualModelPath);
-  const moonshineAvailable = Boolean(env.moonshineWorkerCommand);
-
   if (qualityProfile === 'low_memory') {
     return {
-      silenceWindowMs: 700,
+      silenceWindowMs: 1500,
       transcriptionLanguageCode: 'en',
-      transcriptionModel: moonshineAvailable ? ('moonshine-tiny' as const) : ('default' as const)
+      transcriptionModel: 'parakeet' as const
     };
   }
 
   if (qualityProfile === 'balanced') {
     return {
-      silenceWindowMs: 850,
-      transcriptionLanguageCode: moonshineAvailable ? 'en' : multilingualAvailable ? 'auto' : 'en',
-      transcriptionModel: moonshineAvailable
-        ? ('moonshine-base' as const)
-        : multilingualAvailable
-          ? ('multilingual-small' as const)
-          : ('default' as const)
+      silenceWindowMs: 1800,
+      transcriptionLanguageCode: 'en',
+      transcriptionModel: 'parakeet' as const
     };
   }
 
   return {
-    silenceWindowMs: 1000,
-    transcriptionLanguageCode: moonshineAvailable ? 'en' : multilingualAvailable ? 'auto' : 'en',
-    transcriptionModel: moonshineAvailable
-      ? ('moonshine-base' as const)
-      : multilingualAvailable
-        ? ('multilingual-small' as const)
-        : ('default' as const)
+    silenceWindowMs: 2200,
+    transcriptionLanguageCode: 'en',
+    transcriptionModel: 'parakeet' as const
   };
 }
 
-async function getTranscriptionModelOptions(): Promise<TranscriptionModelOption[]> {
-  const multilingualModelPath = await findMultilingualWhisperModelPath();
-  const moonshineAvailable = Boolean(env.moonshineWorkerCommand);
-
+function getTranscriptionModelOptions(): TranscriptionModelOption[] {
   return [
     {
-      id: 'default',
-      label: 'Whisper English',
-      description: 'Uses the primary local Whisper model configured for this app.',
-      available: Boolean(env.whisperModelPath)
-    },
-    {
-      id: 'multilingual-small',
-      label: 'Whisper multilingual',
-      description: multilingualModelPath
-        ? 'Uses the local multilingual Whisper model with auto language detection support.'
-        : 'Configure WHISPER_MULTILINGUAL_MODEL_PATH to enable local multilingual Whisper.',
-      available: Boolean(multilingualModelPath)
-    },
-    {
-      id: 'moonshine-base',
-      label: 'Moonshine base',
-      description: moonshineAvailable
-        ? 'Low-latency local Moonshine transcription tuned for realtime voice.'
-        : 'Configure MOONSHINE_WORKER_COMMAND to enable local Moonshine transcription.',
-      available: moonshineAvailable
-    },
-    {
-      id: 'moonshine-tiny',
-      label: 'Moonshine tiny',
-      description: moonshineAvailable
-        ? 'Lighter Moonshine model for lower memory use and fast turn-around.'
-        : 'Configure MOONSHINE_WORKER_COMMAND to enable local Moonshine transcription.',
-      available: moonshineAvailable
+      id: 'parakeet',
+      label: 'Parakeet (local)',
+      description:
+        'NVIDIA Parakeet multilingual speech recognition running locally on Apple Silicon via MLX.',
+      available: true
     }
   ];
 }
 
 function getTranscriptionLanguageOptions(): TranscriptionLanguageOption[] {
+  // Languages supported by parakeet-tdt-0.6b-v3 (subset surfaced in the UI).
   return [
     { code: 'auto', label: 'Auto detect' },
     { code: 'en', label: 'English' },
-    { code: 'hi', label: 'Hindi' },
     { code: 'es', label: 'Spanish' },
     { code: 'fr', label: 'French' },
     { code: 'de', label: 'German' },
-    { code: 'ja', label: 'Japanese' }
+    { code: 'it', label: 'Italian' },
+    { code: 'pt', label: 'Portuguese' }
   ];
 }
 
-async function findMultilingualWhisperModelPath() {
-  const candidates = [
-    env.whisperMultilingualModelPath,
-    env.whisperModelPath
-      ? path.join(path.dirname(env.whisperModelPath), 'ggml-small.bin')
-      : ''
-  ]
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-
-  for (const candidate of candidates) {
-    try {
-      await fs.access(candidate);
-      return candidate;
-    } catch {
-      continue;
-    }
-  }
-
-  return null;
-}
-
 function getInitialTranscriptionModel(): VoiceSettings['transcriptionModel'] {
-  if (env.moonshineWorkerCommand) {
-    return 'moonshine-base';
-  }
-
-  if (env.whisperMultilingualModelPath) {
-    return 'multilingual-small';
-  }
-
-  return 'default';
+  return 'parakeet';
 }

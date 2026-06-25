@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- provider hooks / Radix re-exports are intentionally co-located; this rule is hot-reload DX only */
 import * as TabsPrimitive from '@radix-ui/react-tabs';
 import { forwardRef } from 'react';
 import { cn } from '@/lib/cn';

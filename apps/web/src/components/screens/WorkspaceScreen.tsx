@@ -149,7 +149,7 @@ export function WorkspaceScreen({
           <div className="flex items-start gap-3">
             <AlertTriangle size={16} className="text-danger mt-0.5 shrink-0" />
             <div>
-              <h3 className="text-sm font-semibold text-text-primary">Reset VOCOD</h3>
+              <h3 className="text-sm font-semibold text-text-primary">Reset Oplyr</h3>
               <p className="text-xs text-text-secondary mt-1">
                 This clears chat history, notes, approvals, saved workspace, voice settings, app
                 preferences, and app-level provider connections. It does not run system-wide Codex

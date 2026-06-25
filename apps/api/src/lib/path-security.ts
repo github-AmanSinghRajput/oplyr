@@ -7,7 +7,11 @@ const directoryMarkers = ['.aws', 'secrets', 'credentials'];
 const exactRelativePaths = ['.docker/config.json'];
 
 function normalizePathSegment(input: string) {
-  return input.replace(/\\/g, '/').replace(/^\.\/+/, '').replace(/^\/+/, '').trim();
+  return input
+    .replace(/\\/g, '/')
+    .replace(/^\.\/+/, '')
+    .replace(/^\/+/, '')
+    .trim();
 }
 
 export function isSecretRelativePath(relativePath: string) {
@@ -31,7 +35,11 @@ export function isSecretRelativePath(relativePath: string) {
     return true;
   }
 
-  if (exactRelativePaths.some((candidate) => normalized === candidate || normalized.endsWith(`/${candidate}`))) {
+  if (
+    exactRelativePaths.some(
+      (candidate) => normalized === candidate || normalized.endsWith(`/${candidate}`)
+    )
+  ) {
     return true;
   }
 

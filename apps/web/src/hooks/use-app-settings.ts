@@ -7,6 +7,8 @@ import type {
   AssistantProviderId,
   ClaudeSettingsResponse,
   CodexSettingsResponse,
+  GeminiSettingsResponse,
+  ProviderUsageSnapshot,
   VoiceSettings,
   VoiceSettingsResponse
 } from '@/containers/voice-console/lib/types';
@@ -14,9 +16,13 @@ import type {
 export interface AppSettingsHandle {
   codexSettings: CodexSettingsResponse | null;
   claudeSettings: ClaudeSettingsResponse | null;
+  geminiSettings: GeminiSettingsResponse | null;
+  providerUsage: ProviderUsageSnapshot | null;
+  providerUsageLoading: boolean;
   voiceSettings: VoiceSettingsResponse | null;
   busyLabel: string;
   error: string;
+  onboardingSavingDisplayName: boolean;
   onboardingStep: 1 | 2 | 3;
   onboardingSelectedProviderId: AssistantProviderId | null;
   setOnboardingStep: (step: 1 | 2 | 3) => void;
@@ -32,12 +38,22 @@ export interface AppSettingsHandle {
   handleCodexSettingChange: (
     key: keyof CodexSettingsResponse['settings'],
     value: CodexSettingsResponse['settings'][keyof CodexSettingsResponse['settings']]
-  ) => Promise<void>;
+  ) => void;
   handleClaudeSettingChange: (
     key: keyof ClaudeSettingsResponse['settings'],
     value: ClaudeSettingsResponse['settings'][keyof ClaudeSettingsResponse['settings']]
-  ) => Promise<void>;
-  handleProviderChange: (providerId: AssistantProviderId) => Promise<void>;
+  ) => void;
+  handleGeminiSettingChange: (
+    key: keyof GeminiSettingsResponse['settings'],
+    value: GeminiSettingsResponse['settings'][keyof GeminiSettingsResponse['settings']]
+  ) => void;
+  handleSaveCodexSettings: () => Promise<void>;
+  handleSaveClaudeSettings: () => Promise<void>;
+  handleSaveGeminiSettings: () => Promise<void>;
+  codexSettingsDirty: boolean;
+  claudeSettingsDirty: boolean;
+  geminiSettingsDirty: boolean;
+  handleProviderSwitch: (providerId: AssistantProviderId) => Promise<void>;
   handleProviderConnect: (providerId: AssistantProviderId) => Promise<void>;
   handleProviderDisconnect: (providerId: AssistantProviderId) => Promise<void>;
   handleSaveProject: (projectRoot: string) => Promise<void>;
@@ -47,22 +63,32 @@ export interface AppSettingsHandle {
   initialize: () => Promise<void>;
   loadCodexSettings: () => Promise<void>;
   loadClaudeSettings: () => Promise<void>;
+  loadGeminiSettings: () => Promise<void>;
+  loadProviderUsage: () => Promise<void>;
   loadVoiceSettings: () => Promise<void>;
 }
 
 export function useAppSettings(): AppSettingsHandle {
   const { service } = useApi();
-  const { setStatus, refreshStatus } = useStatus();
+  const { status, setStatus, refreshStatus } = useStatus();
   const { pushToast } = useToast();
 
   const [codexSettings, setCodexSettings] = useState<CodexSettingsResponse | null>(null);
   const [claudeSettings, setClaudeSettings] = useState<ClaudeSettingsResponse | null>(null);
+  const [geminiSettings, setGeminiSettings] = useState<GeminiSettingsResponse | null>(null);
+  const [codexSettingsDirty, setCodexSettingsDirty] = useState(false);
+  const [claudeSettingsDirty, setClaudeSettingsDirty] = useState(false);
+  const [geminiSettingsDirty, setGeminiSettingsDirty] = useState(false);
+  const [providerUsage, setProviderUsage] = useState<ProviderUsageSnapshot | null>(null);
+  const [providerUsageLoading, setProviderUsageLoading] = useState(false);
   const [voiceSettings, setVoiceSettings] = useState<VoiceSettingsResponse | null>(null);
   const [busyLabel, setBusyLabel] = useState('');
   const [error, setError] = useState('');
+  const [onboardingSavingDisplayName, setOnboardingSavingDisplayName] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState<1 | 2 | 3>(1);
   const [onboardingSelectedProviderId, setOnboardingSelectedProviderId] =
     useState<AssistantProviderId | null>(null);
+  const activeProviderId = status?.assistantProviders.activeProviderId ?? null;
 
   // Clear error after 6s
   useEffect(() => {
@@ -75,6 +101,7 @@ export function useAppSettings(): AppSettingsHandle {
     try {
       const next = await service.getCodexSettings();
       setCodexSettings(next);
+      setCodexSettingsDirty(false);
     } catch {
       // non-critical
     }
@@ -84,6 +111,17 @@ export function useAppSettings(): AppSettingsHandle {
     try {
       const next = await service.getClaudeSettings();
       setClaudeSettings(next);
+      setClaudeSettingsDirty(false);
+    } catch {
+      // non-critical
+    }
+  }, [service]);
+
+  const loadGeminiSettings = useCallback(async () => {
+    try {
+      const next = await service.getGeminiSettings();
+      setGeminiSettings(next);
+      setGeminiSettingsDirty(false);
     } catch {
       // non-critical
     }
@@ -98,18 +136,85 @@ export function useAppSettings(): AppSettingsHandle {
     }
   }, [service]);
 
+  const loadProviderUsage = useCallback(async () => {
+    if (!activeProviderId) {
+      setProviderUsage(null);
+      setProviderUsageLoading(false);
+      return;
+    }
+
+    setProviderUsageLoading(true);
+    try {
+      const next = await service.getAssistantUsage();
+      setProviderUsage(next.usage);
+    } catch {
+      setProviderUsage(null);
+    } finally {
+      setProviderUsageLoading(false);
+    }
+  }, [activeProviderId, service]);
+
   const initialize = useCallback(async () => {
-    await Promise.allSettled([
-      refreshStatus(),
-      loadCodexSettings(),
-      loadClaudeSettings(),
-      loadVoiceSettings()
-    ]);
-  }, [refreshStatus, loadCodexSettings, loadClaudeSettings, loadVoiceSettings]);
+    await Promise.allSettled([refreshStatus(), loadVoiceSettings()]);
+  }, [refreshStatus, loadVoiceSettings]);
 
   useEffect(() => {
     void initialize();
   }, [initialize]);
+
+  useEffect(() => {
+    const hasDisplayName = Boolean(status?.appSettings.displayName?.trim());
+
+    if (!hasDisplayName) {
+      setOnboardingStep(1);
+      setOnboardingSelectedProviderId(null);
+      return;
+    }
+
+    if (!activeProviderId) {
+      setOnboardingStep(2);
+      setOnboardingSelectedProviderId(null);
+      return;
+    }
+
+    setOnboardingStep((current) => (current === 1 ? 2 : current));
+    setOnboardingSelectedProviderId(activeProviderId);
+  }, [activeProviderId, status?.appSettings.displayName]);
+
+  useEffect(() => {
+    if (activeProviderId === 'codex') {
+      setClaudeSettings(null);
+      setGeminiSettings(null);
+      void loadCodexSettings();
+      setProviderUsage(null);
+      setProviderUsageLoading(false);
+      return;
+    }
+
+    if (activeProviderId === 'claude') {
+      setCodexSettings(null);
+      setGeminiSettings(null);
+      void loadClaudeSettings();
+      setProviderUsage(null);
+      setProviderUsageLoading(false);
+      return;
+    }
+
+    if (activeProviderId === 'gemini') {
+      setCodexSettings(null);
+      setClaudeSettings(null);
+      void loadGeminiSettings();
+      setProviderUsage(null);
+      setProviderUsageLoading(false);
+      return;
+    }
+
+    setCodexSettings(null);
+    setClaudeSettings(null);
+    setGeminiSettings(null);
+    setProviderUsage(null);
+    setProviderUsageLoading(false);
+  }, [activeProviderId, loadClaudeSettings, loadCodexSettings, loadGeminiSettings]);
 
   const handleAppSettingChange = useCallback(
     async <Key extends keyof AppSettings>(key: Key, value: AppSettings[Key]) => {
@@ -148,49 +253,87 @@ export function useAppSettings(): AppSettingsHandle {
   );
 
   const handleCodexSettingChange = useCallback(
-    async (
+    (
       key: keyof CodexSettingsResponse['settings'],
       value: CodexSettingsResponse['settings'][keyof CodexSettingsResponse['settings']]
     ) => {
-      if (!codexSettings) return;
-
-      setCodexSettings({ ...codexSettings, settings: { ...codexSettings.settings, [key]: value } });
-      try {
-        const next = await service.updateCodexSettings({ [key]: value });
-        setCodexSettings(next);
-      } catch {
-        pushToast('error', 'Model overrides not saved', 'Codex preferences could not be updated.');
-        await loadCodexSettings();
-      }
+      // Stage locally only; persisted when the user clicks Save.
+      setCodexSettings((current) =>
+        current ? { ...current, settings: { ...current.settings, [key]: value } } : current
+      );
+      setCodexSettingsDirty(true);
     },
-    [service, codexSettings, pushToast, loadCodexSettings]
+    []
   );
 
+  const handleSaveCodexSettings = useCallback(async () => {
+    if (!codexSettings) return;
+    try {
+      const next = await service.updateCodexSettings(codexSettings.settings);
+      setCodexSettings(next);
+      setCodexSettingsDirty(false);
+      pushToast('success', 'Codex settings saved', 'Your model preferences are now in effect.');
+    } catch {
+      pushToast('error', 'Not saved', 'Codex preferences could not be updated.');
+      await loadCodexSettings();
+    }
+  }, [service, codexSettings, pushToast, loadCodexSettings]);
+
   const handleClaudeSettingChange = useCallback(
-    async (
+    (
       key: keyof ClaudeSettingsResponse['settings'],
       value: ClaudeSettingsResponse['settings'][keyof ClaudeSettingsResponse['settings']]
     ) => {
-      if (!claudeSettings) return;
-
-      setClaudeSettings({
-        ...claudeSettings,
-        settings: { ...claudeSettings.settings, [key]: value }
-      });
-      try {
-        const next = await service.updateClaudeSettings({ [key]: value });
-        setClaudeSettings(next);
-      } catch {
-        pushToast('error', 'Claude model not saved', 'Claude preferences could not be updated.');
-        await loadClaudeSettings();
-      }
+      setClaudeSettings((current) =>
+        current ? { ...current, settings: { ...current.settings, [key]: value } } : current
+      );
+      setClaudeSettingsDirty(true);
     },
-    [service, claudeSettings, pushToast, loadClaudeSettings]
+    []
   );
 
-  const handleProviderChange = useCallback(
+  const handleSaveClaudeSettings = useCallback(async () => {
+    if (!claudeSettings) return;
+    try {
+      const next = await service.updateClaudeSettings(claudeSettings.settings);
+      setClaudeSettings(next);
+      setClaudeSettingsDirty(false);
+      pushToast('success', 'Claude settings saved', 'Your model preferences are now in effect.');
+    } catch {
+      pushToast('error', 'Not saved', 'Claude preferences could not be updated.');
+      await loadClaudeSettings();
+    }
+  }, [service, claudeSettings, pushToast, loadClaudeSettings]);
+
+  const handleGeminiSettingChange = useCallback(
+    (
+      key: keyof GeminiSettingsResponse['settings'],
+      value: GeminiSettingsResponse['settings'][keyof GeminiSettingsResponse['settings']]
+    ) => {
+      setGeminiSettings((current) =>
+        current ? { ...current, settings: { ...current.settings, [key]: value } } : current
+      );
+      setGeminiSettingsDirty(true);
+    },
+    []
+  );
+
+  const handleSaveGeminiSettings = useCallback(async () => {
+    if (!geminiSettings) return;
+    try {
+      const next = await service.updateGeminiSettings(geminiSettings.settings);
+      setGeminiSettings(next);
+      setGeminiSettingsDirty(false);
+      pushToast('success', 'Gemini settings saved', 'Your model preferences are now in effect.');
+    } catch {
+      pushToast('error', 'Not saved', 'Gemini preferences could not be updated.');
+      await loadGeminiSettings();
+    }
+  }, [service, geminiSettings, pushToast, loadGeminiSettings]);
+
+  const handleProviderSwitch = useCallback(
     async (providerId: AssistantProviderId) => {
-      setBusyLabel(`Switching to ${providerId === 'claude' ? 'Claude Code' : 'Codex'}...`);
+      setBusyLabel(`Switching to ${getProviderLabel(providerId)}...`);
       try {
         const assistantProviders = await service.setActiveProvider(providerId);
         setStatus((current) => (current ? { ...current, assistantProviders } : current));
@@ -198,7 +341,7 @@ export function useAppSettings(): AppSettingsHandle {
         pushToast(
           'success',
           'Provider switched',
-          `${assistantProviders.activeProvider?.name ?? 'Assistant'} is now active.`
+          `Switched to ${assistantProviders.activeProvider?.name ?? getProviderLabel(providerId)}.`
         );
       } catch (err) {
         pushToast(
@@ -215,14 +358,14 @@ export function useAppSettings(): AppSettingsHandle {
 
   const handleProviderConnect = useCallback(
     async (providerId: AssistantProviderId) => {
-      setBusyLabel(`Connecting ${providerId === 'claude' ? 'Claude Code' : 'Codex'}...`);
+      setBusyLabel(`Connecting ${getProviderLabel(providerId)}...`);
       try {
         await service.connectProvider(providerId);
         await refreshStatus();
         pushToast(
           'success',
           'Provider connected',
-          `${providerId === 'claude' ? 'Claude Code' : 'Codex'} is now available.`
+          `${getProviderLabel(providerId)} is now active in Oplyr.`
         );
       } catch (err) {
         pushToast(
@@ -239,14 +382,14 @@ export function useAppSettings(): AppSettingsHandle {
 
   const handleProviderDisconnect = useCallback(
     async (providerId: AssistantProviderId) => {
-      setBusyLabel(`Disconnecting ${providerId === 'claude' ? 'Claude Code' : 'Codex'}...`);
+      setBusyLabel(`Disconnecting ${getProviderLabel(providerId)}...`);
       try {
         await service.disconnectProvider(providerId);
         await refreshStatus();
         pushToast(
           'info',
-          `${providerId === 'claude' ? 'Claude Code' : 'Codex'} disconnected`,
-          'The app-level connection has been removed.'
+          `${getProviderLabel(providerId)} disconnected`,
+          'Your local project history is still preserved.'
         );
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unable to disconnect provider.');
@@ -303,22 +446,22 @@ export function useAppSettings(): AppSettingsHandle {
     if (
       typeof window !== 'undefined' &&
       !window.confirm(
-        'Reset VOCOD completely?\n\nThis clears workspace data, chat history, notes, approvals, settings, and app-connected providers.'
+        'Reset Oplyr completely?\n\nThis clears workspace data, chat history, notes, approvals, settings, and app-connected providers.'
       )
     ) {
       return;
     }
 
-    setBusyLabel('Resetting VOCOD...');
+    setBusyLabel('Resetting Oplyr...');
     setError('');
     try {
       await service.resetApp();
       setOnboardingStep(1);
       setOnboardingSelectedProviderId(null);
       await initialize();
-      pushToast('info', 'VOCOD reset', 'All local app data has been cleared.');
+      pushToast('info', 'Oplyr reset', 'All local app data has been cleared.');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to reset VOCOD.');
+      setError(err instanceof Error ? err.message : 'Unable to reset Oplyr.');
       pushToast('error', 'Reset failed', err instanceof Error ? err.message : 'Unable to reset.');
     } finally {
       setBusyLabel('');
@@ -330,35 +473,42 @@ export function useAppSettings(): AppSettingsHandle {
       const trimmed = displayName.trim();
       if (!trimmed) return;
 
-      try {
-        setOnboardingStep(2);
-        const nextSettings = await service.updateAppSettings({ displayName: trimmed });
-        setStatus((current) => (current ? { ...current, appSettings: nextSettings } : current));
+      const welcomedAt = status?.appSettings?.welcomedAt ?? new Date().toISOString();
 
-        if (!nextSettings.welcomedAt) {
-          const welcomed = await service.updateAppSettings({
-            welcomedAt: new Date().toISOString()
-          });
-          setStatus((current) => (current ? { ...current, appSettings: welcomed } : current));
-        }
+      try {
+        setOnboardingSavingDisplayName(true);
+        setError('');
+        const nextSettings = await service.updateAppSettings({
+          displayName: trimmed,
+          welcomedAt
+        });
+        setStatus((current) => (current ? { ...current, appSettings: nextSettings } : current));
+        setOnboardingStep(2);
       } catch (err) {
+        setOnboardingStep(1);
         setError(err instanceof Error ? err.message : 'Unable to save your name.');
         pushToast(
           'error',
           'Welcome setup failed',
-          'VOCOD could not save your first-run profile yet.'
+          'Oplyr could not save your first-run profile yet.'
         );
+      } finally {
+        setOnboardingSavingDisplayName(false);
       }
     },
-    [service, setStatus, pushToast]
+    [service, setStatus, pushToast, status?.appSettings?.welcomedAt]
   );
 
   return {
     codexSettings,
     claudeSettings,
+    geminiSettings,
+    providerUsage,
+    providerUsageLoading,
     voiceSettings,
     busyLabel,
     error,
+    onboardingSavingDisplayName,
     onboardingStep,
     onboardingSelectedProviderId,
     setOnboardingStep,
@@ -367,7 +517,14 @@ export function useAppSettings(): AppSettingsHandle {
     handleVoiceSettingChange,
     handleCodexSettingChange,
     handleClaudeSettingChange,
-    handleProviderChange,
+    handleGeminiSettingChange,
+    handleSaveCodexSettings,
+    handleSaveClaudeSettings,
+    handleSaveGeminiSettings,
+    codexSettingsDirty,
+    claudeSettingsDirty,
+    geminiSettingsDirty,
+    handleProviderSwitch,
     handleProviderConnect,
     handleProviderDisconnect,
     handleSaveProject,
@@ -377,6 +534,20 @@ export function useAppSettings(): AppSettingsHandle {
     initialize,
     loadCodexSettings,
     loadClaudeSettings,
+    loadGeminiSettings,
+    loadProviderUsage,
     loadVoiceSettings
   };
+}
+
+function getProviderLabel(providerId: AssistantProviderId) {
+  if (providerId === 'claude') {
+    return 'Claude Code';
+  }
+
+  if (providerId === 'gemini') {
+    return 'Gemini CLI';
+  }
+
+  return 'Codex';
 }

@@ -1,4 +1,11 @@
-import { type FormEvent, type KeyboardEvent, useRef } from 'react';
+import {
+  type ClipboardEvent,
+  type DragEvent,
+  type FormEvent,
+  type KeyboardEvent,
+  useRef,
+  useState
+} from 'react';
 import { Mic, Paperclip, Send, StopCircle } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { Button } from '@/components/ui/button';
@@ -32,6 +39,8 @@ export function ChatComposer({
   isStreaming
 }: ChatComposerProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [isDragActive, setIsDragActive] = useState(false);
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -47,10 +56,49 @@ export function ChatComposer({
     }
   };
 
+  const resizeTextarea = () => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = '0px';
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`;
+  };
+
+  const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = Array.from(event.clipboardData.files ?? []);
+    if (files.length === 0) return;
+    event.preventDefault();
+    onAttachFiles(files);
+  };
+
+  const handleDragOver = (event: DragEvent<HTMLFormElement>) => {
+    if (!event.dataTransfer?.files?.length) return;
+    event.preventDefault();
+    setIsDragActive(true);
+  };
+
+  const handleDragLeave = (event: DragEvent<HTMLFormElement>) => {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+    setIsDragActive(false);
+  };
+
+  const handleDrop = (event: DragEvent<HTMLFormElement>) => {
+    const files = Array.from(event.dataTransfer?.files ?? []);
+    if (files.length === 0) return;
+    event.preventDefault();
+    setIsDragActive(false);
+    onAttachFiles(files);
+  };
+
   return (
     <TooltipProvider delayDuration={300}>
       <form
-        className="border-t border-border bg-background/60 backdrop-blur-sm px-4 py-3"
+        className={cn(
+          'border-t border-border bg-background/60 backdrop-blur-sm px-4 py-3 transition-colors',
+          isDragActive && 'bg-accent-muted/30'
+        )}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
         onSubmit={onSubmit}
       >
         {draftAttachments.length > 0 && (
@@ -64,6 +112,7 @@ export function ChatComposer({
         <div className="flex items-end gap-2">
           <div className="flex-1 relative">
             <textarea
+              ref={textareaRef}
               className={cn(
                 'w-full resize-none rounded-[var(--radius-control)] bg-surface-1 border border-border',
                 'px-3 py-2.5 text-sm text-text-primary placeholder:text-text-tertiary',
@@ -71,8 +120,12 @@ export function ChatComposer({
                 'min-h-[40px] max-h-[160px]'
               )}
               disabled={disabled}
-              onChange={(e) => onChange(e.target.value)}
+              onChange={(e) => {
+                onChange(e.target.value);
+                resizeTextarea();
+              }}
               onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
               placeholder="Type a message..."
               rows={1}
               value={value}

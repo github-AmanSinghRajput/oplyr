@@ -29,7 +29,17 @@ test('smoothRms uses the first sample when no prior level exists', () => {
   assert.equal(smoothRms(0, desktopVadConfig.startThreshold), desktopVadConfig.startThreshold);
 });
 
-test('getEffectiveEndpointDelayMs trims silence windows with a floor', () => {
-  assert.equal(getEffectiveEndpointDelayMs(800), 650);
-  assert.equal(getEffectiveEndpointDelayMs(500), 450);
+test('getEffectiveEndpointDelayMs applies a floor to silence windows', () => {
+  assert.equal(getEffectiveEndpointDelayMs(1500), 1800);
+  assert.equal(getEffectiveEndpointDelayMs(500), 1800);
+});
+
+test('getEffectiveEndpointDelayMs keeps a forgiving floor so natural pauses do not clip speech', () => {
+  // Any configured window yields a >= 1800ms pause so a mid-sentence thinking pause
+  // does not auto-send a half-spoken message.
+  assert.equal(getEffectiveEndpointDelayMs(800) >= 1800, true);
+});
+
+test('getEffectiveEndpointDelayMs scales up with a larger configured window', () => {
+  assert.equal(getEffectiveEndpointDelayMs(2500) >= getEffectiveEndpointDelayMs(800), true);
 });

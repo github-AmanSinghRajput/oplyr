@@ -1,4 +1,4 @@
-import { Sun, Moon, RefreshCw, Settings, Unplug } from 'lucide-react';
+import { Sun, Moon, RefreshCw, Unplug } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { useTheme } from '@/providers/ThemeProvider';
 import { useNavigation } from '@/providers/NavigationProvider';
@@ -6,16 +6,26 @@ import { useStatus } from '@/providers/StatusProvider';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { ProviderLogo } from '@/components/providers/ProviderLogo';
+import type { AssistantProviderId } from '@/containers/voice-console/lib/types';
 
 interface TopbarProps {
   displayName: string | null;
   onRefresh: () => void;
   onDisconnect: () => void;
+  onProviderSwitch: (providerId: AssistantProviderId) => void;
   busyLabel?: string;
   error?: string;
 }
 
-export function Topbar({ displayName, onRefresh, onDisconnect, busyLabel, error }: TopbarProps) {
+export function Topbar({
+  displayName,
+  onRefresh,
+  onDisconnect,
+  onProviderSwitch,
+  busyLabel,
+  error
+}: TopbarProps) {
   const { theme, toggleTheme } = useTheme();
   const { sidebarExpanded, setActiveScreen } = useNavigation();
   const { status, desktopRuntime, assistantReady } = useStatus();
@@ -23,7 +33,11 @@ export function Topbar({ displayName, onRefresh, onDisconnect, busyLabel, error 
   const workspaceLabel = status?.workspace.projectName ?? 'No project selected';
   const writeMode = status?.workspace.writeAccessEnabled ? 'Approval-gated' : 'Advisory';
   const activeProvider = status?.assistantProviders.activeProvider;
-  const authLabel = activeProvider?.name ?? 'Not connected';
+  const activeProviderId = activeProvider?.id ?? null;
+  const authLabel = activeProvider?.accountLabel ?? activeProvider?.name ?? 'Not connected';
+  const connectedProviders =
+    status?.assistantProviders.providers.filter((provider) => provider.appConnected) ?? [];
+  const showSwitcher = connectedProviders.length > 1;
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -63,19 +77,82 @@ export function Topbar({ displayName, onRefresh, onDisconnect, busyLabel, error 
             </Badge>
           )}
 
-          {assistantReady && desktopRuntime && (
-            <Badge
-              variant={desktopRuntime.apiReachable ? 'outline' : 'destructive'}
-              className="text-xs"
+          {assistantReady && showSwitcher && (
+            <div
+              role="radiogroup"
+              aria-label="Active assistant provider"
+              className="flex items-center gap-0.5 rounded-[var(--radius-control)] border border-border bg-surface-2 p-0.5"
             >
-              <span
-                className={cn(
-                  'w-1.5 h-1.5 rounded-full mr-1.5',
-                  desktopRuntime.apiReachable ? 'bg-success' : 'bg-danger'
-                )}
-              />
-              {authLabel}
-            </Badge>
+              {connectedProviders.map((provider) => {
+                const isActive = provider.id === activeProviderId;
+                return (
+                  <Tooltip key={provider.id}>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={isActive}
+                        aria-label={`Switch to ${provider.name}`}
+                        onClick={() => {
+                          if (!isActive) {
+                            onProviderSwitch(provider.id);
+                          }
+                        }}
+                        className={cn(
+                          'flex items-center gap-1.5 rounded-[calc(var(--radius-control)-2px)] px-2 h-7 text-xs transition-colors',
+                          isActive
+                            ? 'bg-surface-1 text-text-primary shadow-sm'
+                            : 'text-text-secondary hover:text-text-primary'
+                        )}
+                      >
+                        <ProviderLogo
+                          providerId={provider.id}
+                          size="sm"
+                          className="h-4 w-4 rounded p-0.5 border-0 shadow-none"
+                        />
+                        {isActive && <span className="font-medium">{provider.name}</span>}
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {isActive ? `${provider.name} (active)` : `Switch to ${provider.name}`}
+                    </TooltipContent>
+                  </Tooltip>
+                );
+              })}
+            </div>
+          )}
+
+          {assistantReady && desktopRuntime && !showSwitcher && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={() => setActiveScreen('settings')}
+                  className={cn(
+                    'flex items-center gap-1.5 rounded-[var(--radius-control)] border pl-1.5 pr-2 h-7 text-xs transition-colors cursor-pointer hover:bg-surface-2',
+                    desktopRuntime.apiReachable
+                      ? 'border-border text-text-secondary'
+                      : 'border-danger/40 text-danger'
+                  )}
+                >
+                  {activeProvider && (
+                    <ProviderLogo
+                      providerId={activeProvider.id}
+                      size="sm"
+                      className="h-5 w-5 rounded-md p-1 border-0 shadow-none"
+                    />
+                  )}
+                  <span
+                    className={cn(
+                      'w-1.5 h-1.5 rounded-full',
+                      desktopRuntime.apiReachable ? 'bg-success' : 'bg-danger'
+                    )}
+                  />
+                  <span>{authLabel}</span>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Manage providers</TooltipContent>
+            </Tooltip>
           )}
 
           <Tooltip>
@@ -96,20 +173,6 @@ export function Topbar({ displayName, onRefresh, onDisconnect, busyLabel, error 
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>Refresh</TooltipContent>
-              </Tooltip>
-
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => setActiveScreen('settings')}
-                  >
-                    <Settings size={14} />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Settings</TooltipContent>
               </Tooltip>
 
               <Tooltip>

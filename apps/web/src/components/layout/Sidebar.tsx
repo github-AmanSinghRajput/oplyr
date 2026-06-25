@@ -7,12 +7,16 @@ import {
   Terminal,
   GitCompare,
   Settings,
-  BrainCircuit
+  BrainCircuit,
+  Network,
+  Pin,
+  PinOff
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { useNavigation } from '@/providers/NavigationProvider';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Badge } from '@/components/ui/badge';
+import { OplyrLogoMark } from '@/components/branding/OplyrLogoMark';
 import type { ScreenId } from '@/containers/voice-console/lib/types';
 
 interface NavItemDef {
@@ -26,6 +30,7 @@ const navItems: NavItemDef[] = [
   { id: 'voice', label: 'Voice', icon: Mic },
   { id: 'terminal', label: 'Chat', icon: MessageSquare },
   { id: 'shell', label: 'Shell', icon: Terminal },
+  { id: 'codebase-map', label: 'Map', icon: Network },
   { id: 'review', label: 'Review', icon: GitCompare },
   { id: 'memory', label: 'Memory', icon: BrainCircuit },
   { id: 'settings', label: 'Settings', icon: Settings }
@@ -36,7 +41,14 @@ interface SidebarProps {
 }
 
 export function Sidebar({ badges }: SidebarProps) {
-  const { activeScreen, setActiveScreen, sidebarExpanded, setSidebarExpanded } = useNavigation();
+  const {
+    activeScreen,
+    setActiveScreen,
+    sidebarExpanded,
+    setSidebarExpanded,
+    sidebarPinned,
+    setSidebarPinned
+  } = useNavigation();
   const collapseTimeout = useRef<number | null>(null);
 
   const handleMouseEnter = useCallback(() => {
@@ -48,10 +60,11 @@ export function Sidebar({ badges }: SidebarProps) {
   }, [setSidebarExpanded]);
 
   const handleMouseLeave = useCallback(() => {
+    if (sidebarPinned) return;
     collapseTimeout.current = window.setTimeout(() => {
       setSidebarExpanded(false);
     }, 150);
-  }, [setSidebarExpanded]);
+  }, [setSidebarExpanded, sidebarPinned]);
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -69,20 +82,36 @@ export function Sidebar({ badges }: SidebarProps) {
       >
         {/* Brand */}
         <div className="flex items-center gap-2 px-3 h-11 shrink-0 overflow-hidden">
-          <div className="w-8 h-8 rounded-lg bg-accent-muted flex items-center justify-center shrink-0">
-            <span className="text-accent font-bold text-sm">V</span>
+          <div className="w-8 h-8 rounded-lg bg-surface-1 flex items-center justify-center shrink-0 shadow-sm ring-1 ring-border">
+            <OplyrLogoMark className="h-7 w-7" />
           </div>
           <AnimatePresence>
             {sidebarExpanded && (
-              <motion.span
-                className="text-sm font-semibold text-text-primary whitespace-nowrap overflow-hidden"
+              <motion.div
+                className="flex items-center gap-2 flex-1 overflow-hidden"
                 initial={{ opacity: 0, width: 0 }}
                 animate={{ opacity: 1, width: 'auto' }}
                 exit={{ opacity: 0, width: 0 }}
                 transition={{ duration: 0.15 }}
               >
-                VOCOD
-              </motion.span>
+                <span className="text-sm font-semibold text-text-primary whitespace-nowrap">
+                  Oplyr
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSidebarPinned(!sidebarPinned)}
+                  className={cn(
+                    'ml-auto rounded-md p-1.5 transition-colors',
+                    sidebarPinned
+                      ? 'text-accent bg-accent-muted'
+                      : 'text-text-tertiary hover:text-text-primary'
+                  )}
+                  aria-label={sidebarPinned ? 'Unpin sidebar' : 'Pin sidebar'}
+                  aria-pressed={sidebarPinned}
+                >
+                  {sidebarPinned ? <Pin size={14} /> : <PinOff size={14} />}
+                </button>
+              </motion.div>
             )}
           </AnimatePresence>
         </div>

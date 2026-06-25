@@ -76,7 +76,6 @@ function createStatus(overrides: Partial<StatusResponse> = {}): StatusResponse {
       inputDeviceLabel: 'MacBook Pro Microphone',
       outputDeviceLabel: null,
       transcriptionEngine: 'Desktop media capture + STT provider',
-      speechEngine: 'Disabled',
       lastCheckedAt: null,
       error: null
     },
@@ -233,7 +232,7 @@ test('buildNavigationHints matches visible launch surfaces only', () => {
 
   assert.deepEqual(
     hints.map((hint) => hint.id),
-    ['workspace', 'voice', 'terminal', 'shell', 'review']
+    ['workspace', 'voice', 'terminal', 'shell', 'review', 'settings']
   );
   assert.equal(hints.find((hint) => hint.id === 'terminal')?.hint, '1 turns logged');
 });

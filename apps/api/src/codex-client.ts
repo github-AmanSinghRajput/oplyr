@@ -3,10 +3,18 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import type { ChatMessage, DiffSummary, PendingApproval, WorkspaceState } from './types.js';
+import type {
+  BaselineUntrackedSnapshot,
+  ChatMessage,
+  DiffFileStatus,
+  DiffSummary,
+  PendingApproval,
+  WorkspaceState
+} from './types.js';
 import { logger } from './lib/logger.js';
 import { isProtectedWorkspacePath } from './lib/path-security.js';
 import { getRootDir } from './store.js';
+import { getPortableAssistantCwd } from './runtime-paths.js';
 import type { CodexSettingsService } from './features/codex/codex-settings.service.js';
 
 const execFileAsync = promisify(execFile);
@@ -89,7 +97,10 @@ function extractCodexErrorMessage(error: unknown) {
     .filter(Boolean);
 
   for (const candidate of detailCandidates) {
-    const lines = candidate.split('\n').map((line) => line.trim()).filter(Boolean);
+    const lines = candidate
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
     const explicitLimit = lines.find((line) =>
       /rate.?limit|quota|too many requests|429|resets?\s|retry after|try again in/i.test(line)
     );
@@ -179,10 +190,18 @@ function buildConversation(history: ChatMessage[]) {
 
 function workspaceLine(workspace: WorkspaceState) {
   if (!workspace.projectRoot) {
-    return 'No project root selected. General assistant mode only.';
+    return 'No project root selected. General assistant mode only. Do not inspect local files or assume repository context.';
   }
 
   return `Selected workspace: ${workspace.projectRoot}`;
+}
+
+function resolveAssistantCwd(workspace: WorkspaceState) {
+  return workspace.projectRoot ?? getPortableAssistantCwd();
+}
+
+function getAssistantProjectLabel(workspace: WorkspaceState, cwd: string) {
+  return workspace.projectRoot ? path.basename(cwd) : 'general-assistant';
 }
 
 function buildReadOnlyPrompt(userText: string, history: ChatMessage[], workspace: WorkspaceState) {
@@ -194,7 +213,12 @@ function buildReadOnlyPrompt(userText: string, history: ChatMessage[], workspace
     workspaceLine(workspace),
     `Write access enabled: ${workspace.writeAccessEnabled ? 'yes' : 'no'}.`,
     `Never read or edit files that look like secrets. Blocked patterns: ${workspace.secretPolicy.join(', ')}.`,
-    'Operate in advisory/read-only mode only.',
+    !workspace.projectRoot
+      ? 'No workspace is mounted. Answer from general knowledge and the conversation only. Do not scan files, inspect folders, or infer anything from the current directory.'
+      : null,
+    workspace.writeAccessEnabled
+      ? 'This workspace is approval-gated: file changes are ENABLED, and every edit is applied only after the user approves it. Respond to this message conversationally without editing files right now; when the user asks for a change, it will be routed through the approval flow and applied once they approve. Do NOT tell the user you are read-only or that you cannot edit files — you can, through the approval flow.'
+      : 'File changes are turned OFF for this workspace. Operate in advisory mode: inspect, explain, and propose, but do not edit files.',
     '',
     conversation ? `Conversation so far:\n${conversation}\n` : '',
     `Latest user message:\n${userText}`,
@@ -205,7 +229,11 @@ function buildReadOnlyPrompt(userText: string, history: ChatMessage[], workspace
     .join('\n');
 }
 
-function buildWriteDecisionPrompt(userText: string, history: ChatMessage[], workspace: WorkspaceState) {
+function buildWriteDecisionPrompt(
+  userText: string,
+  history: ChatMessage[],
+  workspace: WorkspaceState
+) {
   const conversation = buildConversation(history);
 
   return [
@@ -215,8 +243,9 @@ function buildWriteDecisionPrompt(userText: string, history: ChatMessage[], work
     `Write access enabled: ${workspace.writeAccessEnabled ? 'yes' : 'no'}.`,
     `Never read or edit files that look like secrets. Blocked patterns: ${workspace.secretPolicy.join(', ')}.`,
     'You are deciding whether the latest user request should remain a normal reply or become a write proposal requiring approval.',
-    'Return reply only if the request can be satisfied without changing files or running project-changing commands.',
-    'Return propose_write if the request asks for code changes, file edits, tests that may modify state, scaffolding, setup changes, or any action that should be approved first.',
+    'Return reply ONLY for questions, explanations, or read-only investigations that change nothing.',
+    'Return propose_write whenever the user asks to add, remove, delete, change, edit, update, fix, refactor, rename, move, create, or implement anything in the code or files — even a single line or word. When in doubt, choose propose_write.',
+    'CRITICAL: the intent field MUST agree with your assistant_text. If your explanation describes modifying, removing, or adding to any file, then intent MUST be "propose_write" — never "reply". Do not say you will change something and then return reply.',
     'When returning propose_write, your assistant_text MUST be a clear spoken explanation of what you plan to change.',
     'Describe which files will be modified, what the changes are, and why — as if you are explaining to a colleague in person.',
     'End your explanation by asking the developer to review the diff and approve it before you proceed.',
@@ -228,7 +257,11 @@ function buildWriteDecisionPrompt(userText: string, history: ChatMessage[], work
     .join('\n');
 }
 
-function buildWriteExecutionPrompt(approval: PendingApproval, history: ChatMessage[], workspace: WorkspaceState) {
+function buildWriteExecutionPrompt(
+  approval: PendingApproval,
+  history: ChatMessage[],
+  workspace: WorkspaceState
+) {
   const conversation = buildConversation(history);
 
   return [
@@ -253,12 +286,88 @@ function buildWriteExecutionPrompt(approval: PendingApproval, history: ChatMessa
     .join('\n');
 }
 
-async function runCodexCommand(args: string[], cwd: string) {
-  return execFileAsync(getCodexCommand(), args, {
-    cwd,
-    env: process.env,
-    timeout: 10 * 60 * 1000,
-    maxBuffer: 1024 * 1024 * 12
+async function runCodexCommand(args: string[], cwd: string, timeoutMs = 10 * 60 * 1000) {
+  const startedAt = Date.now();
+  const command = args[0] ?? 'unknown';
+  logger.info('codex.command.started', { command, cwd });
+
+  return await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+    // stdin MUST be closed: `codex exec` reads "additional input from stdin" and blocks forever
+    // waiting for EOF if stdin stays open (which execFile leaves open). 'ignore' hands the child an
+    // already-closed stdin so it uses the prompt arg and exits instead of hanging the whole turn.
+    const child = spawn(getCodexCommand(), args, {
+      cwd,
+      env: process.env,
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+
+    const settle = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn();
+    };
+
+    const timer = setTimeout(() => {
+      settle(() => {
+        child.kill('SIGKILL');
+        const message = `Codex command timed out after ${Math.round(timeoutMs / 1000)}s.`;
+        logger.error('codex.command.failed', {
+          command,
+          cwd,
+          durationMs: Date.now() - startedAt,
+          error: message,
+          stderr: stderr.slice(-300)
+        });
+        reject(new Error(message));
+      });
+    }, timeoutMs);
+
+    child.stdout?.on('data', (chunk) => {
+      if (stdout.length < 12 * 1024 * 1024) stdout += chunk.toString();
+    });
+    child.stderr?.on('data', (chunk) => {
+      if (stderr.length < 1024 * 1024) stderr += chunk.toString();
+    });
+
+    child.on('error', (error) => {
+      settle(() => {
+        logger.error('codex.command.failed', {
+          command,
+          cwd,
+          durationMs: Date.now() - startedAt,
+          error: error.message,
+          stderr: stderr.slice(-300)
+        });
+        reject(error);
+      });
+    });
+
+    child.on('close', (code) => {
+      settle(() => {
+        if (code === 0) {
+          logger.info('codex.command.completed', {
+            command,
+            cwd,
+            durationMs: Date.now() - startedAt
+          });
+          resolve({ stdout, stderr });
+        } else {
+          const message = stderr.trim() || `Codex command exited with code ${code ?? 'unknown'}.`;
+          logger.error('codex.command.failed', {
+            command,
+            cwd,
+            durationMs: Date.now() - startedAt,
+            error: message.slice(0, 300)
+          });
+          reject(new Error(message));
+        }
+      });
+    });
   });
 }
 
@@ -267,8 +376,9 @@ async function runCodexPrompt(options: {
   sandbox: 'read-only' | 'workspace-write';
   prompt: string;
   outputSchema?: unknown;
+  executionContext?: { surface: 'voice' | 'text'; intent: 'discussion' | 'write' };
 }) {
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'voice-codex-'));
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'oplyr-'));
   const outputFile = path.join(tempDir, 'last-message.txt');
   const args = [
     'exec',
@@ -283,7 +393,9 @@ async function runCodexPrompt(options: {
     outputFile
   ];
 
-  const executionSettings = codexSettingsService ? await codexSettingsService.getExecutionOverrides() : null;
+  const executionSettings = codexSettingsService
+    ? await codexSettingsService.getExecutionOverrides(options.executionContext)
+    : null;
   if (executionSettings?.model) {
     args.push('-c', `model=${executionSettings.model}`);
   }
@@ -313,8 +425,11 @@ async function runCodexPrompt(options: {
   }
 }
 
-function getExecutionOverrides() {
-  return codexSettingsService?.getExecutionOverrides() ?? Promise.resolve(null);
+function getExecutionOverrides(context?: {
+  surface: 'voice' | 'text';
+  intent: 'discussion' | 'write';
+}) {
+  return codexSettingsService?.getExecutionOverrides(context) ?? Promise.resolve(null);
 }
 
 function createAbortError() {
@@ -329,8 +444,9 @@ async function runCodexPromptStream(options: {
   signal?: AbortSignal;
   onTextSnapshot?: (text: string) => void;
   onActivityUpdate?: (activity: string) => void;
+  executionContext?: { surface: 'voice' | 'text'; intent: 'discussion' | 'write' };
 }) {
-  const executionSettings = await getExecutionOverrides();
+  const executionSettings = await getExecutionOverrides(options.executionContext);
 
   return new Promise<string>((resolve, reject) => {
     const args = ['app-server', '--listen', 'stdio://'];
@@ -465,8 +581,7 @@ async function runCodexPromptStream(options: {
           return;
         }
 
-        const resultThreadId =
-          (result as { thread?: { id?: string } }).thread?.id?.trim?.() ?? '';
+        const resultThreadId = (result as { thread?: { id?: string } }).thread?.id?.trim?.() ?? '';
         if (!resultThreadId) {
           rejectOnce(new Error('Codex app-server returned an invalid thread id.'));
           child.kill('SIGTERM');
@@ -575,8 +690,18 @@ async function runCodexPromptStream(options: {
 
     if (options.signal) {
       abortListener = () => {
-        try { child.kill('SIGTERM'); } catch {}
-        setTimeout(() => { try { child.kill('SIGKILL'); } catch {} }, 3000).unref();
+        try {
+          child.kill('SIGTERM');
+        } catch {
+          // Ignore cleanup failures while aborting the stream.
+        }
+        setTimeout(() => {
+          try {
+            child.kill('SIGKILL');
+          } catch {
+            // Ignore cleanup failures while aborting the stream.
+          }
+        }, 3000).unref();
         rejectOnce(createAbortError());
       };
 
@@ -593,8 +718,8 @@ async function runCodexPromptStream(options: {
       method: 'initialize',
       params: {
         clientInfo: {
-          name: 'voice-codex-api',
-          title: 'Voice Codex API',
+          name: 'oplyr-api',
+          title: 'Oplyr API',
           version: '0.1.0'
         },
         capabilities: {
@@ -669,18 +794,22 @@ export async function generateAssistantReply(
   options?: { voiceTurnId?: string }
 ) {
   await assertCodexReady();
-  const cwd = workspace.projectRoot ?? getRootDir();
+  const cwd = resolveAssistantCwd(workspace);
   const startedAt = Date.now();
   const text = await runCodexPrompt({
     cwd,
     sandbox: 'read-only',
-    prompt: buildReadOnlyPrompt(userText, history, workspace)
+    prompt: buildReadOnlyPrompt(userText, history, workspace),
+    executionContext: {
+      surface: options?.voiceTurnId ? 'voice' : 'text',
+      intent: 'discussion'
+    }
   });
   logger.info('codex.prompt.completed', {
     operation: 'generate_reply',
     sandbox: 'read-only',
     durationMs: Date.now() - startedAt,
-    projectName: path.basename(cwd),
+    projectName: getAssistantProjectLabel(workspace, cwd),
     promptLength: userText.length,
     responseLength: text.length,
     ...(options?.voiceTurnId ? { voiceTurnId: options.voiceTurnId } : {})
@@ -696,13 +825,13 @@ export async function streamAssistantReply(
   options?: StreamReplyOptions
 ) {
   await assertCodexReady();
-  const cwd = workspace.projectRoot ?? getRootDir();
+  const cwd = resolveAssistantCwd(workspace);
   const startedAt = Date.now();
 
   if (options?.signal?.aborted) {
     logger.warn('codex.stream.pre_aborted', {
       operation: 'stream_reply',
-      projectName: path.basename(cwd),
+      projectName: getAssistantProjectLabel(workspace, cwd),
       ...(options?.voiceTurnId ? { voiceTurnId: options.voiceTurnId } : {})
     });
     throw createAbortError();
@@ -715,7 +844,11 @@ export async function streamAssistantReply(
       prompt: buildReadOnlyPrompt(userText, history, workspace),
       signal: options?.signal,
       onTextSnapshot: options?.onTextSnapshot,
-      onActivityUpdate: options?.onActivityUpdate
+      onActivityUpdate: options?.onActivityUpdate,
+      executionContext: {
+        surface: options?.voiceTurnId ? 'voice' : 'text',
+        intent: 'discussion'
+      }
     });
   } catch (error) {
     const classified = error instanceof CodexClientError ? error : classifyCodexError(error);
@@ -723,7 +856,7 @@ export async function streamAssistantReply(
       operation: 'stream_reply',
       errorKind: classified.kind,
       durationMs: Date.now() - startedAt,
-      projectName: path.basename(cwd),
+      projectName: getAssistantProjectLabel(workspace, cwd),
       error: classified.message,
       ...(options?.voiceTurnId ? { voiceTurnId: options.voiceTurnId } : {})
     });
@@ -734,7 +867,7 @@ export async function streamAssistantReply(
     operation: 'stream_reply',
     sandbox: 'read-only',
     durationMs: Date.now() - startedAt,
-    projectName: path.basename(cwd),
+    projectName: getAssistantProjectLabel(workspace, cwd),
     promptLength: userText.length,
     responseLength: text.length,
     ...(options?.voiceTurnId ? { voiceTurnId: options.voiceTurnId } : {})
@@ -884,7 +1017,11 @@ export async function decideWriteIntent(
     cwd,
     sandbox: 'read-only',
     prompt: buildWriteDecisionPrompt(userText, history, workspace),
-    outputSchema: schema
+    outputSchema: schema,
+    executionContext: {
+      surface: options?.voiceTurnId ? 'voice' : 'text',
+      intent: 'write'
+    }
   });
   logger.info('codex.prompt.completed', {
     operation: 'decide_write_intent',
@@ -899,6 +1036,22 @@ export async function decideWriteIntent(
   return JSON.parse(raw) as WriteDecision;
 }
 
+function deriveDiffFileStatus(statusCode: string): DiffFileStatus {
+  // `git status --porcelain` two-char XY code. Untracked files use `??`.
+  // We collapse the staged/worktree pair into a single user-facing change type.
+  const codes = statusCode.replace(/\s/g, '');
+  if (statusCode === '??' || codes.includes('A')) {
+    return 'added';
+  }
+  if (codes.includes('D')) {
+    return 'deleted';
+  }
+  if (codes.includes('R') || codes.includes('C')) {
+    return 'renamed';
+  }
+  return 'modified';
+}
+
 async function readGitStatus(projectRoot: string) {
   const { stdout } = await execFileAsync('git', ['-C', projectRoot, 'status', '--porcelain'], {
     timeout: 20000,
@@ -911,27 +1064,77 @@ async function readGitStatus(projectRoot: string) {
     .filter(Boolean);
 }
 
-async function buildUntrackedFileDiff(projectRoot: string, filePath: string) {
+async function listUntrackedFiles(projectRoot: string) {
+  const { stdout } = await execFileAsync(
+    'git',
+    ['-C', projectRoot, 'ls-files', '--others', '--exclude-standard', '-z'],
+    {
+      timeout: 20000,
+      maxBuffer: 1024 * 1024 * 4
+    }
+  );
+
+  return stdout.split('\0').filter((line) => line.length > 0);
+}
+
+async function hashWorkspaceFile(projectRoot: string, filePath: string, writeObject: boolean) {
+  const args = ['-C', projectRoot, 'hash-object'];
+  if (writeObject) {
+    args.push('-w');
+  }
+  args.push('--', filePath);
+
+  const { stdout } = await execFileAsync('git', args, {
+    timeout: 20000,
+    maxBuffer: 1024 * 1024
+  });
+
+  return stdout.trim();
+}
+
+async function readGitBlob(projectRoot: string, blobHash: string) {
+  const result = (await execFileAsync('git', ['-C', projectRoot, 'cat-file', 'blob', blobHash], {
+    encoding: 'buffer',
+    timeout: 20000,
+    maxBuffer: 1024 * 1024 * 4
+  })) as { stdout: Buffer };
+
+  return result.stdout;
+}
+
+async function runNoIndexDiff(projectRoot: string, args: string[]) {
   try {
-    const absoluteFile = path.join(projectRoot, filePath);
-    const { stdout } = await execFileAsync(
-      'git',
-      ['diff', '--no-index', '--', '/dev/null', absoluteFile],
-      {
-        cwd: projectRoot,
-        timeout: 20000,
-        maxBuffer: 1024 * 1024 * 4
-      }
-    );
+    const { stdout } = await execFileAsync('git', ['diff', '--no-index', ...args], {
+      cwd: projectRoot,
+      timeout: 20000,
+      maxBuffer: 1024 * 1024 * 4
+    });
 
     return stdout;
   } catch (error) {
-    const message = error instanceof Error ? error.message : '';
-    if (message) {
-      const anyError = error as { stdout?: string };
-      return anyError.stdout ?? '';
-    }
-    return '';
+    return (error as { stdout?: string }).stdout ?? '';
+  }
+}
+
+async function buildUntrackedFileDiff(projectRoot: string, filePath: string) {
+  const absoluteFile = path.join(projectRoot, filePath);
+  return runNoIndexDiff(projectRoot, ['--', '/dev/null', absoluteFile]);
+}
+
+async function buildBlobToPathDiff(
+  projectRoot: string,
+  filePath: string,
+  blobHash: string,
+  currentPath: string
+) {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'oplyr-diff-baseline-'));
+  const baselineFile = path.join(tempDir, 'baseline');
+
+  try {
+    await fs.writeFile(baselineFile, await readGitBlob(projectRoot, blobHash));
+    return await runNoIndexDiff(projectRoot, ['--', baselineFile, currentPath]);
+  } finally {
+    await fs.rm(tempDir, { force: true, recursive: true });
   }
 }
 
@@ -950,31 +1153,39 @@ export async function collectGitDiff(projectRoot: string): Promise<DiffSummary> 
   }
 
   const statusLines = await readGitStatus(projectRoot);
-  const changedFiles = statusLines
-    .map((line) => line.slice(3).trim())
-    .filter(Boolean);
+  const changedFiles = statusLines.map((line) => line.slice(3).trim()).filter(Boolean);
   const redactedFiles: string[] = [];
 
   const files: DiffSummary['files'] = [];
 
   for (const line of statusLines) {
     const statusCode = line.slice(0, 2);
-    const filePath = line.slice(3).trim();
+    const parsedPath = line.slice(3).trim();
 
-    if (!filePath) {
+    if (!parsedPath) {
       continue;
     }
+
+    // Porcelain v1 emits renames/copies as `old/path -> new/path`. Use the
+    // destination (right-hand) path for the diff invocation and display.
+    const isRenameOrCopy = statusCode.startsWith('R') || statusCode.startsWith('C');
+    const filePath = isRenameOrCopy
+      ? (parsedPath.split(' -> ').pop()?.trim() ?? parsedPath)
+      : parsedPath;
 
     if (await isProtectedWorkspacePath(projectRoot, filePath)) {
       redactedFiles.push(filePath);
       continue;
     }
 
+    const status = deriveDiffFileStatus(statusCode);
+
     if (statusCode === '??') {
       const diff = await buildUntrackedFileDiff(projectRoot, filePath);
       files.push({
         filePath,
-        diff
+        diff,
+        status
       });
       continue;
     }
@@ -991,12 +1202,14 @@ export async function collectGitDiff(projectRoot: string): Promise<DiffSummary> 
 
       files.push({
         filePath,
-        diff: stdout
+        diff: stdout,
+        status
       });
     } catch {
       files.push({
         filePath,
-        diff: ''
+        diff: '',
+        status
       });
     }
   }
@@ -1011,11 +1224,7 @@ export async function collectGitDiff(projectRoot: string): Promise<DiffSummary> 
 
 export async function revertProtectedGitChanges(projectRoot: string, protectedPaths: string[]) {
   const normalizedPaths = Array.from(
-    new Set(
-      protectedPaths
-        .map((value) => value.trim())
-        .filter(Boolean)
-    )
+    new Set(protectedPaths.map((value) => value.trim()).filter(Boolean))
   );
   if (normalizedPaths.length === 0) {
     return;
@@ -1057,6 +1266,285 @@ export async function revertProtectedGitChanges(projectRoot: string, protectedPa
   }
 }
 
+/**
+ * Capture a non-destructive snapshot of the current working tree and return a ref. Used so a later
+ * revert restores ONLY the assistant's edits without touching the user's other uncommitted work.
+ * Returns HEAD when there is nothing stashable (clean tracked tree).
+ */
+export async function snapshotWorkingTree(projectRoot: string): Promise<{
+  ref: string;
+  untracked: string[];
+  untrackedSnapshots: BaselineUntrackedSnapshot[];
+}> {
+  let ref = 'HEAD';
+  try {
+    const { stdout } = await execFileAsync('git', ['-C', projectRoot, 'stash', 'create'], {
+      timeout: 20000,
+      maxBuffer: 1024 * 1024
+    });
+    ref = stdout.trim() || (await resolveHeadRef(projectRoot));
+  } catch {
+    ref = await resolveHeadRef(projectRoot);
+  }
+
+  // Capture the untracked files that already exist, so a later "since" diff can tell the
+  // assistant's NEW files apart from files the user had created before the turn. We also store
+  // local blob snapshots for non-protected files, so AI edits/deletions to those untracked files
+  // are still reviewable and rejectable.
+  let untracked: string[] = [];
+  let untrackedSnapshots: BaselineUntrackedSnapshot[] = [];
+  try {
+    untracked = await listUntrackedFiles(projectRoot);
+    untrackedSnapshots = await snapshotUntrackedFiles(projectRoot, untracked);
+  } catch {
+    untracked = [];
+    untrackedSnapshots = [];
+  }
+
+  return { ref, untracked, untrackedSnapshots };
+}
+
+async function snapshotUntrackedFiles(projectRoot: string, filePaths: string[]) {
+  const snapshots: BaselineUntrackedSnapshot[] = [];
+
+  for (const filePath of filePaths) {
+    try {
+      if (await isProtectedWorkspacePath(projectRoot, filePath)) {
+        continue;
+      }
+
+      const absoluteFile = path.join(projectRoot, filePath);
+      const stats = await fs.stat(absoluteFile);
+      if (!stats.isFile()) {
+        continue;
+      }
+
+      snapshots.push({
+        filePath,
+        blobHash: await hashWorkspaceFile(projectRoot, filePath, true),
+        mode: stats.mode & 0o777
+      });
+    } catch {
+      // If a file disappears while snapshotting, ignore it and let the normal git diff continue.
+    }
+  }
+
+  return snapshots;
+}
+
+async function resolveHeadRef(projectRoot: string): Promise<string> {
+  try {
+    const { stdout } = await execFileAsync('git', ['-C', projectRoot, 'rev-parse', 'HEAD'], {
+      timeout: 20000,
+      maxBuffer: 1024 * 1024
+    });
+    return stdout.trim() || 'HEAD';
+  } catch {
+    return 'HEAD';
+  }
+}
+
+/**
+ * Collect ONLY the changes made since a snapshot ref (see snapshotWorkingTree). This is what the
+ * Review screen shows: the assistant's current turn, not the user's other uncommitted work.
+ * Tracked changes are diffed against the snapshot; untracked files are included only if they did
+ * not already exist at snapshot time.
+ */
+export async function collectGitDiffSince(
+  projectRoot: string,
+  baselineRef: string,
+  baselineUntracked: string[] = [],
+  baselineUntrackedSnapshots: BaselineUntrackedSnapshot[] = []
+): Promise<DiffSummary> {
+  try {
+    await execFileAsync('git', ['-C', projectRoot, 'rev-parse', '--show-toplevel'], {
+      timeout: 20000,
+      maxBuffer: 1024 * 1024
+    });
+  } catch {
+    return { isGitRepo: false, changedFiles: [], files: [] };
+  }
+
+  const files: DiffSummary['files'] = [];
+  const changedFiles: string[] = [];
+  const redactedFiles: string[] = [];
+  const seenFiles = new Set<string>();
+  const baselineUntrackedSnapshotMap = new Map(
+    baselineUntrackedSnapshots.map((snapshot) => [snapshot.filePath, snapshot])
+  );
+
+  // 1) Tracked changes since the snapshot (the user's pre-existing changes are inside the snapshot,
+  //    so they are excluded here).
+  let nameStatus = '';
+  try {
+    const { stdout } = await execFileAsync(
+      'git',
+      ['-C', projectRoot, 'diff', '--no-ext-diff', '--name-status', baselineRef],
+      { timeout: 20000, maxBuffer: 1024 * 1024 * 4 }
+    );
+    nameStatus = stdout;
+  } catch {
+    nameStatus = '';
+  }
+
+  for (const rawLine of nameStatus.split('\n')) {
+    const line = rawLine.trim();
+    if (!line) {
+      continue;
+    }
+    const parts = line.split('\t');
+    const code = parts[0] ?? '';
+    const filePath = (parts.length >= 3 ? parts[2] : parts[1])?.trim();
+    if (!filePath) {
+      continue;
+    }
+    if (baselineUntrackedSnapshotMap.has(filePath)) {
+      continue;
+    }
+    if (await isProtectedWorkspacePath(projectRoot, filePath)) {
+      redactedFiles.push(filePath);
+      continue;
+    }
+    const status = nameStatusToFileStatus(code);
+    seenFiles.add(filePath);
+    changedFiles.push(filePath);
+    try {
+      const { stdout } = await execFileAsync(
+        'git',
+        ['-C', projectRoot, 'diff', '--no-ext-diff', baselineRef, '--', filePath],
+        { timeout: 20000, maxBuffer: 1024 * 1024 * 4 }
+      );
+      files.push({ filePath, diff: stdout, status });
+    } catch {
+      files.push({ filePath, diff: '', status });
+    }
+  }
+
+  // 2) Pre-existing untracked files the assistant modified or deleted. Git cannot diff these
+  //    against a commit, so compare the current file to the blob snapshot captured before the turn.
+  for (const snapshot of baselineUntrackedSnapshots) {
+    const filePath = snapshot.filePath;
+    if (!filePath || seenFiles.has(filePath)) {
+      continue;
+    }
+    if (await isProtectedWorkspacePath(projectRoot, filePath)) {
+      redactedFiles.push(filePath);
+      continue;
+    }
+
+    const absoluteFile = path.join(projectRoot, filePath);
+    let currentHash: string | null = null;
+    try {
+      currentHash = await hashWorkspaceFile(projectRoot, filePath, false);
+    } catch {
+      currentHash = null;
+    }
+
+    if (currentHash === snapshot.blobHash) {
+      continue;
+    }
+
+    seenFiles.add(filePath);
+    changedFiles.push(filePath);
+    files.push({
+      filePath,
+      diff: await buildBlobToPathDiff(
+        projectRoot,
+        filePath,
+        snapshot.blobHash,
+        currentHash ? absoluteFile : '/dev/null'
+      ),
+      status: currentHash ? 'modified' : 'deleted'
+    });
+  }
+
+  // 3) Untracked files the assistant CREATED this turn (current untracked minus baseline untracked).
+  const baseline = new Set(baselineUntracked);
+  for (const filePath of await listUntrackedFiles(projectRoot)) {
+    if (!filePath || baseline.has(filePath) || seenFiles.has(filePath)) {
+      continue;
+    }
+    if (await isProtectedWorkspacePath(projectRoot, filePath)) {
+      redactedFiles.push(filePath);
+      continue;
+    }
+    seenFiles.add(filePath);
+    changedFiles.push(filePath);
+    files.push({
+      filePath,
+      diff: await buildUntrackedFileDiff(projectRoot, filePath),
+      status: 'added'
+    });
+  }
+
+  return {
+    isGitRepo: true,
+    changedFiles,
+    files,
+    ...(redactedFiles.length > 0 ? { redactedFiles } : {})
+  };
+}
+
+function nameStatusToFileStatus(code: string): DiffFileStatus {
+  const c = code.charAt(0);
+  if (c === 'A') return 'added';
+  if (c === 'D') return 'deleted';
+  if (c === 'R' || c === 'C') return 'renamed';
+  return 'modified';
+}
+
+/**
+ * Revert the assistant's applied changes back to a pre-edit snapshot. Files the assistant created
+ * (status 'added') are removed; everything else is restored from the snapshot ref. Only the
+ * provided files are touched, so the user's other working-tree changes are preserved.
+ */
+export async function revertWorkingTree(
+  projectRoot: string,
+  baselineRef: string,
+  files: Array<{ filePath: string; status?: string }>,
+  baselineUntrackedSnapshots: BaselineUntrackedSnapshot[] = []
+) {
+  const baselineUntrackedSnapshotMap = new Map(
+    baselineUntrackedSnapshots.map((snapshot) => [snapshot.filePath, snapshot])
+  );
+
+  for (const { filePath, status } of files) {
+    const trimmed = filePath?.trim();
+    if (!trimmed) {
+      continue;
+    }
+    const untrackedSnapshot = baselineUntrackedSnapshotMap.get(trimmed);
+    if (untrackedSnapshot) {
+      await restoreUntrackedSnapshot(projectRoot, untrackedSnapshot);
+      continue;
+    }
+    if (status === 'added') {
+      await fs.rm(path.join(projectRoot, trimmed), { force: true, recursive: true });
+      continue;
+    }
+    try {
+      await execFileAsync(
+        'git',
+        ['-C', projectRoot, 'restore', '--source', baselineRef, '--worktree', '--', trimmed],
+        { timeout: 20000, maxBuffer: 1024 * 1024 }
+      );
+    } catch {
+      // File may not exist at the baseline (assistant created it) — remove it.
+      await fs.rm(path.join(projectRoot, trimmed), { force: true, recursive: true });
+    }
+  }
+}
+
+async function restoreUntrackedSnapshot(projectRoot: string, snapshot: BaselineUntrackedSnapshot) {
+  const absoluteFile = path.join(projectRoot, snapshot.filePath);
+  await fs.mkdir(path.dirname(absoluteFile), { recursive: true });
+  await fs.writeFile(absoluteFile, await readGitBlob(projectRoot, snapshot.blobHash));
+
+  if (snapshot.mode !== undefined) {
+    await fs.chmod(absoluteFile, snapshot.mode);
+  }
+}
+
 export async function executeApprovedWrite(
   approval: PendingApproval,
   history: ChatMessage[],
@@ -1068,7 +1556,11 @@ export async function executeApprovedWrite(
   const text = await runCodexPrompt({
     cwd: approval.projectRoot,
     sandbox: 'workspace-write',
-    prompt: buildWriteExecutionPrompt(approval, history, workspace)
+    prompt: buildWriteExecutionPrompt(approval, history, workspace),
+    executionContext: {
+      surface: options?.voiceTurnId ? 'voice' : 'text',
+      intent: 'write'
+    }
   });
   logger.info('codex.prompt.completed', {
     operation: 'execute_approved_write',

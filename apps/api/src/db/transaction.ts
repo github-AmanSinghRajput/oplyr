@@ -1,18 +1,17 @@
-import type { PoolClient } from 'pg';
-import { getDatabasePool } from './client.js';
+import type DatabaseConstructor from 'better-sqlite3';
+import { getDatabase } from './client.js';
 
-export async function withTransaction<T>(work: (client: PoolClient) => Promise<T>) {
-  const client = await getDatabasePool().connect();
+type RuntimeDatabase = InstanceType<typeof DatabaseConstructor>;
 
+export async function withTransaction<T>(work: (database: RuntimeDatabase) => Promise<T>) {
+  const database = getDatabase();
   try {
-    await client.query('BEGIN');
-    const result = await work(client);
-    await client.query('COMMIT');
+    database.exec('BEGIN');
+    const result = await work(database);
+    database.exec('COMMIT');
     return result;
   } catch (error) {
-    await client.query('ROLLBACK');
+    database.exec('ROLLBACK');
     throw error;
-  } finally {
-    client.release();
   }
 }

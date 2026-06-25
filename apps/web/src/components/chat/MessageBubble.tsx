@@ -3,6 +3,7 @@ import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import { cn } from '@/lib/cn';
 import { CodeBlock } from './CodeBlock';
+import { TypingDots } from '@/components/voice/TypingDots';
 import type { MessageEntry } from '@/containers/voice-console/lib/types';
 import { formatClock } from '@/containers/voice-console/lib/helpers';
 
@@ -31,15 +32,21 @@ export function MessageBubble({ message, isStreaming, typedText }: MessageBubble
           <p className="text-sm leading-relaxed whitespace-pre-wrap">{displayText}</p>
         ) : (
           <div className="text-sm leading-relaxed prose-sm">
-            <Markdown
-              remarkPlugins={[remarkGfm]}
-              rehypePlugins={[rehypeHighlight]}
-              components={{ code: CodeBlock }}
-            >
-              {displayText}
-            </Markdown>
-            {isStreaming && (
-              <span className="inline-block w-1.5 h-4 bg-accent rounded-full animate-pulse ml-0.5" />
+            {isStreaming && !displayText.trim() ? (
+              <TypingDots />
+            ) : (
+              <>
+                <Markdown
+                  remarkPlugins={[remarkGfm]}
+                  rehypePlugins={[rehypeHighlight]}
+                  components={{ code: CodeBlock }}
+                >
+                  {displayText}
+                </Markdown>
+                {isStreaming && (
+                  <span className="inline-block w-1.5 h-4 bg-accent rounded-full animate-pulse ml-0.5" />
+                )}
+              </>
             )}
           </div>
         )}

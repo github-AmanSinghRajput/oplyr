@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- provider hooks / Radix re-exports are intentionally co-located; this rule is hot-reload DX only */
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { useApi } from './ApiProvider';
 import { useDesktopBridge } from '@/hooks/use-desktop-bridge';
@@ -41,6 +42,7 @@ export function StatusProvider({ children }: { children: ReactNode }) {
   }, [service]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional mount-time status load
     void refreshStatus();
   }, [refreshStatus]);
 

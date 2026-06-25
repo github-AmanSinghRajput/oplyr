@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Check, X, Menu, Columns2, Rows3 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -11,9 +12,11 @@ interface ReviewHeaderProps {
   totalDeletions: number;
   viewedCount: number;
   diffMode: 'split' | 'unified';
+  isApproving?: boolean;
+  isRejecting?: boolean;
   onToggleDiffMode: () => void;
   onApprove: () => void;
-  onReject: () => void;
+  onReject: (feedback?: string) => void;
   onToggleFileTree?: () => void;
 }
 
@@ -25,6 +28,8 @@ export function ReviewHeader({
   totalDeletions,
   viewedCount,
   diffMode,
+  isApproving = false,
+  isRejecting = false,
   onToggleDiffMode,
   onApprove,
   onReject,
@@ -33,6 +38,13 @@ export function ReviewHeader({
   const waitingSince = pendingApproval?.createdAt
     ? formatRelativeTime(pendingApproval.createdAt)
     : null;
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [feedback, setFeedback] = useState('');
+
+  const closeReject = () => {
+    setRejectOpen(false);
+    setFeedback('');
+  };
 
   return (
     <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-xl border-b border-border pb-4 mb-4">
@@ -60,15 +72,55 @@ export function ReviewHeader({
 
         {pendingApproval && (
           <div className="flex items-center gap-2 shrink-0">
-            <Button onClick={onApprove} className="bg-success hover:bg-success/90 text-background">
-              <Check size={14} className="mr-1.5" /> Approve
+            <Button
+              className="bg-success hover:bg-success/90 text-background"
+              disabled={isApproving || isRejecting}
+              onClick={onApprove}
+            >
+              <Check size={14} className="mr-1.5" /> {isApproving ? 'Approving...' : 'Approve'}
             </Button>
-            <Button variant="destructive" onClick={onReject}>
-              <X size={14} className="mr-1.5" /> Reject
+            <Button
+              variant="destructive"
+              disabled={isApproving || isRejecting}
+              onClick={() => setRejectOpen((open) => !open)}
+            >
+              <X size={14} className="mr-1.5" /> {isRejecting ? 'Rejecting...' : 'Reject'}
             </Button>
           </div>
         )}
       </div>
+
+      {pendingApproval && rejectOpen && (
+        <div className="mt-3 rounded-[var(--radius-control)] border border-border bg-surface-1 p-3">
+          <label className="text-xs font-medium text-text-secondary">
+            Tell {assistantLabel} what to change (optional)
+          </label>
+          <textarea
+            value={feedback}
+            onChange={(event) => setFeedback(event.target.value)}
+            placeholder="What needs to change or what's wrong in this?"
+            rows={2}
+            autoFocus
+            className="mt-2 w-full resize-none rounded-[var(--radius-control)] border border-border bg-surface-2 px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-1 focus:ring-accent"
+          />
+          <div className="mt-2 flex items-center justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={closeReject} disabled={isRejecting}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={isRejecting}
+              onClick={() => {
+                onReject(feedback.trim() || undefined);
+                closeReject();
+              }}
+            >
+              {feedback.trim() ? 'Reject & revise' : 'Reject'}
+            </Button>
+          </div>
+        </div>
+      )}
 
       <div className="flex items-center gap-2 mt-3 flex-wrap">
         {totalFiles > 0 && <Badge variant="outline">{totalFiles} files</Badge>}

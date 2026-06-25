@@ -1,146 +1,162 @@
-import { AgentOrb } from '@/components/voice/AgentOrb';
-import { VoiceControls } from '@/components/voice/VoiceControls';
-import { TranscriptCard } from '@/components/voice/TranscriptCard';
-import { ActivityFeed } from '@/components/voice/ActivityFeed';
-import { CommandPicker } from '@/components/voice/CommandPicker';
+import { Mic, Square } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { VoiceWaveform } from '@/components/voice/VoiceWaveform';
+import { VoiceListeningStrip } from '@/components/voice/VoiceListeningStrip';
+import { TypingDots } from '@/components/voice/TypingDots';
+import { MessageBubble } from '@/components/chat/MessageBubble';
+import { ProviderLogo } from '@/components/providers/ProviderLogo';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/cn';
 import type {
+  AssistantProviderId,
   AudioState,
-  VoiceCommandOption,
-  VoiceNarrationMode,
+  MessageEntry,
   VoiceSessionState,
   VoiceState
 } from '@/containers/voice-console/lib/types';
-import { getVoiceHeadline, getVoiceSubline } from '@/containers/voice-console/lib/helpers';
+
+export interface VoiceAssistantInfo {
+  id: AssistantProviderId;
+  name: string;
+  model: string | null;
+}
 
 interface VoiceScreenProps {
   audio: AudioState | null;
-  busyLabel: string;
-  spokenReplyPreview?: string;
-  streamedTranscriptOverride?: string;
   voiceSession: VoiceSessionState | null;
   voiceState: VoiceState;
-  voiceActivity: string | null;
-  recentVoiceActivities: string[];
-  narrationMode: VoiceNarrationMode;
-  pendingCommandTitle: string | null;
-  pendingCommandPrompt: string | null;
-  pendingCommandOptions: VoiceCommandOption[];
-  onApplyCommandOption: (option: VoiceCommandOption) => void;
-  onDismissCommandOptions: () => void;
-  onToggleMute: () => void;
+  isRecording: boolean;
+  micAnalyserRef: React.RefObject<AnalyserNode | null>;
+  userTranscript: string;
+  aiReply: MessageEntry | null;
+  assistant: VoiceAssistantInfo | null;
+  audioAvailable: boolean;
   onStart: () => void;
-  onStop: () => void;
+  onStopAndSend: () => void;
 }
 
-const fallbackAudio: AudioState = {
-  platform: 'browser',
-  available: false,
-  inputDeviceLabel: null,
-  outputDeviceLabel: null,
-  transcriptionEngine: 'Unavailable',
-  speechEngine: 'Unavailable',
-  lastCheckedAt: null,
-  error: null
+const STATUS: Record<VoiceState, string> = {
+  idle: 'Tap to speak',
+  listening: 'Listening…',
+  thinking: 'Thinking…',
+  speaking: 'Speaking…',
+  error: 'Something went wrong — tap to try again'
 };
 
 export function VoiceScreen({
   audio,
-  busyLabel: _busyLabel,
-  spokenReplyPreview,
-  streamedTranscriptOverride,
   voiceSession,
   voiceState,
-  voiceActivity,
-  recentVoiceActivities,
-  narrationMode,
-  pendingCommandTitle,
-  pendingCommandPrompt,
-  pendingCommandOptions,
-  onApplyCommandOption,
-  onDismissCommandOptions,
-  onToggleMute,
+  isRecording,
+  micAnalyserRef,
+  userTranscript,
+  aiReply,
+  assistant,
+  audioAvailable,
   onStart,
-  onStop
+  onStopAndSend
 }: VoiceScreenProps) {
-  const currentTranscriptLabel =
-    voiceSession?.phase === 'thinking' || voiceSession?.phase === 'speaking'
-      ? 'AI response'
-      : 'Your voice';
-  const currentTranscript =
-    (voiceSession?.phase === 'speaking' && spokenReplyPreview
-      ? spokenReplyPreview
-      : streamedTranscriptOverride || voiceSession?.liveTranscript) || 'Waiting for live speech...';
-  const lastTranscript = voiceSession?.lastTranscript || 'No completed voice turn yet.';
+  const mode = isRecording ? 'recording' : voiceState === 'speaking' ? 'speaking' : 'idle';
+  const busy = voiceState === 'thinking';
+  const isWorking = voiceState === 'thinking' || voiceState === 'speaking';
+  const replyText = aiReply?.text?.trim() ?? '';
+  const showResponseBlock = Boolean(aiReply) || isWorking;
 
   return (
-    <div className="flex flex-col items-center gap-8 py-8 max-w-3xl mx-auto">
-      {/* Headline */}
+    <div className="flex flex-col items-center gap-6 py-8 max-w-2xl mx-auto w-full">
       <div className="text-center">
-        <p className="text-xs font-medium text-text-tertiary uppercase tracking-wider mb-2">
-          Voice session
+        <p className="text-xs font-medium text-text-tertiary uppercase tracking-wider mb-1">
+          Voice · {audio?.transcriptionEngine ?? 'On-device speech'}
         </p>
-        <h2 className="text-2xl font-semibold text-text-primary">{getVoiceHeadline(voiceState)}</h2>
-        <p className="text-sm text-text-secondary mt-1">
-          {getVoiceSubline(
-            audio ?? fallbackAudio,
-            voiceState,
-            streamedTranscriptOverride ?? voiceSession?.liveTranscript ?? '',
-            voiceSession?.error
-          )}
-        </p>
+        <h2 className="text-xl font-semibold text-text-primary">{STATUS[voiceState]}</h2>
       </div>
 
-      {/* Agent Orb — center stage */}
-      <AgentOrb voiceState={voiceState} size={200} />
+      <div className="w-full rounded-[var(--radius-panel)] border border-border bg-surface-1 px-4 py-4">
+        <VoiceWaveform mode={mode} analyserRef={micAnalyserRef} />
+      </div>
 
-      {/* Controls */}
-      <VoiceControls
-        voiceState={voiceState}
-        voiceActive={Boolean(voiceSession?.active)}
-        audioAvailable={audio?.available ?? false}
-        narrationMode={narrationMode}
-        onStart={onStart}
-        onStop={onStop}
-        onToggleMute={onToggleMute}
+      <VoiceListeningStrip
+        active={isRecording || voiceState === 'listening'}
+        analyserRef={micAnalyserRef}
       />
 
-      {/* Live transcript (full width) */}
-      <div className="w-full">
-        <TranscriptCard
-          label={currentTranscriptLabel}
-          text={currentTranscript}
-          variant="primary"
-          badge={voiceSession?.active ? 'Live' : 'Standby'}
-          badgeActive={voiceSession?.active ?? false}
-        />
+      <div className="flex items-center gap-3">
+        <motion.div whileTap={{ scale: 0.95 }}>
+          <Button
+            size="lg"
+            className={cn(
+              'rounded-full h-16 w-16 p-0 cursor-pointer',
+              isRecording ? 'bg-danger hover:bg-danger/90' : 'bg-accent hover:bg-accent/90',
+              'text-background'
+            )}
+            disabled={busy || !audioAvailable}
+            onClick={isRecording ? onStopAndSend : onStart}
+            aria-label={isRecording ? 'Stop and send' : 'Tap to speak'}
+          >
+            {isRecording ? <Square size={22} /> : <Mic size={22} />}
+          </Button>
+        </motion.div>
+        {isRecording && (
+          <Button
+            variant="outline"
+            className="rounded-full h-10 cursor-pointer"
+            onClick={onStopAndSend}
+          >
+            Stop &amp; send
+          </Button>
+        )}
       </div>
 
-      {/* Activity + Last message (2 columns) */}
-      <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-4">
-        <ActivityFeed currentActivity={voiceActivity} recentActivities={recentVoiceActivities} />
-        <TranscriptCard label="Last message" text={lastTranscript} />
-      </div>
-
-      {/* Voice error */}
-      {voiceSession?.error && (
-        <div className="w-full rounded-[var(--radius-panel)] border border-danger/30 bg-danger-muted p-4">
-          <span className="text-xs font-medium text-danger uppercase tracking-wider">
-            Voice issue
-          </span>
-          <p className="text-sm text-text-primary font-medium mt-1">{voiceSession.error}</p>
+      {userTranscript && (
+        <div className="w-full">
+          <p className="text-xs font-medium text-text-tertiary uppercase tracking-wider mb-1">
+            You
+          </p>
+          <div className="rounded-[var(--radius-panel)] border border-accent-border bg-accent-muted px-4 py-3">
+            <p className="text-sm text-text-primary whitespace-pre-wrap">{userTranscript}</p>
+          </div>
         </div>
       )}
 
-      {/* Command picker */}
-      <div className="w-full">
-        <CommandPicker
-          title={pendingCommandTitle}
-          prompt={pendingCommandPrompt}
-          options={pendingCommandOptions}
-          onApply={onApplyCommandOption}
-          onDismiss={onDismissCommandOptions}
-        />
-      </div>
+      {showResponseBlock && (
+        <div className="w-full">
+          <div className="flex items-center gap-2 mb-2">
+            {assistant ? (
+              <>
+                <ProviderLogo providerId={assistant.id} size="sm" />
+                <div className="flex flex-col min-w-0">
+                  <span className="text-xs font-semibold text-text-primary truncate">
+                    {assistant.name}
+                  </span>
+                  {assistant.model && (
+                    <span className="text-[11px] text-text-tertiary truncate">
+                      {assistant.model}
+                    </span>
+                  )}
+                </div>
+              </>
+            ) : (
+              <span className="text-xs font-medium text-text-tertiary uppercase tracking-wider">
+                Assistant
+              </span>
+            )}
+            {isWorking && <TypingDots size="sm" className="ml-1" />}
+          </div>
+          {aiReply && replyText ? (
+            <MessageBubble message={aiReply} />
+          ) : (
+            <div className="rounded-[var(--radius-panel)] border border-border bg-surface-1 px-4 py-5 flex items-center justify-center">
+              <TypingDots />
+            </div>
+          )}
+        </div>
+      )}
+
+      {voiceSession?.error && (
+        <div className="w-full rounded-[var(--radius-panel)] border border-danger/30 bg-danger-muted p-4">
+          <p className="text-sm text-text-primary font-medium">{voiceSession.error}</p>
+        </div>
+      )}
     </div>
   );
 }

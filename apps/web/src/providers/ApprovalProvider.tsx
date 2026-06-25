@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- provider hooks / Radix re-exports are intentionally co-located; this rule is hot-reload DX only */
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { useApi } from './ApiProvider';
 import { useStatus } from './StatusProvider';
@@ -9,8 +10,8 @@ interface ApprovalContextValue {
   isApproving: boolean;
   isRejecting: boolean;
   loadApprovals: () => Promise<void>;
-  handleApprove: () => Promise<void>;
-  handleReject: () => Promise<void>;
+  handleApprove: () => Promise<boolean>;
+  handleReject: (feedback?: string) => Promise<boolean>;
 }
 
 const ApprovalContext = createContext<ApprovalContextValue | null>(null);
@@ -38,7 +39,7 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
   }, [loadApprovals]);
 
   const handleApprove = useCallback(async () => {
-    if (!status?.pendingApproval) return;
+    if (!status?.pendingApproval) return false;
 
     setIsApproving(true);
     try {
@@ -49,35 +50,47 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
         'Changes approved',
         'The approved diff has been applied to the workspace.'
       );
+      return true;
     } catch (err) {
       pushToast(
         'error',
         'Approve failed',
         err instanceof Error ? err.message : 'Unable to approve changes.'
       );
+      return false;
     } finally {
       setIsApproving(false);
     }
   }, [service, status?.pendingApproval, refreshStatus, loadApprovals, pushToast]);
 
-  const handleReject = useCallback(async () => {
-    if (!status?.pendingApproval) return;
+  const handleReject = useCallback(
+    async (feedback?: string) => {
+      if (!status?.pendingApproval) return false;
 
-    setIsRejecting(true);
-    try {
-      await service.rejectChange(status.pendingApproval.id);
-      await Promise.all([refreshStatus(), loadApprovals()]);
-      pushToast('info', 'Changes rejected', 'Pending write request was declined.');
-    } catch (err) {
-      pushToast(
-        'error',
-        'Reject failed',
-        err instanceof Error ? err.message : 'Unable to reject changes.'
-      );
-    } finally {
-      setIsRejecting(false);
-    }
-  }, [service, status?.pendingApproval, refreshStatus, loadApprovals, pushToast]);
+      const trimmed = feedback?.trim();
+      setIsRejecting(true);
+      try {
+        await service.rejectChange(status.pendingApproval.id, trimmed);
+        await Promise.all([refreshStatus(), loadApprovals()]);
+        if (trimmed) {
+          pushToast('info', 'Revising', 'Oplyr is reworking the change based on your feedback.');
+        } else {
+          pushToast('info', 'Changes rejected', 'Pending write request was declined.');
+        }
+        return true;
+      } catch (err) {
+        pushToast(
+          'error',
+          'Reject failed',
+          err instanceof Error ? err.message : 'Unable to reject changes.'
+        );
+        return false;
+      } finally {
+        setIsRejecting(false);
+      }
+    },
+    [service, status?.pendingApproval, refreshStatus, loadApprovals, pushToast]
+  );
 
   return (
     <ApprovalContext

@@ -15,8 +15,10 @@ interface ReviewScreenProps {
   pendingApproval: PendingApproval | null;
   lastDiff: DiffSummary | null;
   approvalHistory: ApprovalHistoryEntry[];
+  isApproving?: boolean;
+  isRejecting?: boolean;
   onApprove: () => void;
-  onReject: () => void;
+  onReject: (feedback?: string) => void;
 }
 
 function toAnchorId(filePath: string) {
@@ -31,17 +33,35 @@ export function ReviewScreen({
   pendingApproval,
   lastDiff,
   approvalHistory,
+  isApproving = false,
+  isRejecting = false,
   onApprove,
   onReject
 }: ReviewScreenProps) {
   const [viewedFiles, setViewedFiles] = useState<Set<string>>(new Set());
   const [activeFilePath, setActiveFilePath] = useState<string | null>(null);
-  const [diffMode, setDiffMode] = useState<'split' | 'unified'>(() =>
-    typeof window !== 'undefined' && window.innerWidth < 768 ? 'unified' : 'split'
-  );
+  const [diffMode, setDiffMode] = useState<'split' | 'unified'>(() => {
+    if (typeof window === 'undefined') return 'split';
+    const stored = window.localStorage.getItem('oplyr.diffMode');
+    if (stored === 'split' || stored === 'unified') return stored;
+    // Default to split everywhere; only fall back to unified on very narrow screens.
+    return window.innerWidth < 768 ? 'unified' : 'split';
+  });
   const [collapsedFiles, setCollapsedFiles] = useState<Set<string>>(new Set());
   const [fileTreeOpen, setFileTreeOpen] = useState(false);
+  const [syncedApprovalId, setSyncedApprovalId] = useState<string | null>(
+    pendingApproval?.id ?? null
+  );
   const fileCardRefs = useRef<Map<string, HTMLElement>>(new Map());
+
+  // Reset local review state when the approval changes, the render-phase way
+  // (https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes).
+  if ((pendingApproval?.id ?? null) !== syncedApprovalId) {
+    setSyncedApprovalId(pendingApproval?.id ?? null);
+    setViewedFiles(new Set());
+    setCollapsedFiles(new Set());
+    setActiveFilePath(null);
+  }
 
   const fileStats = useMemo(() => {
     if (!lastDiff?.files) return [];
@@ -66,12 +86,6 @@ export function ReviewScreen({
       ),
     [fileStats]
   );
-
-  useEffect(() => {
-    setViewedFiles(new Set());
-    setCollapsedFiles(new Set());
-    setActiveFilePath(null);
-  }, [pendingApproval?.id]);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -118,7 +132,13 @@ export function ReviewScreen({
   }, []);
 
   const handleToggleDiffMode = useCallback(() => {
-    setDiffMode((prev) => (prev === 'split' ? 'unified' : 'split'));
+    setDiffMode((prev) => {
+      const next = prev === 'split' ? 'unified' : 'split';
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('oplyr.diffMode', next);
+      }
+      return next;
+    });
   }, []);
 
   const setFileCardRef = useCallback((filePath: string, el: HTMLElement | null) => {
@@ -143,6 +163,8 @@ export function ReviewScreen({
         totalDeletions={totalStats.deletions}
         viewedCount={viewedCount}
         diffMode={diffMode}
+        isApproving={isApproving}
+        isRejecting={isRejecting}
         onToggleDiffMode={handleToggleDiffMode}
         onApprove={onApprove}
         onReject={onReject}

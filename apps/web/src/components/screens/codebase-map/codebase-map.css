@@ -1,0 +1,31 @@
+/* Theme-aware React Flow chrome for the codebase map. React Flow's default Controls + MiniMap are
+   styled for a light canvas, so they vanish in dark mode (and look off in light). Re-skin them with
+   the app's design tokens, which already switch per theme. Scoped to `.cbmap-flow`. */
+
+.cbmap-flow .react-flow__controls {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+}
+.cbmap-flow .react-flow__controls-button {
+  width: 26px;
+  height: 26px;
+  background: var(--color-surface-1);
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+}
+.cbmap-flow .react-flow__controls-button:hover {
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+}
+.cbmap-flow .react-flow__controls-button svg {
+  fill: currentColor;
+  max-width: 12px;
+  max-height: 12px;
+}
+
+/* The attribution is hidden via proOptions, but guard the layout just in case. */
+.cbmap-flow .react-flow__attribution {
+  display: none;
+}

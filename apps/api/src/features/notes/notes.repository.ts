@@ -1,4 +1,4 @@
-import { getDatabasePool, isDatabaseConfigured } from '../../db/client.js';
+import { getDatabase, isDatabaseConfigured } from '../../db/client.js';
 import { withTransaction } from '../../db/transaction.js';
 
 interface CreateNoteInput {
@@ -23,33 +23,34 @@ export class NotesRepository {
       return null;
     }
 
-    return withTransaction(async (client) => {
-      const noteResult = await client.query<{ id: string }>(
-        `
+    return withTransaction(async (database) => {
+      const noteResult = database
+        .prepare(
+          `
           INSERT INTO notes (owner_user_id, workspace_id, title, body, source)
-          VALUES ($1, $2, $3, $4, $5)
+          VALUES (?, ?, ?, ?, ?)
           RETURNING id
-        `,
-        [
+        `
+        )
+        .get(
           input.ownerUserId ?? null,
           input.workspaceId ?? null,
           input.title,
           input.body,
           input.source ?? 'meeting'
-        ]
+        ) as { id: string };
+
+      const noteId = noteResult.id;
+      const chunks = input.chunks ?? [];
+      const chunkStatement = database.prepare(
+        `
+          INSERT INTO note_chunks (note_id, chunk_index, content)
+          VALUES (?, ?, ?)
+        `
       );
 
-      const noteId = noteResult.rows[0].id;
-      const chunks = input.chunks ?? [];
-
       for (const [index, chunk] of chunks.entries()) {
-        await client.query(
-          `
-            INSERT INTO note_chunks (note_id, chunk_index, content)
-            VALUES ($1, $2, $3)
-          `,
-          [noteId, index, chunk]
-        );
+        chunkStatement.run(noteId, index, chunk);
       }
 
       return {
@@ -63,31 +64,32 @@ export class NotesRepository {
       return [];
     }
 
-    const pool = getDatabasePool();
-    const result = await pool.query<{
+    const database = getDatabase();
+    const rows = database
+      .prepare(
+        `
+        SELECT id, title, body, source, created_at, updated_at
+        FROM notes
+        ORDER BY created_at DESC
+        LIMIT ?
+      `
+      )
+      .all(limit) as {
       id: string;
       title: string;
       body: string;
       source: string;
-      created_at: Date;
-      updated_at: Date;
-    }>(
-      `
-        SELECT id, title, body, source, created_at, updated_at
-        FROM notes
-        ORDER BY created_at DESC
-        LIMIT $1
-      `,
-      [limit]
-    );
+      created_at: string;
+      updated_at: string;
+    }[];
 
-    return result.rows.map((row) => ({
+    return rows.map((row) => ({
       id: row.id,
       title: row.title,
       body: row.body,
       source: row.source,
-      createdAt: row.created_at.toISOString(),
-      updatedAt: row.updated_at.toISOString()
+      createdAt: new Date(row.created_at).toISOString(),
+      updatedAt: new Date(row.updated_at).toISOString()
     }));
   }
 
@@ -96,34 +98,37 @@ export class NotesRepository {
       return null;
     }
 
-    return withTransaction(async (client) => {
-      const noteResult = await client.query<{ id: string }>(
-        `
+    return withTransaction(async (database) => {
+      const noteResult = database
+        .prepare(
+          `
           UPDATE notes
-          SET title = $2,
-              body = $3,
-              source = $4,
-              updated_at = NOW()
-          WHERE id = $1
+          SET title = ?,
+              body = ?,
+              source = ?,
+              updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+          WHERE id = ?
           RETURNING id
-        `,
-        [noteId, input.title, input.body, input.source ?? 'meeting']
-      );
+        `
+        )
+        .get(input.title, input.body, input.source ?? 'meeting', noteId) as
+        | { id: string }
+        | undefined;
 
-      if (!noteResult.rows[0]?.id) {
+      if (!noteResult?.id) {
         return null;
       }
 
-      await client.query('DELETE FROM note_chunks WHERE note_id = $1', [noteId]);
+      database.prepare('DELETE FROM note_chunks WHERE note_id = ?').run(noteId);
+      const chunkStatement = database.prepare(
+        `
+          INSERT INTO note_chunks (note_id, chunk_index, content)
+          VALUES (?, ?, ?)
+        `
+      );
 
       for (const [index, chunk] of (input.chunks ?? []).entries()) {
-        await client.query(
-          `
-            INSERT INTO note_chunks (note_id, chunk_index, content)
-            VALUES ($1, $2, $3)
-          `,
-          [noteId, index, chunk]
-        );
+        chunkStatement.run(noteId, index, chunk);
       }
 
       return {
@@ -137,15 +142,16 @@ export class NotesRepository {
       return false;
     }
 
-    const pool = getDatabasePool();
-    const result = await pool.query(
-      `
+    const database = getDatabase();
+    const result = database
+      .prepare(
+        `
         DELETE FROM notes
-        WHERE id = $1
-      `,
-      [noteId]
-    );
+        WHERE id = ?
+      `
+      )
+      .run(noteId);
 
-    return (result.rowCount ?? 0) > 0;
+    return result.changes > 0;
   }
 }

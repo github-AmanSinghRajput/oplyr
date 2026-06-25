@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- provider hooks / Radix re-exports are intentionally co-located; this rule is hot-reload DX only */
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import type { AppTheme } from '@/containers/voice-console/lib/types';
 
@@ -9,7 +10,7 @@ interface ThemeContextValue {
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
-const STORAGE_KEY = 'voice-codex-local.app-theme';
+const STORAGE_KEY = 'oplyr.app-theme';
 
 function loadStoredTheme(): AppTheme {
   try {

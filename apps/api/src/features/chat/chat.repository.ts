@@ -1,7 +1,7 @@
-import { getDatabasePool, isDatabaseConfigured } from '../../db/client.js';
+import { getDatabase, isDatabaseConfigured } from '../../db/client.js';
 import { withTransaction } from '../../db/transaction.js';
 import { getWorkspaceState } from '../../runtime.js';
-import type { ChatMessage } from '../../types.js';
+import type { ChatAttachment, ChatMessage } from '../../types.js';
 
 interface PersistedSession {
   id: string;
@@ -16,35 +16,38 @@ export class ChatRepository {
       return [];
     }
 
-    const pool = getDatabasePool();
+    const database = getDatabase();
     const session = await this.resolveSession();
     if (!session) {
       return [];
     }
 
-    const result = await pool.query<{
+    const rows = database
+      .prepare(
+        `
+        SELECT id, role, source, content, attachments_json, created_at
+        FROM conversation_messages
+        WHERE session_id = ?
+        ORDER BY created_at DESC
+        LIMIT ?
+      `
+      )
+      .all(session.id, limit) as {
       id: string;
       role: ChatMessage['role'];
       source: ChatMessage['source'];
       content: string;
-      created_at: Date;
-    }>(
-      `
-        SELECT id, role, source, content, created_at
-        FROM conversation_messages
-        WHERE session_id = $1
-        ORDER BY created_at DESC
-        LIMIT $2
-      `,
-      [session.id, limit]
-    );
+      attachments_json: string;
+      created_at: string;
+    }[];
 
-    return result.rows.reverse().map((row) => ({
+    return rows.reverse().map((row) => ({
       id: row.id,
       role: row.role,
       source: row.source,
       text: row.content,
-      createdAt: row.created_at.toISOString()
+      attachments: parseAttachments(row.attachments_json),
+      createdAt: new Date(row.created_at).toISOString()
     }));
   }
 
@@ -54,14 +57,23 @@ export class ChatRepository {
     }
 
     const session = await this.ensureSession();
-    await withTransaction(async (client) => {
+    await withTransaction(async (database) => {
+      const statement = database.prepare(
+        `
+          INSERT INTO conversation_messages (id, session_id, role, source, content, attachments_json, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `
+      );
+
       for (const message of messages) {
-        await client.query(
-          `
-            INSERT INTO conversation_messages (id, session_id, role, source, content, created_at)
-            VALUES ($1, $2, $3, $4, $5, $6)
-          `,
-          [message.id, session.id, message.role, message.source, message.text || '', message.createdAt]
+        statement.run(
+          message.id,
+          session.id,
+          message.role,
+          message.source,
+          message.text || '',
+          JSON.stringify(message.attachments ?? []),
+          message.createdAt
         );
       }
     });
@@ -72,15 +84,14 @@ export class ChatRepository {
       return;
     }
 
-    const pool = getDatabasePool();
     const session = await this.resolveSession();
     if (!session) {
       return;
     }
 
-    await withTransaction(async (client) => {
-      await client.query('DELETE FROM conversation_messages WHERE session_id = $1', [session.id]);
-      await client.query('DELETE FROM conversation_sessions WHERE id = $1', [session.id]);
+    await withTransaction(async (database) => {
+      database.prepare('DELETE FROM conversation_messages WHERE session_id = ?').run(session.id);
+      database.prepare('DELETE FROM conversation_sessions WHERE id = ?').run(session.id);
     });
 
     this.session = null;
@@ -99,20 +110,20 @@ export class ChatRepository {
       }
     }
 
-    const pool = getDatabasePool();
+    const database = getDatabase();
     const workspaceId = getWorkspaceState().id ?? null;
-    const result = await pool.query<{ id: string }>(
-      `
+    const result = database
+      .prepare(
+        `
         INSERT INTO conversation_sessions (workspace_id)
-        VALUES ($1)
+        VALUES (?)
         RETURNING id
       `
-      ,
-      [workspaceId]
-    );
+      )
+      .get(workspaceId) as { id: string };
 
     this.session = {
-      id: result.rows[0].id,
+      id: result.id,
       workspaceId
     };
 
@@ -124,27 +135,67 @@ export class ChatRepository {
       return this.session;
     }
 
-    const pool = getDatabasePool();
-    const result = await pool.query<{ id: string }>(
-      `
+    const database = getDatabase();
+    const result = database
+      .prepare(
+        `
         SELECT id, workspace_id
         FROM conversation_sessions
-        WHERE workspace_id IS NOT DISTINCT FROM $1
+        WHERE workspace_id IS ?
         ORDER BY created_at DESC
         LIMIT 1
-      `,
-      [getWorkspaceState().id ?? null]
-    );
+      `
+      )
+      .get(getWorkspaceState().id ?? null) as
+      | { id: string; workspace_id: string | null }
+      | undefined;
 
-    if (result.rowCount === 0) {
+    if (!result) {
       return null;
     }
 
     this.session = {
-      id: result.rows[0].id,
-      workspaceId: getWorkspaceState().id ?? null
+      id: result.id,
+      workspaceId: result.workspace_id
     };
 
     return this.session;
   }
+}
+
+function parseAttachments(value: string | null) {
+  if (!value) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.filter(isChatAttachment);
+  } catch {
+    return [];
+  }
+}
+
+function isChatAttachment(value: unknown): value is ChatAttachment {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.id === 'string' &&
+    typeof candidate.name === 'string' &&
+    typeof candidate.mimeType === 'string' &&
+    typeof candidate.sizeBytes === 'number' &&
+    (candidate.kind === 'image' ||
+      candidate.kind === 'text' ||
+      candidate.kind === 'code' ||
+      candidate.kind === 'file') &&
+    typeof candidate.createdAt === 'string' &&
+    (candidate.excerpt === null || typeof candidate.excerpt === 'string')
+  );
 }

@@ -21,12 +21,17 @@ export function MessageList({
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const lastMessage = messages[messages.length - 1];
+  const lastMessageSignature =
+    lastMessage == null
+      ? 'empty'
+      : `${lastMessage.id}:${typedMessages?.[lastMessage.id] ?? lastMessage.text}`;
 
   useEffect(() => {
     if (!showScrollButton) {
       bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [messages.length, showScrollButton]);
+  }, [lastMessageSignature, showScrollButton]);
 
   useEffect(() => {
     const el = scrollRef.current;

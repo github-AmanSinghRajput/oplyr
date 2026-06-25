@@ -1,0 +1,11 @@
+<svg width="720" height="256" viewBox="0 0 720 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>Oplyr</title>
+  <g transform="translate(20 0)">
+    <path d="M211 91C195 52 158 29 116 34C66 40 30 82 36 132C42 183 84 222 135 219C174 217 206 194 220 160" stroke="#14241D" stroke-width="28" stroke-linecap="round"/>
+    <path d="M211 91C195 52 158 29 116 34C66 40 30 82 36 132C42 183 84 222 135 219C174 217 206 194 220 160" stroke="#0B5D3B" stroke-width="16" stroke-linecap="round"/>
+    <path d="M56 130H80L93 97L110 164L129 76L145 150L159 114H188" stroke="#F2FCFF" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="211" cy="91" r="10" fill="#0B5D3B"/>
+    <circle cx="220" cy="160" r="7" fill="#0B5D3B"/>
+  </g>
+  <text x="302" y="150" fill="#F5FBFF" font-family="Space Grotesk, Avenir Next, Segoe UI, sans-serif" font-size="88" font-weight="700" letter-spacing="-4">Oplyr</text>
+</svg>

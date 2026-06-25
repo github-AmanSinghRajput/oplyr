@@ -1,8 +1,8 @@
-# VOCOD Product Guide
+# Oplyr Product Guide
 
 ## 1. Purpose
 
-This is the main product reference for VOCOD.
+This is the main product reference for Oplyr.
 
 It should help:
 
@@ -11,11 +11,11 @@ It should help:
 - designers understand the intended product feel
 - future collaborators understand what is core versus future scope
 
-If someone reads one document to understand VOCOD, this should be that document.
+If someone reads one document to understand Oplyr, this should be that document.
 
-## 2. What VOCOD Is
+## 2. What Oplyr Is
 
-VOCOD is a desktop-first, voice-first AI coding workspace.
+Oplyr is a desktop-first, voice-first AI coding workspace.
 
 It lets a developer:
 
@@ -26,7 +26,7 @@ It lets a developer:
 - review diffs before code changes land
 - switch between supported coding providers such as Codex and Claude Code
 
-VOCOD is not meant to be a generic chatbot and not meant to be a browser-only coding toy.
+Oplyr is not meant to be a generic chatbot and not meant to be a browser-only coding toy.
 
 The product direction is:
 
@@ -36,7 +36,7 @@ The product direction is:
 
 The long-term vision is bigger than voice chat for code.
 
-VOCOD should become a voice-native developer workspace that combines:
+Oplyr should become a voice-native developer workspace that combines:
 
 - coding assistance
 - voice interaction
@@ -88,13 +88,13 @@ The user should be able to inspect AI-generated changes in a review experience t
 
 ### Future developer memory
 
-VOCOD should evolve into a place where important decisions, notes, tasks, and meeting context become durable and searchable.
+Oplyr should evolve into a place where important decisions, notes, tasks, and meeting context become durable and searchable.
 
-## 6. What Makes VOCOD Different
+## 6. What Makes Oplyr Different
 
 The differentiation is not just "voice."
 
-VOCOD becomes distinctive when it combines:
+Oplyr becomes distinctive when it combines:
 
 1. voice-first interaction
 2. real local execution against the user's machine and repo
@@ -119,7 +119,7 @@ Project boundaries, read-only defaults, approval gates, and secret handling are 
 
 ### The app should feel like an operator console
 
-VOCOD should feel intentional, premium, technical, and focused.
+Oplyr should feel intentional, premium, technical, and focused.
 It should not feel like a generic SaaS dashboard or a thin wrapper around a chat box.
 
 ### Local control matters
@@ -136,7 +136,7 @@ Notes and vibe/music are important, but they should not degrade the core coding 
 
 ## 8. Current Product Shape
 
-VOCOD today is a desktop-oriented app with a local runtime and a voice/text UI.
+Oplyr today is a desktop-oriented app with a local runtime and a voice/text UI.
 
 ### Current working capabilities
 
@@ -151,9 +151,7 @@ VOCOD today is a desktop-oriented app with a local runtime and a voice/text UI.
 - review screen for AI proposed changes
 - chat persistence
 - settings for voice/theme/provider behavior
-- local STT/TTS path
-- Moonshine STT with Whisper fallback direction
-- Kokoro voice output path
+- local STT path via Parakeet (single engine, no fallback)
 - light and dark theme support
 
 ### Current product limitations
@@ -162,11 +160,11 @@ VOCOD today is a desktop-oriented app with a local runtime and a voice/text UI.
 - voice quality still needs final real-device tuning
 - local dependency/model setup needs a polished first-run experience
 - full end-to-end validation still matters more than adding more surface area
-- some repo-level docs and naming still lag behind the current VOCOD brand
+- some repo-level docs and naming still lag behind the current Oplyr brand
 
 ## 9. Product Architecture Direction
 
-VOCOD naturally splits into two product layers.
+Oplyr naturally splits into two product layers.
 
 ### Local runtime
 
@@ -194,7 +192,7 @@ The coding runtime itself should not become cloud-hosted.
 
 ## 10. Assistant Provider Direction
 
-VOCOD is no longer a Codex-only product.
+Oplyr is no longer a Codex-only product.
 
 The current product direction is provider-aware:
 
@@ -203,7 +201,7 @@ The current product direction is provider-aware:
 
 Important rule:
 
-VOCOD should manage app-level connections and preferences, but it should not own or copy provider credentials.
+Oplyr should manage app-level connections and preferences, but it should not own or copy provider credentials.
 
 ## 11. Voice Product Direction
 
@@ -215,13 +213,15 @@ The voice experience should feel:
 - visible
 - trustworthy
 
-That means VOCOD should keep improving:
+That means Oplyr should keep improving:
 
 - STT accuracy
-- TTS naturalness
 - noisy-room robustness
 - speaking/listening transitions
 - visible live text while the assistant responds
+
+TTS is intentionally deferred. Oplyr is STT-only for now. A future paid provider (e.g. ElevenLabs)
+will be integrated when voice output becomes a priority.
 
 The benchmark is not "it technically works."
 The benchmark is "it feels native enough that a developer wants to keep using it."
@@ -271,7 +271,7 @@ Build developer memory and notes in a serious way, not as a throwaway sidebar.
 
 ### Granola-level note-taker
 
-This is one of the biggest future expansions for VOCOD.
+This is one of the biggest future expansions for Oplyr.
 
 The ambition is not just "save notes."
 It is a serious developer-focused meeting and thinking companion with:
@@ -288,13 +288,13 @@ It is a serious developer-focused meeting and thinking companion with:
 This is another major future track.
 
 The goal is not gimmicky background noise.
-It is a high-quality focus and ambience layer that makes VOCOD feel more immersive during long coding sessions.
+It is a high-quality focus and ambience layer that makes Oplyr feel more immersive during long coding sessions.
 
 This should come after the core product is trusted.
 
 ## 16. What Should Stay Out of Scope for Now
 
-Until beta and launch quality are strong, VOCOD should resist:
+Until beta and launch quality are strong, Oplyr should resist:
 
 - random feature sprawl
 - cloud-hosted code execution
@@ -304,7 +304,7 @@ Until beta and launch quality are strong, VOCOD should resist:
 
 ## 17. Summary
 
-VOCOD is becoming:
+Oplyr is becoming:
 
 `a trustworthy voice-first coding workspace with real local execution, approval-gated changes, provider flexibility, and a long-term path into developer memory and immersive tooling.`
 

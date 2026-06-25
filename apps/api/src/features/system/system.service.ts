@@ -9,7 +9,6 @@ export class SystemService {
       environment: env.appEnv,
       database,
       providers: {
-        tts: env.ttsProvider,
         queue: env.queueProvider,
         email: env.emailProvider,
         vector: env.vectorProvider,
@@ -17,7 +16,6 @@ export class SystemService {
         ocr: env.ocrProvider
       },
       recommendations: {
-        tts: 'Use a pluggable local TTS provider. Kokoro is the current preferred launch direction.',
         queue: 'Use inline/background work now. Move to Redis-backed queues before Kafka.',
         vector: 'Use pgvector inside Postgres if semantic memory becomes necessary.',
         email: 'Use a simple provider like SendGrid or Resend before SNS/SQS complexity.',

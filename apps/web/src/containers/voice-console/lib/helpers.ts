@@ -101,7 +101,7 @@ export function getVoiceSubline(
     return audio.error;
   }
 
-  return `${audio.transcriptionEngine} in, ${audio.speechEngine} out`;
+  return `${audio.transcriptionEngine}`;
 }
 
 export function buildNavigationHints(

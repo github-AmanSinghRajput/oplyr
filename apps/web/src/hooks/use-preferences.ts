@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ConsolePreferences } from '@/containers/voice-console/lib/types';
 
-const STORAGE_KEY = 'voice-codex-local.console-preferences';
+const STORAGE_KEY = 'oplyr.console-preferences';
 
 const defaults: ConsolePreferences = {
   defaultScreen: 'voice',
