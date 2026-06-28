@@ -362,7 +362,11 @@ export class OperatorConsoleApiService extends BaseApiService {
     return this.request<ApprovalResponse>(`/api/approvals/${approvalId}/reject`, {
       method: 'POST',
       ...(feedback && feedback.trim()
-        ? { body: JSON.stringify({ feedback: feedback.trim() }) }
+        ? {
+            // Content-Type is required or express.json() skips the body and the feedback is dropped.
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ feedback: feedback.trim() })
+          }
         : {})
     });
   }

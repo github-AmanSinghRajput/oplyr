@@ -789,9 +789,14 @@ export function createApp(options?: { apiAuthToken?: string }) {
       }
 
       response.type(content.attachment.mimeType);
+      const disposition = content.attachment.kind === 'image' ? 'inline' : 'attachment';
+      // Sanitize the quoted fallback (strip quotes/backslashes/control chars so the user-supplied
+      // name can't break out of the header) and provide an RFC 5987 filename* for the real value.
+      const fallbackName = content.attachment.name.replace(/["\\\r\n]/g, '_');
+      const encodedName = encodeURIComponent(content.attachment.name);
       response.setHeader(
         'Content-Disposition',
-        `${content.attachment.kind === 'image' ? 'inline' : 'attachment'}; filename="${content.attachment.name}"`
+        `${disposition}; filename="${fallbackName}"; filename*=UTF-8''${encodedName}`
       );
       response.sendFile(content.storagePath);
     })

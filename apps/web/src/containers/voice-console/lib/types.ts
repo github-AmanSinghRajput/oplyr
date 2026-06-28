@@ -6,8 +6,6 @@ export type ScreenId =
   | 'review'
   | 'settings'
   | 'memory'
-  | 'notes'
-  | 'vibemusic'
   | 'codebase-map';
 
 // ── Codebase map ────────────────────────────────────────────────────────────

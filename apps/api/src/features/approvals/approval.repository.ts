@@ -31,26 +31,6 @@ export class ApprovalRepository {
       );
   }
 
-  async findWorkspaceIdByRootPath(rootPath: string) {
-    if (!isDatabaseConfigured()) {
-      return null;
-    }
-
-    const database = getDatabase();
-    const result = database
-      .prepare(
-        `
-        SELECT id
-        FROM workspaces
-        WHERE root_path = ?
-        LIMIT 1
-      `
-      )
-      .get(rootPath) as { id: string } | undefined;
-
-    return result?.id ?? null;
-  }
-
   async listRecent(limit = 20) {
     if (!isDatabaseConfigured()) {
       return [];

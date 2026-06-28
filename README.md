@@ -88,14 +88,13 @@ Oplyr is an npm-workspaces monorepo. Five workspaces under `apps/`:
 | `@oplyr/runtime` | `apps/api` | Local Express runtime: provider execution, voice orchestration, approvals/diffs, SQLite persistence. |
 | `@oplyr/web` | `apps/web` | React 19 + Vite operator console (renderer). |
 | `@oplyr/desktop` | `apps/desktop` | Electron shell for the packaged macOS app. |
-| `@oplyr/cloud-api` | `apps/cloud-api` | Cloud control plane: beta leads, invites, releases, install tracking, feedback (Postgres). |
 | `oplyr-stt` | `apps/stt` | Native Swift / CoreML speech-to-text engine. |
 
-The product splits into two layers. The **local runtime** runs on the user's
-Mac and owns provider execution, file/workspace access, voice capture,
-approvals, and the desktop UI — it is intentionally never cloud-hosted. The
-**cloud control plane** owns the website/download flow, beta access, release
-manifests, and feedback.
+The **local runtime** runs on the user's Mac and owns provider execution,
+file/workspace access, voice capture, approvals, and the desktop UI — it is
+intentionally never cloud-hosted. The public control plane (website/download
+flow, beta access, release manifests, feedback) lives in the separate
+`vocod-website` repo (Next.js + Vercel Postgres).
 
 ### Speech engine
 
@@ -123,11 +122,9 @@ npm run build          # Build STT binary + all workspaces
 npm run build:stt      # Build the native oplyr-stt speech binary (macOS only)
 
 npm run dev:runtime    # Runtime API only
-npm run dev:cloud      # Cloud control plane only
 
 npm run test:runtime   # Runtime tests (Node native test runner)
-npm run test:cloud     # Cloud control-plane tests
-npm run test:backend   # Runtime + cloud tests
+npm run test:backend   # Runtime tests
 
 npm run lint           # Lint backend + frontend
 npm run format         # Prettier write across the repo
@@ -136,22 +133,18 @@ npm run check          # Full gate: format check + lint + typecheck + tests
 
 # Database migrations
 npm run db:migrate:runtime   # local SQLite
-npm run db:migrate:cloud     # cloud Postgres
 ```
 
-Most scripts have per-layer variants (`:runtime`, `:cloud`, `:backend`,
-`:frontend`); see `package.json` for the full list.
+Most scripts have per-layer variants (`:runtime`, `:backend`, `:frontend`);
+see `package.json` for the full list.
 
 ## Configuration
 
 Copy `.env.example` to `.env`. The file documents the full environment surface
 and is the source of truth.
 
-Every value is **optional** with sensible defaults, except
-`CLOUD_DATABASE_URL`, which is **required only when running the cloud control
-plane with `APP_ENV=production`**. Runtime config is validated in
-`apps/api/src/config/env.ts` and cloud config in
-`apps/cloud-api/src/config/env.ts`.
+Every value is **optional** with sensible defaults. Runtime config is validated
+in `apps/api/src/config/env.ts`.
 
 Notable variables:
 

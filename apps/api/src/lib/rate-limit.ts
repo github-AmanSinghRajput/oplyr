@@ -14,7 +14,17 @@ interface RateLimitOptions {
 export function createRateLimitMiddleware(options: RateLimitOptions): RequestHandler {
   const buckets = new Map<string, Bucket>();
 
-  return (request, _response, next) => {
+  // Periodically drop expired buckets so the Map can't grow unbounded. `unref` so the timer never
+  // keeps the process alive.
+  const sweep = setInterval(() => {
+    const now = Date.now();
+    for (const [key, bucket] of buckets) {
+      if (bucket.resetAt <= now) buckets.delete(key);
+    }
+  }, options.windowMs);
+  sweep.unref?.();
+
+  return (request, response, next) => {
     const key = request.ip || 'unknown';
     const now = Date.now();
     const current = buckets.get(key);
@@ -29,6 +39,7 @@ export function createRateLimitMiddleware(options: RateLimitOptions): RequestHan
     }
 
     if (current.count >= options.maxRequests) {
+      response.setHeader('Retry-After', Math.max(1, Math.ceil((current.resetAt - now) / 1000)));
       next(new AppError(429, 'Too many requests. Please slow down.', 'RATE_LIMITED'));
       return;
     }

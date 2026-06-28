@@ -168,24 +168,6 @@ export function buildNavigationHints(
       };
     }
 
-    if (item.id === 'notes') {
-      return {
-        ...item,
-        hint: 'Coming in v1.2',
-        badge: 'soon',
-        active: item.id === screenId
-      };
-    }
-
-    if (item.id === 'vibemusic') {
-      return {
-        ...item,
-        hint: 'Coming in v2.0',
-        badge: 'soon',
-        active: item.id === screenId
-      };
-    }
-
     return {
       ...item,
       hint: item.shortLabel,

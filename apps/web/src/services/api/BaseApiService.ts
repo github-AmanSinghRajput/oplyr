@@ -17,11 +17,21 @@ export class BaseApiService {
       ...init,
       headers: this.createHeaders(init?.headers)
     });
-    const body = (await response.json()) as {
+    // Read as text first: an empty body (204) or a non-JSON error page would otherwise make
+    // response.json() throw a SyntaxError that masks the real status code.
+    const raw = await response.text();
+    let body: {
       error?: string;
       code?: string;
       details?: unknown;
-    };
+    } = {};
+    if (raw) {
+      try {
+        body = JSON.parse(raw);
+      } catch {
+        body = response.ok ? {} : { error: raw.slice(0, 200) };
+      }
+    }
 
     if (!response.ok) {
       const details =

@@ -48,14 +48,6 @@ export function StatusProvider({ children }: { children: ReactNode }) {
 
   const assistantReady = Boolean(status?.assistantProviders.activeProvider?.appConnected);
 
-  const updateStatus = useCallback((updater: StatusUpdater) => {
-    if (typeof updater === 'function') {
-      setStatus(updater);
-    } else {
-      setStatus(updater);
-    }
-  }, []);
-
   return (
     <StatusContext
       value={{
@@ -65,7 +57,8 @@ export function StatusProvider({ children }: { children: ReactNode }) {
         isDesktopShell,
         assistantReady,
         refreshStatus,
-        setStatus: updateStatus
+        // React's state setter already accepts both a value and an updater function.
+        setStatus
       }}
     >
       {children}

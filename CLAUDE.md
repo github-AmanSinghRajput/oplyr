@@ -30,11 +30,13 @@ npm run db:ready --workspace @oplyr/runtime
 
 ## Environment
 
-Copy `.env.example` to `.env`. The local runtime uses embedded SQLite via `RUNTIME_DATABASE_PATH`; the cloud control plane uses Postgres via `CLOUD_DATABASE_URL`. Runtime config is validated in `apps/api/src/config/env.ts`, and cloud config is validated in `apps/cloud-api/src/config/env.ts`.
+Copy `.env.example` to `.env`. The local runtime uses embedded SQLite via `RUNTIME_DATABASE_PATH`. Runtime config is validated in `apps/api/src/config/env.ts`.
+
+> **Note:** The public control plane (beta leads, invite validation, releases, download tracking, feedback) lives in the separate `vocod-website` repo (Next.js + Vercel Postgres). It is not part of this product repo.
 
 ## Architecture
 
-**Monorepo** with npm workspaces (`@oplyr/runtime`, `@oplyr/cloud-api`, `@oplyr/web`, `@oplyr/desktop`) and local speech runtimes.
+**Monorepo** with npm workspaces (`@oplyr/runtime`, `@oplyr/web`, `@oplyr/desktop`) and local speech runtimes.
 
 ### Backend (`apps/api`)
 
@@ -47,12 +49,6 @@ Copy `.env.example` to `.env`. The local runtime uses embedded SQLite via `RUNTI
 - **Runtime state**: `src/runtime.ts` — in-memory singleton (`runtimeState`) holding workspace, pendingApproval, lastDiff, audio, voiceSession state
 - **Shared libs**: `src/lib/` — logger (structured JSON), AppError class, Express helpers (asyncHandler, validators), EventBus (SSE), rate limiter
 - **Database**: `src/db/client.ts` embeds SQLite for local runtime data, with migrations in `database/sqlite/`
-
-### Cloud control plane (`apps/cloud-api`)
-
-- **Entry**: `src/index.ts` → validates env, calls `src/app/createApp.ts`
-- **Responsibilities**: beta leads, invite validation, releases, download tracking, install registration, feedback
-- **Database**: Postgres via `src/db/client.ts`, with migrations in `database/postgres/`
 
 ### Frontend (`apps/web`)
 

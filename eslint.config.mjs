@@ -12,7 +12,7 @@ export default tseslint.config(
   },
   // ── Backend (Node.js) ──────────────────────────────────────────────────
   {
-    files: ['apps/api/src/**/*.ts', 'apps/cloud-api/src/**/*.ts'],
+    files: ['apps/api/src/**/*.ts'],
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     languageOptions: {
       globals: globals.node
