@@ -84,7 +84,7 @@ function TreeFlow({
 
   return (
     <ReactFlow
-      className="cbmap-flow"
+      className="cbmap-flow cbmap-tree"
       nodes={displayNodes}
       edges={displayEdges}
       nodeTypes={nodeTypes}

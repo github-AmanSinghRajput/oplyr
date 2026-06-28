@@ -20,7 +20,7 @@ import type {
 } from '@/containers/voice-console/lib/types';
 import { TreeGraph } from './codebase-map/TreeGraph';
 import { ForceGraph } from './codebase-map/ForceGraph';
-import { allFolderIds } from './codebase-map/elk-layout';
+import { allFolderIds, childFolderIds } from './codebase-map/elk-layout';
 
 interface CodebaseMapScreenProps {
   projectRoot: string | null;
@@ -177,14 +177,23 @@ export function CodebaseMapScreen({ projectRoot }: CodebaseMapScreenProps) {
     [requestSummary, requestSymbols]
   );
 
-  const toggleFolder = useCallback((id: string) => {
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
+  const toggleFolder = useCallback(
+    (id: string) => {
+      setCollapsed((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) {
+          // Expanding: reveal only this folder's immediate contents — keep its child folders
+          // collapsed so one click drills down a single level instead of the whole subtree.
+          next.delete(id);
+          for (const childId of childFolderIds(map?.nodes ?? [], id)) next.add(childId);
+        } else {
+          next.add(id);
+        }
+        return next;
+      });
+    },
+    [map]
+  );
 
   const collapseAll = useCallback(() => {
     if (!map) return;

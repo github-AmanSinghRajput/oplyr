@@ -19,9 +19,11 @@ const ROOT_OPTIONS = {
   // uses the wide canvas better than a left→right tree.
   'elk.direction': 'DOWN',
   'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
-  'elk.layered.spacing.nodeNodeBetweenLayers': '72',
-  'elk.spacing.nodeNode': '26',
-  'elk.layered.spacing.edgeNodeBetweenLayers': '28',
+  // Keep vertical layers tight so the tree stays compact (was 72 — far too tall). Files still spread
+  // horizontally, so we only need enough vertical gap to route edges cleanly between layers.
+  'elk.layered.spacing.nodeNodeBetweenLayers': '38',
+  'elk.spacing.nodeNode': '22',
+  'elk.layered.spacing.edgeNodeBetweenLayers': '16',
   'elk.padding': '[top=14,left=14,bottom=14,right=14]'
 };
 const FOLDER_OPTIONS = {
@@ -79,6 +81,19 @@ export function allFolderIds(nodes: CodebaseMapNode[]): string[] {
     }
   }
   return [...ids];
+}
+
+/** Immediate child folders of `folderId` (one level down) — used to expand a folder one level at a
+ * time instead of revealing its entire subtree at once. */
+export function childFolderIds(nodes: CodebaseMapNode[], folderId: string): string[] {
+  const prefix = `${folderId}/`;
+  const children = new Set<string>();
+  for (const id of allFolderIds(nodes)) {
+    if (id.startsWith(prefix) && !id.slice(prefix.length).includes('/')) {
+      children.add(id);
+    }
+  }
+  return [...children];
 }
 
 function buildElkNode(folder: FolderModel, collapsed: Set<string>): ElkNode {
