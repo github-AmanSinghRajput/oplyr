@@ -446,7 +446,7 @@ export function useAppSettings(): AppSettingsHandle {
     if (
       typeof window !== 'undefined' &&
       !window.confirm(
-        'Reset Oplyr completely?\n\nThis clears workspace data, chat history, notes, approvals, settings, and app-connected providers.'
+        'Reset Oplyr completely?\n\nThis clears workspace data, chat history, approvals, settings, and app-connected providers.'
       )
     ) {
       return;

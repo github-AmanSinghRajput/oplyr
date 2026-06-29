@@ -6,6 +6,9 @@ export type ScreenId =
   | 'review'
   | 'settings'
   | 'memory'
+  | 'meetings'
+  | 'markdown'
+  | 'music'
   | 'codebase-map';
 
 // ── Codebase map ────────────────────────────────────────────────────────────
@@ -534,30 +537,20 @@ export interface ApprovalResponse {
   diff?: DiffSummary;
 }
 
-export interface NoteEntry {
-  id: string;
-  title: string;
-  body: string;
-  source: string;
-  createdAt: string;
-  updatedAt: string;
+export interface MarkdownFileEntry {
+  path: string;
+  name: string;
+  dir: string;
 }
 
-export interface NotesResponse {
-  notes: NoteEntry[];
+export interface MarkdownListResponse {
+  files: MarkdownFileEntry[];
 }
 
-export interface CreateNoteInput {
-  title: string;
-  body: string;
-  source?: string;
-  chunks?: string[];
-}
-
-export interface CreateNoteResponse {
-  note: {
-    id: string;
-  } | null;
+export interface MarkdownContentResponse {
+  path: string;
+  content: string | null;
+  error?: string;
 }
 
 export interface ApprovalHistoryEntry {

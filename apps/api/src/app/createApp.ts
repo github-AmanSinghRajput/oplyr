@@ -14,12 +14,12 @@ import { AuthService } from '../features/auth/auth.service.js';
 import { ApprovalRepository } from '../features/approvals/approval.repository.js';
 import { EventBus } from '../lib/event-bus.js';
 import { ChatService } from '../features/chat/chat.service.js';
-import { NotesService } from '../features/notes/notes.service.js';
 import { SystemService } from '../features/system/system.service.js';
 import { UserService } from '../features/users/user.service.js';
 import { WorkspaceService } from '../features/workspaces/workspace.service.js';
 import { CodebaseMapService } from '../features/codebase-map/codebase-map.service.js';
 import { CodebaseMapRepository } from '../features/codebase-map/codebase-map.repository.js';
+import { MarkdownService } from '../features/markdown/markdown.service.js';
 import { AppError, isAppError } from '../lib/errors.js';
 import {
   asyncHandler,
@@ -101,10 +101,10 @@ export function createApp(options?: { apiAuthToken?: string }) {
   const systemService = new SystemService();
   const authService = new AuthService();
   const approvalRepository = new ApprovalRepository();
-  const notesService = new NotesService();
   const userService = new UserService();
   const workspaceService = new WorkspaceService();
   const codebaseMapService = new CodebaseMapService(new CodebaseMapRepository());
+  const markdownService = new MarkdownService();
   const codexSettingsService = new CodexSettingsService();
   const claudeSettingsService = new ClaudeSettingsService();
   const geminiSettingsService = new GeminiSettingsService();
@@ -658,6 +658,32 @@ export function createApp(options?: { apiAuthToken?: string }) {
     })
   );
 
+  app.get(
+    '/api/workspace/markdown',
+    asyncHandler(async (_request: Request, response: Response) => {
+      const workspace = getRuntimeState().workspace;
+      if (!workspace.projectRoot) {
+        response.json({ files: [] });
+        return;
+      }
+      const files = await markdownService.listFiles(workspace.projectRoot);
+      response.json({ files });
+    })
+  );
+
+  app.post(
+    '/api/workspace/markdown/content',
+    asyncHandler(async (request: Request, response: Response) => {
+      const filePath = requireTrimmedString(request.body.path, 'path');
+      const workspace = getRuntimeState().workspace;
+      if (!workspace.projectRoot) {
+        throw new AppError(400, 'Connect a workspace before opening a document.', 'INVALID_INPUT');
+      }
+      const result = await markdownService.readFile(workspace.projectRoot, filePath);
+      response.json(result);
+    })
+  );
+
   app.post(
     '/api/workspace/write-access',
     asyncHandler(async (request: Request, response: Response) => {
@@ -814,85 +840,6 @@ export function createApp(options?: { apiAuthToken?: string }) {
         payload: {}
       });
       response.json({ ok: true });
-    })
-  );
-
-  app.get(
-    '/api/notes',
-    asyncHandler(async (request: Request, response: Response) => {
-      const limitParam = typeof request.query.limit === 'string' ? Number(request.query.limit) : 20;
-      const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(limitParam, 100) : 20;
-
-      response.json({
-        notes: await notesService.listRecentNotes(limit)
-      });
-    })
-  );
-
-  app.post(
-    '/api/notes',
-    asyncHandler(async (request: Request, response: Response) => {
-      const title = requireTrimmedString(request.body.title, 'title');
-      const body = requireTrimmedString(request.body.body, 'body');
-      const source = optionalTrimmedString(request.body.source);
-      const chunks =
-        request.body.chunks === undefined
-          ? undefined
-          : requireStringArray(request.body.chunks, 'chunks');
-
-      const note = await notesService.createNote({
-        title,
-        body,
-        source,
-        chunks
-      });
-
-      response.status(201).json({
-        note
-      });
-    })
-  );
-
-  app.put(
-    '/api/notes/:noteId',
-    asyncHandler(async (request: Request, response: Response) => {
-      const title = requireTrimmedString(request.body.title, 'title');
-      const body = requireTrimmedString(request.body.body, 'body');
-      const source = optionalTrimmedString(request.body.source);
-      const chunks =
-        request.body.chunks === undefined
-          ? undefined
-          : requireStringArray(request.body.chunks, 'chunks');
-
-      const note = await notesService.updateNote(getRouteParam(request.params.noteId, 'noteId'), {
-        title,
-        body,
-        source,
-        chunks
-      });
-
-      if (!note) {
-        throw new AppError(404, 'Note not found.', 'NOT_FOUND');
-      }
-
-      response.json({
-        note
-      });
-    })
-  );
-
-  app.delete(
-    '/api/notes/:noteId',
-    asyncHandler(async (request: Request, response: Response) => {
-      const deleted = await notesService.deleteNote(getRouteParam(request.params.noteId, 'noteId'));
-
-      if (!deleted) {
-        throw new AppError(404, 'Note not found.', 'NOT_FOUND');
-      }
-
-      response.json({
-        ok: true
-      });
     })
   );
 

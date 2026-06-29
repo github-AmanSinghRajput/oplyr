@@ -21,9 +21,10 @@ import { useApi } from '@/providers/ApiProvider';
 import { useChatStream } from '@/hooks/use-chat-stream';
 import { useVoiceSession } from '@/hooks/use-voice-session';
 import { useAppSettings, type AppSettingsHandle } from '@/hooks/use-app-settings';
-import { useNotes } from '@/hooks/use-notes';
 import { usePreferences } from '@/hooks/use-preferences';
+import { BrainCircuit, Music } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { StandbyScreen } from '@/components/screens/StandbyScreen';
 import { OplyrLogoMark } from '@/components/branding/OplyrLogoMark';
 import { cn } from '@/lib/cn';
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
@@ -52,8 +53,11 @@ const SettingsScreen = lazy(() =>
 const OnboardingScreen = lazy(() =>
   import('@/components/screens/OnboardingScreen').then((m) => ({ default: m.OnboardingScreen }))
 );
-const MemoryScreen = lazy(() =>
-  import('@/components/screens/MemoryScreen').then((m) => ({ default: m.MemoryScreen }))
+const MeetingsScreen = lazy(() =>
+  import('@/components/screens/MeetingsScreen').then((m) => ({ default: m.MeetingsScreen }))
+);
+const MarkdownScreen = lazy(() =>
+  import('@/components/screens/MarkdownScreen').then((m) => ({ default: m.MarkdownScreen }))
 );
 const CodebaseMapScreen = lazy(() =>
   import('@/components/screens/CodebaseMapScreen').then((m) => ({ default: m.CodebaseMapScreen }))
@@ -227,7 +231,6 @@ export function AppShell() {
   const chat = useChatStream();
   const { loadLogs } = chat;
   const settings = useAppSettings();
-  const notes = useNotes();
   const { preferences, setPreference } = usePreferences();
   const voice = useVoiceSession({
     chat,
@@ -542,23 +545,26 @@ export function AppShell() {
             geminiSettingsDirty={settings.geminiSettingsDirty}
           />
         );
+      case 'meetings':
+        return <MeetingsScreen />;
+      case 'markdown':
+        return <MarkdownScreen projectRoot={status?.workspace.projectRoot ?? null} />;
       case 'memory':
         return (
-          <MemoryScreen
-            editingNoteId={notes.editingNoteId}
-            noteBody={notes.noteBody}
-            noteSource={notes.noteSource}
-            noteTitle={notes.noteTitle}
-            notes={notes.notes}
-            trackedSessions={system?.auth.trackedSessions ?? []}
-            system={system}
-            onCreateNote={notes.onCreateNote}
-            onDeleteNote={notes.onDeleteNote}
-            onEditNote={notes.onEditNote}
-            onNoteBodyChange={notes.onNoteBodyChange}
-            onNoteSourceChange={notes.onNoteSourceChange}
-            onNoteTitleChange={notes.onNoteTitleChange}
-            onResetComposer={notes.onResetComposer}
+          <StandbyScreen
+            icon={BrainCircuit}
+            title="Memory"
+            description="Oplyr's unified, local-first memory — a shared brain every agent reads from and writes to, so your context, decisions, and codebase history persist across sessions and tools."
+            footnote="In active development"
+          />
+        );
+      case 'music':
+        return (
+          <StandbyScreen
+            icon={Music}
+            title="Music"
+            description="Focus audio while you build — coming to a future Oplyr release."
+            footnote="Coming soon"
           />
         );
       default:
