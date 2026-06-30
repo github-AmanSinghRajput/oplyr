@@ -52,6 +52,9 @@ export interface PendingApproval {
   // Content snapshots for pre-existing untracked files. These let review/reject detect AI edits
   // to files that are not tracked by git without showing unrelated untracked files.
   baselineUntrackedSnapshots?: BaselineUntrackedSnapshot[];
+  // The assistant's own natural-language message from applying the edit (captured at proposal time).
+  // Shown verbatim on approve as the post-edit summary ("I changed X, Y…"), like a CLI agent would.
+  executionSummary?: string;
 }
 
 export interface BaselineUntrackedSnapshot {
@@ -174,19 +177,11 @@ export interface TranscriptionRuntimeConfig {
   languageCode: string;
 }
 
-export type VoiceQualityProfile = 'low_memory' | 'balanced' | 'demo';
-export type VoiceNoiseMode = 'normal' | 'focused' | 'noisy_room';
-
 export interface TranscriptionModelOption {
   id: TranscriptionModelProfile;
   label: string;
   description: string;
   available: boolean;
-}
-
-export interface TranscriptionLanguageOption {
-  code: string;
-  label: string;
 }
 
 export type AppTheme = 'dark' | 'light';
@@ -199,17 +194,8 @@ export interface AppSettings {
 
 export interface VoiceSettings {
   silenceWindowMs: number;
-  voiceLocale: string;
   autoResumeAfterReply: boolean;
-  transcriptionLanguageCode: string;
   transcriptionModel: TranscriptionModelProfile;
-  qualityProfile: VoiceQualityProfile;
-  noiseMode: VoiceNoiseMode;
-}
-
-export interface VoiceSettingsCapabilities {
-  deviceSelection: boolean;
-  interruption: boolean;
 }
 
 export type CodexReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';

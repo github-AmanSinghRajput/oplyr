@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   ChevronsDownUp,
   FolderTree,
+  Info,
   Loader2,
   Network,
   RefreshCw,
@@ -42,6 +43,27 @@ type ViewMode = 'tree' | 'force';
 function topLevelCollapsed(map: CodebaseMapData | null): Set<string> {
   if (!map) return new Set();
   return new Set(allFolderIds(map.nodes).filter((id) => !id.includes('/')));
+}
+
+// Programming languages the scanner labels that are worth flagging as "present but not mapped yet"
+// (excludes data/markup like JSON, Markdown, CSS, YAML, SQL, Shell, Other).
+const MAPPABLE_CANDIDATE_LANGUAGES = new Set([
+  'Ruby',
+  'Go',
+  'Rust',
+  'Java',
+  'Kotlin',
+  'Swift',
+  'C',
+  'C++',
+  'C#',
+  'PHP'
+]);
+
+/** "A, B & C" — human-friendly language list. */
+function formatLanguageList(languages: string[]): string {
+  if (languages.length <= 1) return languages[0] ?? '';
+  return `${languages.slice(0, -1).join(', ')} & ${languages[languages.length - 1]}`;
 }
 
 export function CodebaseMapScreen({ projectRoot }: CodebaseMapScreenProps) {
@@ -221,6 +243,21 @@ export function CodebaseMapScreen({ projectRoot }: CodebaseMapScreenProps) {
         .slice(0, 4)
     : [];
 
+  const supportedLanguages = map?.stats.supportedLanguages ?? [
+    'TypeScript',
+    'JavaScript',
+    'Python'
+  ];
+  const supportedLabel = formatLanguageList(supportedLanguages);
+  // Programming languages present in the repo that the map can't graph yet (skip data/markup langs).
+  const unmappedLanguages = map
+    ? Object.entries(map.stats.languages)
+        .filter(
+          ([lang]) => MAPPABLE_CANDIDATE_LANGUAGES.has(lang) && !supportedLanguages.includes(lang)
+        )
+        .sort((a, b) => b[1] - a[1])
+    : [];
+
   if (!projectRoot) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-24 text-center">
@@ -314,6 +351,30 @@ export function CodebaseMapScreen({ projectRoot }: CodebaseMapScreenProps) {
 
       {error ? <p className="text-sm text-rose-400">{error}</p> : null}
 
+      {/* Supported-languages banner — sets expectations, and flags any unmapped languages present. */}
+      {map ? (
+        <div className="flex items-start gap-2 rounded-radius-sm border border-accent-border/30 bg-accent-muted/30 px-3 py-2">
+          <Info size={14} className="mt-0.5 shrink-0 text-accent" />
+          <p className="text-xs leading-relaxed text-text-secondary">
+            Oplyr currently maps{' '}
+            <span className="font-medium text-text-primary">{supportedLabel}</span> repositories —
+            we&apos;re expanding to more languages continuously, thanks for your patience.
+            {unmappedLanguages.length > 0 ? (
+              <>
+                {' '}
+                <span className="text-text-tertiary">
+                  Heads up: this repo also has{' '}
+                  {formatLanguageList(
+                    unmappedLanguages.map(([lang, count]) => `${lang} (${count})`)
+                  )}{' '}
+                  — not mapped yet.
+                </span>
+              </>
+            ) : null}
+          </p>
+        </div>
+      ) : null}
+
       {/* Graph + detail */}
       <div className="flex min-h-0 gap-4">
         <div className="relative h-[calc(100vh-var(--topbar-height)-180px)] min-h-[460px] flex-1 overflow-hidden rounded-[var(--radius-panel)] border border-border bg-background">
@@ -337,12 +398,22 @@ export function CodebaseMapScreen({ projectRoot }: CodebaseMapScreenProps) {
               <ForceGraph map={map} selectedId={selectedId} onSelect={handleSelect} />
             )
           ) : !loading ? (
-            <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+            <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
               <Workflow size={28} className="text-text-tertiary" />
-              <p className="max-w-xs text-sm text-text-tertiary">
-                No JavaScript/TypeScript source files found to map yet. Re-scan, or open a repo with
-                source files.
+              <p className="max-w-md text-sm text-text-secondary">
+                Nothing to map here yet. Oplyr currently maps{' '}
+                <span className="font-medium text-text-primary">{supportedLabel}</span> code.
               </p>
+              {unmappedLanguages.length > 0 ? (
+                <p className="max-w-md text-xs text-text-tertiary">
+                  This repo looks like {formatLanguageList(unmappedLanguages.map(([lang]) => lang))}{' '}
+                  — support for those languages is on the way. Re-scan once you add mappable files.
+                </p>
+              ) : (
+                <p className="max-w-md text-xs text-text-tertiary">
+                  Re-scan, or open a repo with {supportedLabel} files.
+                </p>
+              )}
             </div>
           ) : null}
         </div>

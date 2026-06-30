@@ -50,6 +50,7 @@ interface SettingsScreenProps {
     key: keyof GeminiSettingsResponse['settings'],
     value: GeminiSettingsResponse['settings'][keyof GeminiSettingsResponse['settings']]
   ) => void;
+  onProviderConnect: (providerId: AssistantProviderId) => void;
   onProviderDisconnect: (providerId: AssistantProviderId) => void;
   onProviderSwitch: (providerId: AssistantProviderId) => void;
   onRefreshProviderUsage: () => void;
@@ -90,10 +91,21 @@ function ActiveStateControl({
   );
 }
 
-function SettingRow({ label, children }: { label: string; children: React.ReactNode }) {
+function SettingRow({
+  label,
+  hint,
+  children
+}: {
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
   return (
     <label className="flex items-center justify-between gap-4 py-2">
-      <span className="text-sm text-text-secondary">{label}</span>
+      <span className="flex min-w-0 flex-col">
+        <span className="text-sm text-text-secondary">{label}</span>
+        {hint ? <span className="text-xs text-text-tertiary">{hint}</span> : null}
+      </span>
       {children}
     </label>
   );
@@ -304,6 +316,7 @@ export function SettingsScreen({
   onCodexSettingChange,
   onClaudeSettingChange,
   onGeminiSettingChange,
+  onProviderConnect,
   onProviderDisconnect,
   onProviderSwitch,
   onRefreshProviderUsage,
@@ -318,6 +331,14 @@ export function SettingsScreen({
   const activeProviderId = activeProvider?.id ?? null;
   const allProviders = status?.assistantProviders.providers ?? [];
   const connectedProviders = allProviders.filter((p) => p.appConnected);
+  // Providers the user can connect right now without leaving Settings: CLI-installed and
+  // logged in, but not yet app-connected. (Anything needing CLI install/login is sent to onboarding.)
+  const connectableProviders = allProviders.filter(
+    (p) => !p.appConnected && p.installed && p.loggedIn
+  );
+  const hasSetupPending = allProviders.some(
+    (p) => !p.appConnected && (!p.installed || !p.loggedIn)
+  );
   // Per-provider connection comes from each provider's own `appConnected` flag,
   // not from whichever one happens to be active (multiple may be connected).
   const codexConnected = allProviders.some((p) => p.id === 'codex' && p.appConnected);
@@ -343,15 +364,14 @@ export function SettingsScreen({
         <p className="text-xs font-medium text-text-tertiary uppercase tracking-wider mb-1">
           Settings
         </p>
-        <h2 className="text-lg font-semibold text-text-primary">Voice and operator controls</h2>
+        <h2 className="text-lg font-semibold text-text-primary">Settings</h2>
       </div>
 
       <Tabs defaultValue="general" className="w-full">
         <TabsList className="mb-6">
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="voice">Voice</TabsTrigger>
-          <TabsTrigger value="assistant">Assistant</TabsTrigger>
-          <TabsTrigger value="display">Display</TabsTrigger>
+          <TabsTrigger value="assistant">Agents</TabsTrigger>
         </TabsList>
 
         {/* General Tab */}
@@ -384,9 +404,28 @@ export function SettingsScreen({
                 <option value="light">Light</option>
               </select>
             </SettingRow>
+            <SettingRow label="Default screen">
+              <select
+                className={selectClass}
+                value={preferences.defaultScreen}
+                onChange={(e) =>
+                  onPreferenceChange(
+                    'defaultScreen',
+                    e.target.value as ConsolePreferences['defaultScreen']
+                  )
+                }
+              >
+                <option value="voice">Voice</option>
+                <option value="terminal">Agentic Chat</option>
+                <option value="workspace">Workspace</option>
+              </select>
+            </SettingRow>
           </SectionCard>
 
-          <SectionCard title="Assistant providers" subtitle="App-managed provider access">
+          <SectionCard
+            title="Assistant providers"
+            subtitle="Connect agents and switch the active one on demand"
+          >
             <SettingInfo
               label="Active provider"
               value={activeProvider?.name ?? 'No provider connected in Oplyr'}
@@ -414,7 +453,34 @@ export function SettingsScreen({
               ))
             ) : (
               <div className="py-2 text-sm text-text-secondary">
-                Connect a provider from onboarding to unlock provider-specific controls.
+                No agent connected yet. Connect one below to unlock provider-specific controls.
+              </div>
+            )}
+
+            {connectableProviders.length > 0 &&
+              connectableProviders.map((provider) => (
+                <div
+                  key={provider.id}
+                  className="flex items-center justify-between gap-4 border-t border-border/50 py-2"
+                >
+                  <span className="flex min-w-0 flex-col">
+                    <span className="text-sm text-text-secondary">{provider.name}</span>
+                    <span className="text-xs text-text-tertiary">Signed in to CLI · ready</span>
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-6 text-xs"
+                    onClick={() => onProviderConnect(provider.id)}
+                  >
+                    Connect
+                  </Button>
+                </div>
+              ))}
+
+            {hasSetupPending && (
+              <div className="border-t border-border/50 py-2 text-xs text-text-tertiary">
+                Another agent needs its CLI installed and signed in before it can connect here.
               </div>
             )}
           </SectionCard>
@@ -460,48 +526,16 @@ export function SettingsScreen({
           </SectionCard>
 
           <SectionCard title="Voice controls" subtitle="Native session preferences">
-            <SettingRow label="Quality profile">
-              <select
-                className={selectClass}
-                value={voiceSettings?.settings.qualityProfile ?? 'demo'}
-                onChange={(e) =>
-                  onVoiceSettingChange(
-                    'qualityProfile',
-                    e.target.value as VoiceSettingsResponse['settings']['qualityProfile']
-                  )
-                }
-              >
-                <option value="demo">Demo quality</option>
-                <option value="balanced">Balanced</option>
-                <option value="low_memory">Low memory</option>
-              </select>
-            </SettingRow>
-            <SettingRow label="Noise filtering">
-              <select
-                className={selectClass}
-                value={voiceSettings?.settings.noiseMode ?? 'focused'}
-                onChange={(e) =>
-                  onVoiceSettingChange(
-                    'noiseMode',
-                    e.target.value as VoiceSettingsResponse['settings']['noiseMode']
-                  )
-                }
-              >
-                <option value="focused">Focused voice</option>
-                <option value="normal">Normal room</option>
-                <option value="noisy_room">Noisy room</option>
-              </select>
-            </SettingRow>
-            <SettingRow label="Locale">
-              <select
-                className={selectClass}
-                value={voiceSettings?.settings.voiceLocale ?? 'en-US'}
-                onChange={(e) => onVoiceSettingChange('voiceLocale', e.target.value)}
-              >
-                <option value="en-US">English (US)</option>
-                <option value="en-IN">English (India)</option>
-                <option value="hi-IN">Hindi (India)</option>
-              </select>
+            <SettingRow
+              label="Auto-send transcripts"
+              hint="On: speak and the message sends itself. Off: your words land in the input box to edit before sending."
+            >
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-accent"
+                checked={preferences.autoSendVoice}
+                onChange={(e) => onPreferenceChange('autoSendVoice', e.target.checked)}
+              />
             </SettingRow>
             <SettingRow label="Transcription engine">
               <select
@@ -522,20 +556,10 @@ export function SettingsScreen({
                 ))}
               </select>
             </SettingRow>
-            <SettingRow label="Transcription language">
-              <select
-                className={selectClass}
-                value={voiceSettings?.settings.transcriptionLanguageCode ?? 'en'}
-                onChange={(e) => onVoiceSettingChange('transcriptionLanguageCode', e.target.value)}
-              >
-                {(voiceSettings?.options.transcriptionLanguages ?? []).map((l) => (
-                  <option key={l.code} value={l.code}>
-                    {l.label}
-                  </option>
-                ))}
-              </select>
-            </SettingRow>
-            <SettingRow label="Silence window">
+            <SettingRow
+              label="Silence window"
+              hint="How long to wait after you stop talking before finalizing a phrase."
+            >
               <select
                 className={selectClass}
                 value={String(voiceSettings?.settings.silenceWindowMs ?? 800)}
@@ -550,7 +574,10 @@ export function SettingsScreen({
                 <option value="3000">3.0s</option>
               </select>
             </SettingRow>
-            <SettingRow label="Auto-resume after reply">
+            <SettingRow
+              label="Auto-resume after reply"
+              hint="Reopen the mic automatically once the agent finishes speaking."
+            >
               <input
                 type="checkbox"
                 className="h-4 w-4 accent-accent"
@@ -558,38 +585,6 @@ export function SettingsScreen({
                 onChange={(e) => onVoiceSettingChange('autoResumeAfterReply', e.target.checked)}
               />
             </SettingRow>
-          </SectionCard>
-
-          <SectionCard title="Voice capabilities" subtitle="Current feature status">
-            <div className="flex flex-wrap gap-2 py-3">
-              <Badge
-                variant={voiceSettings?.capabilities.interruption ? 'outline' : 'secondary'}
-                className={cn(
-                  'text-xs',
-                  voiceSettings?.capabilities.interruption && 'text-success border-success/30'
-                )}
-              >
-                interruption
-              </Badge>
-              <Badge
-                variant={voiceSettings?.capabilities.deviceSelection ? 'outline' : 'secondary'}
-                className={cn(
-                  'text-xs',
-                  voiceSettings?.capabilities.deviceSelection && 'text-success border-success/30'
-                )}
-              >
-                device selection
-              </Badge>
-              <Badge
-                variant={voiceSettings?.capabilities.voiceSelection ? 'outline' : 'secondary'}
-                className={cn(
-                  'text-xs',
-                  voiceSettings?.capabilities.voiceSelection && 'text-success border-success/30'
-                )}
-              >
-                voice selection
-              </Badge>
-            </div>
           </SectionCard>
         </TabsContent>
 
@@ -818,58 +813,6 @@ export function SettingsScreen({
               </p>
             </div>
           )}
-        </TabsContent>
-
-        {/* Display Tab */}
-        <TabsContent value="display" className="flex flex-col gap-4">
-          <SectionCard title="Console preferences" subtitle="Local UI behavior">
-            <SettingRow label="Default screen">
-              <select
-                className={selectClass}
-                value={preferences.defaultScreen}
-                onChange={(e) =>
-                  onPreferenceChange(
-                    'defaultScreen',
-                    e.target.value as ConsolePreferences['defaultScreen']
-                  )
-                }
-              >
-                <option value="voice">Voice</option>
-                <option value="terminal">Terminal</option>
-                <option value="workspace">Workspace</option>
-              </select>
-            </SettingRow>
-            <SettingRow label="Transcript density">
-              <select
-                className={selectClass}
-                value={preferences.transcriptDensity}
-                onChange={(e) =>
-                  onPreferenceChange(
-                    'transcriptDensity',
-                    e.target.value as ConsolePreferences['transcriptDensity']
-                  )
-                }
-              >
-                <option value="comfortable">Comfortable</option>
-                <option value="compact">Compact</option>
-              </select>
-            </SettingRow>
-            <SettingRow label="Motion mode">
-              <select
-                className={selectClass}
-                value={preferences.motionMode}
-                onChange={(e) =>
-                  onPreferenceChange(
-                    'motionMode',
-                    e.target.value as ConsolePreferences['motionMode']
-                  )
-                }
-              >
-                <option value="full">Full</option>
-                <option value="reduced">Reduced</option>
-              </select>
-            </SettingRow>
-          </SectionCard>
         </TabsContent>
       </Tabs>
     </div>

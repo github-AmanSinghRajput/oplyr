@@ -11,7 +11,7 @@ test('getResolvedTranscriptionConfig returns the single Parakeet provider config
   assert.equal(typeof config.languageCode, 'string');
 });
 
-test('voice settings expose only the Parakeet model and v3-supported languages', async () => {
+test('voice settings expose only the Parakeet model option', async () => {
   const service = new VoiceSettingsService();
   const { options } = await service.getSettings();
 
@@ -19,9 +19,16 @@ test('voice settings expose only the Parakeet model and v3-supported languages',
     options.transcriptionModels.map((model) => model.id),
     ['parakeet']
   );
+});
 
-  const languageCodes = options.transcriptionLanguages.map((language) => language.code);
-  assert.equal(languageCodes.includes('en'), true);
-  assert.equal(languageCodes.includes('hi'), false);
-  assert.equal(languageCodes.includes('ja'), false);
+test('getSettings returns only the live, user-facing voice settings', async () => {
+  const service = new VoiceSettingsService();
+  const { settings } = await service.getSettings();
+
+  assert.deepEqual(Object.keys(settings).sort(), [
+    'autoResumeAfterReply',
+    'silenceWindowMs',
+    'transcriptionModel'
+  ]);
+  assert.equal(settings.transcriptionModel, 'parakeet');
 });

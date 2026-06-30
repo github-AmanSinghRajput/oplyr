@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 import type { CodebaseEdge, ScannedFile } from './codebase-map.types.js';
+import { isPythonFile } from './scanner.js';
 
 // Matches the specifier string in: `import ... from 'x'`, `import 'x'`, `export ... from 'x'`,
 // `require('x')`, and dynamic `import('x')`. We capture every quoted module specifier and classify
@@ -157,10 +158,108 @@ function resolveSpecifier(
   return null;
 }
 
+// ── Python import resolution ─────────────────────────────────────────────────────────────────
+const PY_INIT = '__init__.py';
+
+/** Map a dotted/relative module base (POSIX path, no extension) to a known .py file, if any. */
+function pyFileCandidate(base: string, known: Set<string>): string | null {
+  const norm = base.replace(/^\.\//, '').replace(/^\/+/, '');
+  if (!norm) return null;
+  for (const candidate of [`${norm}.py`, `${norm}.pyi`, path.posix.join(norm, PY_INIT)]) {
+    if (known.has(candidate)) return candidate;
+  }
+  return null;
+}
+
 /**
- * Parse import/require/export-from edges between JS/TS source files, resolving relative + aliased +
- * baseUrl imports. Only edges between two files present in `sourceFiles` are returned. Best-effort
- * and resilient — an unreadable file is skipped, never thrown.
+ * Resolve an absolute dotted module (`a.b.c`) by trying it as a path from the repo root, then
+ * progressively dropping leading segments — so it works whether the package sits at the repo root,
+ * under `src/`, or is referenced by its full dotted path. Most-specific (longest) match wins.
+ */
+function resolveAbsolutePython(segments: string[], known: Set<string>): string | null {
+  for (let start = 0; start < segments.length; start += 1) {
+    const hit = pyFileCandidate(segments.slice(start).join('/'), known);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+/** Best-effort Python import edges: handles `import a.b`, `from a.b import c`, and relative `from .x`. */
+function resolvePythonEdges(fromPath: string, source: string, known: Set<string>): string[] {
+  const targets = new Set<string>();
+
+  for (const line of source.split('\n')) {
+    // from <dots><module> import <names>
+    const fromMatch = /^[ \t]*from[ \t]+(\.*)([\w.]*)[ \t]+import[ \t]+(.+)$/.exec(line);
+    if (fromMatch) {
+      const dots = fromMatch[1].length;
+      const moduleSegs = fromMatch[2] ? fromMatch[2].split('.') : [];
+      const names = fromMatch[3]
+        .replace(/[()\\]/g, ' ')
+        .split(',')
+        .map((entry) =>
+          entry
+            .trim()
+            .split(/\s+as\s+/)[0]
+            .trim()
+        )
+        .filter((entry) => entry && entry !== '*');
+
+      if (dots > 0) {
+        // Relative import: base dir = this file's dir, then up (dots - 1) levels.
+        let dir = path.posix.dirname(fromPath);
+        for (let i = 1; i < dots; i += 1) dir = path.posix.dirname(dir);
+        if (moduleSegs.length > 0) {
+          const moduleHit = pyFileCandidate(path.posix.join(dir, ...moduleSegs), known);
+          if (moduleHit) targets.add(moduleHit);
+          for (const name of names) {
+            const submoduleHit = pyFileCandidate(path.posix.join(dir, ...moduleSegs, name), known);
+            if (submoduleHit) targets.add(submoduleHit);
+          }
+        } else {
+          // `from . import x, y` → sibling modules.
+          for (const name of names) {
+            const hit = pyFileCandidate(path.posix.join(dir, name), known);
+            if (hit) targets.add(hit);
+          }
+        }
+      } else if (moduleSegs.length > 0) {
+        const moduleHit = resolveAbsolutePython(moduleSegs, known);
+        if (moduleHit) targets.add(moduleHit);
+        // `from a.b import c` where c is itself a submodule file.
+        for (const name of names) {
+          const submoduleHit = resolveAbsolutePython([...moduleSegs, name], known);
+          if (submoduleHit) targets.add(submoduleHit);
+        }
+      }
+      continue;
+    }
+
+    // import a, a.b.c, a as x
+    const importMatch = /^[ \t]*import[ \t]+(.+)$/.exec(line);
+    if (importMatch) {
+      const body = importMatch[1].split('#')[0];
+      for (const part of body.split(',')) {
+        const moduleName = part
+          .trim()
+          .split(/\s+as\s+/)[0]
+          .trim();
+        if (!moduleName || !/^[\w.]+$/.test(moduleName)) continue;
+        const hit = resolveAbsolutePython(moduleName.split('.'), known);
+        if (hit) targets.add(hit);
+      }
+    }
+  }
+
+  targets.delete(fromPath);
+  return [...targets];
+}
+
+/**
+ * Parse dependency edges between source files. JS/TS files resolve import/require/export-from
+ * (relative + tsconfig alias + baseUrl); Python files resolve import / from-import (absolute +
+ * relative). Only edges between two files present in `sourceFiles` are returned. Best-effort and
+ * resilient — an unreadable file is skipped, never thrown.
  */
 export async function parseDependencies(
   rootPath: string,
@@ -170,6 +269,14 @@ export async function parseDependencies(
   const known = new Set(sourceFiles.map((file) => file.path));
   const seen = new Set<string>();
   const edges: CodebaseEdge[] = [];
+
+  const addEdge = (from: string, to: string) => {
+    if (!to || to === from) return;
+    const key = `${from} ${to}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    edges.push({ from, to });
+  };
 
   for (const file of sourceFiles) {
     let source: string;
@@ -184,17 +291,16 @@ export async function parseDependencies(
       continue;
     }
 
+    if (isPythonFile(file.ext)) {
+      for (const target of resolvePythonEdges(file.path, source, known)) {
+        addEdge(file.path, target);
+      }
+      continue;
+    }
+
     for (const specifier of extractSpecifiers(source)) {
       const target = resolveSpecifier(file.path, specifier, known, config);
-      if (!target || target === file.path) {
-        continue;
-      }
-      const key = `${file.path} ${target}`;
-      if (seen.has(key)) {
-        continue;
-      }
-      seen.add(key);
-      edges.push({ from: file.path, to: target });
+      if (target) addEdge(file.path, target);
     }
   }
 

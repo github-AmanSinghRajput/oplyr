@@ -573,6 +573,7 @@ export function AppShell() {
             onGeminiSettingChange={(key, value) =>
               void settings.handleGeminiSettingChange(key, value)
             }
+            onProviderConnect={(id) => void settings.handleProviderConnect(id)}
             onProviderDisconnect={(id) => void settings.handleProviderDisconnect(id)}
             onProviderSwitch={(id) => void settings.handleProviderSwitch(id)}
             onRefreshProviderUsage={() => void settings.loadProviderUsage()}

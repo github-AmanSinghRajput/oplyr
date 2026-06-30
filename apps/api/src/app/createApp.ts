@@ -411,23 +411,9 @@ export function createApp(options?: { apiAuthToken?: string }) {
 
       const payload = await voiceSettingsService.updateSettings({
         silenceWindowMs,
-        voiceLocale: optionalTrimmedString(request.body.voiceLocale),
-        transcriptionLanguageCode: optionalTrimmedString(request.body.transcriptionLanguageCode),
         transcriptionModel:
           request.body.transcriptionModel === 'parakeet'
             ? request.body.transcriptionModel
-            : undefined,
-        qualityProfile:
-          request.body.qualityProfile === 'low_memory' ||
-          request.body.qualityProfile === 'balanced' ||
-          request.body.qualityProfile === 'demo'
-            ? request.body.qualityProfile
-            : undefined,
-        noiseMode:
-          request.body.noiseMode === 'normal' ||
-          request.body.noiseMode === 'focused' ||
-          request.body.noiseMode === 'noisy_room'
-            ? request.body.noiseMode
             : undefined,
         autoResumeAfterReply:
           request.body.autoResumeAfterReply === undefined
