@@ -15,10 +15,9 @@ import type {
   CodebaseMapResponse,
   CodebaseFileSummaryResponse,
   CodebaseFileSymbolsResponse,
-  CreateNoteInput,
-  CreateNoteResponse,
   LogsResponse,
-  NotesResponse,
+  MarkdownContentResponse,
+  MarkdownListResponse,
   ProviderUsageResponse,
   ReplyResponse,
   SetWorkspaceResponse,
@@ -362,7 +361,11 @@ export class OperatorConsoleApiService extends BaseApiService {
     return this.request<ApprovalResponse>(`/api/approvals/${approvalId}/reject`, {
       method: 'POST',
       ...(feedback && feedback.trim()
-        ? { body: JSON.stringify({ feedback: feedback.trim() }) }
+        ? {
+            // Content-Type is required or express.json() skips the body and the feedback is dropped.
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ feedback: feedback.trim() })
+          }
         : {})
     });
   }
@@ -397,33 +400,17 @@ export class OperatorConsoleApiService extends BaseApiService {
     });
   }
 
-  getNotes(limit = 16) {
-    return this.request<NotesResponse>(`/api/notes?limit=${limit}`);
+  listMarkdownDocs() {
+    return this.request<MarkdownListResponse>('/api/workspace/markdown');
   }
 
-  createNote(input: CreateNoteInput) {
-    return this.request<CreateNoteResponse>('/api/notes', {
+  getMarkdownDoc(path: string) {
+    return this.request<MarkdownContentResponse>('/api/workspace/markdown/content', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(input)
-    });
-  }
-
-  updateNote(noteId: string, input: CreateNoteInput) {
-    return this.request<CreateNoteResponse>(`/api/notes/${noteId}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(input)
-    });
-  }
-
-  deleteNote(noteId: string) {
-    return this.request<ClearResponse>(`/api/notes/${noteId}`, {
-      method: 'DELETE'
+      body: JSON.stringify({ path })
     });
   }
 

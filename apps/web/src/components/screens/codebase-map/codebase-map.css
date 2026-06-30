@@ -29,3 +29,18 @@
 .cbmap-flow .react-flow__attribution {
   display: none;
 }
+
+/* Tree view only: glide nodes to their new positions/sizes on expand/collapse so the relayout reads
+   as a smooth animation instead of an instant jump. Scoped to `.cbmap-tree` so it never touches the
+   force view, whose positions update every simulation tick (a transition there would lag/jitter). */
+.cbmap-tree .react-flow__node {
+  transition:
+    transform 320ms cubic-bezier(0.4, 0, 0.2, 1),
+    width 320ms cubic-bezier(0.4, 0, 0.2, 1),
+    height 320ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .cbmap-tree .react-flow__node {
+    transition: none;
+  }
+}

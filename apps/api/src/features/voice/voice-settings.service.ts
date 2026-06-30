@@ -244,7 +244,7 @@ function getTranscriptionModelOptions(): TranscriptionModelOption[] {
       id: 'parakeet',
       label: 'Parakeet (local)',
       description:
-        'NVIDIA Parakeet multilingual speech recognition running locally on Apple Silicon via MLX.',
+        'NVIDIA Parakeet multilingual speech recognition running locally on the Apple Neural Engine via CoreML.',
       available: true
     }
   ];

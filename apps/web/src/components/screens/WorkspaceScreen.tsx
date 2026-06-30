@@ -151,7 +151,7 @@ export function WorkspaceScreen({
             <div>
               <h3 className="text-sm font-semibold text-text-primary">Reset Oplyr</h3>
               <p className="text-xs text-text-secondary mt-1">
-                This clears chat history, notes, approvals, saved workspace, voice settings, app
+                This clears chat history, approvals, saved workspace, voice settings, app
                 preferences, and app-level provider connections. It does not run system-wide Codex
                 or Claude logout commands.
               </p>

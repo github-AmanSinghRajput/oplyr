@@ -1,11 +1,12 @@
 # Oplyr
 
-> A desktop-first, voice-native AI coding workspace for macOS.
+> A desktop-first, voice-native multi-agent developer cockpit for macOS.
 
-Oplyr lets you talk (or type) to AI coding providers, work inside an explicit
-project boundary, and approve every file change before it is written. It
-orchestrates provider CLIs you already use — Codex and Claude Code today, with
-Gemini coming soon — without taking custody of their credentials. Speech runs
+Oplyr is a workspace where you direct multiple AI coding agents — by voice or
+text — inside an explicit project boundary, reviewing and approving every file
+change before it is written. It orchestrates provider CLIs you already use —
+Codex and Claude Code today, with Gemini coming soon — without taking custody of
+their credentials, and lets you switch between them mid-session. Speech runs
 fully on-device on the Apple Neural Engine, and the coding runtime stays local
 to your machine.
 
@@ -14,19 +15,47 @@ development, but it is not the intended public product surface.
 
 ## Key features
 
-- **Voice-native, text-mandatory.** Speak naturally to a coding assistant and
-  see the conversation as live text. Switch to typing whenever you prefer.
-- **Multi-provider.** Run against OpenAI Codex or Anthropic Claude Code via
-  their own CLIs and accounts. Gemini support is coming soon. Oplyr manages
-  app-level connection state and preferences only — provider credentials stay
-  with the provider CLI.
+- **Switch agents on the fly.** Connect multiple agents (Codex and Claude Code
+  today, Gemini soon) at once and switch the active one — and its model — mid-session
+  from the topbar. Each turn runs on the agent you've selected. (A full multi-agent
+  room where several agents collaborate in one conversation is on the way — see below.)
+- **Voice-native, text-mandatory.** Speak naturally and see the conversation as
+  live text. Switch to typing whenever you prefer.
+- **Multi-provider, your accounts.** Run against OpenAI Codex or Anthropic Claude
+  Code via their own CLIs and subscriptions (Gemini coming soon). Oplyr manages
+  app-level connection state only — provider credentials stay with the CLI.
+- **Smart model control.** Pick any model for the active agent from the topbar,
+  and let Oplyr auto-use the strongest model for edits and a leaner one for
+  routine turns to save tokens. Clear "limit reached" alerts when a provider caps out.
 - **Approval-gated edits.** The AI proposes changes; you review a GitHub-style
   diff and approve or reject before anything is written. Read-only by default.
+- **Live Codebase Map.** An auto-generated map of your repo — a structured tree
+  view and an interactive force/"brain" graph of files, folders, and imports,
+  with on-demand AI file/function summaries.
+- **Docs browser.** Browse and preview every Markdown doc in the connected repo,
+  with search and pagination.
+- **Integrated shell.** A built-in terminal scoped to your project.
 - **On-device speech + privacy.** Speech-to-text runs natively on the Apple
   Neural Engine — no audio leaves your machine for transcription.
 - **Local-first runtime.** The runtime executes against your machine and repo
   locally. Oplyr does not upload your repo to its servers. (Provider CLIs may
   talk to their own clouds under your accounts.)
+
+## Coming soon
+
+- **Agentic Chat — a true multi-agent room.** `@mention` several agents in one
+  conversation, have them reply in turn and hand work between each other, all over
+  shared memory. (Today you connect multiple agents and switch the active one; the
+  collaborative room is designed and on the way.)
+- **Shared memory ("brain").** A unified, local-first graph + vector memory every
+  agent reads from and writes to — so your context, decisions, and codebase
+  history persist across sessions and carry between agents.
+- **Meetings & Notes.** Connect your calendar to see meetings while you work, join
+  with one click, and get a heads-up alert before a call starts.
+- **Developer note-taker.** A Granola-level meeting/thinking companion built for
+  developers — transcripts, summaries, decisions, and recall.
+- **Vibe music.** An optional focus/ambience layer for long coding sessions.
+- **Gemini support** alongside Codex and Claude Code.
 
 ## Requirements
 
@@ -88,14 +117,13 @@ Oplyr is an npm-workspaces monorepo. Five workspaces under `apps/`:
 | `@oplyr/runtime` | `apps/api` | Local Express runtime: provider execution, voice orchestration, approvals/diffs, SQLite persistence. |
 | `@oplyr/web` | `apps/web` | React 19 + Vite operator console (renderer). |
 | `@oplyr/desktop` | `apps/desktop` | Electron shell for the packaged macOS app. |
-| `@oplyr/cloud-api` | `apps/cloud-api` | Cloud control plane: beta leads, invites, releases, install tracking, feedback (Postgres). |
 | `oplyr-stt` | `apps/stt` | Native Swift / CoreML speech-to-text engine. |
 
-The product splits into two layers. The **local runtime** runs on the user's
-Mac and owns provider execution, file/workspace access, voice capture,
-approvals, and the desktop UI — it is intentionally never cloud-hosted. The
-**cloud control plane** owns the website/download flow, beta access, release
-manifests, and feedback.
+The **local runtime** runs on the user's Mac and owns provider execution,
+file/workspace access, voice capture, approvals, and the desktop UI — it is
+intentionally never cloud-hosted. The public control plane (website/download
+flow, beta access, release manifests, feedback) lives in the separate
+`vocod-website` repo (Next.js + Vercel Postgres).
 
 ### Speech engine
 
@@ -123,11 +151,9 @@ npm run build          # Build STT binary + all workspaces
 npm run build:stt      # Build the native oplyr-stt speech binary (macOS only)
 
 npm run dev:runtime    # Runtime API only
-npm run dev:cloud      # Cloud control plane only
 
 npm run test:runtime   # Runtime tests (Node native test runner)
-npm run test:cloud     # Cloud control-plane tests
-npm run test:backend   # Runtime + cloud tests
+npm run test:backend   # Runtime tests
 
 npm run lint           # Lint backend + frontend
 npm run format         # Prettier write across the repo
@@ -136,22 +162,18 @@ npm run check          # Full gate: format check + lint + typecheck + tests
 
 # Database migrations
 npm run db:migrate:runtime   # local SQLite
-npm run db:migrate:cloud     # cloud Postgres
 ```
 
-Most scripts have per-layer variants (`:runtime`, `:cloud`, `:backend`,
-`:frontend`); see `package.json` for the full list.
+Most scripts have per-layer variants (`:runtime`, `:backend`, `:frontend`);
+see `package.json` for the full list.
 
 ## Configuration
 
 Copy `.env.example` to `.env`. The file documents the full environment surface
 and is the source of truth.
 
-Every value is **optional** with sensible defaults, except
-`CLOUD_DATABASE_URL`, which is **required only when running the cloud control
-plane with `APP_ENV=production`**. Runtime config is validated in
-`apps/api/src/config/env.ts` and cloud config in
-`apps/cloud-api/src/config/env.ts`.
+Every value is **optional** with sensible defaults. Runtime config is validated
+in `apps/api/src/config/env.ts`.
 
 Notable variables:
 

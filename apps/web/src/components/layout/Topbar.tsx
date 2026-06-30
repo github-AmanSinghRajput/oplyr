@@ -1,4 +1,5 @@
-import { Sun, Moon, RefreshCw, Unplug } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Sun, Moon, RefreshCw, Unplug, ChevronDown, Plus, Check } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { useTheme } from '@/providers/ThemeProvider';
 import { useNavigation } from '@/providers/NavigationProvider';
@@ -7,13 +8,23 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ProviderLogo } from '@/components/providers/ProviderLogo';
-import type { AssistantProviderId } from '@/containers/voice-console/lib/types';
+import { ModelPicker } from '@/components/providers/ModelPicker';
+import type {
+  AssistantProviderId,
+  ClaudeSettingsResponse,
+  CodexSettingsResponse,
+  GeminiSettingsResponse
+} from '@/containers/voice-console/lib/types';
 
 interface TopbarProps {
   displayName: string | null;
   onRefresh: () => void;
   onDisconnect: () => void;
   onProviderSwitch: (providerId: AssistantProviderId) => void;
+  codexSettings: CodexSettingsResponse | null;
+  claudeSettings: ClaudeSettingsResponse | null;
+  geminiSettings: GeminiSettingsResponse | null;
+  onSelectModel: (providerId: AssistantProviderId, slug: string) => void;
   busyLabel?: string;
   error?: string;
 }
@@ -23,11 +34,15 @@ export function Topbar({
   onRefresh,
   onDisconnect,
   onProviderSwitch,
+  codexSettings,
+  claudeSettings,
+  geminiSettings,
+  onSelectModel,
   busyLabel,
   error
 }: TopbarProps) {
   const { theme, toggleTheme } = useTheme();
-  const { sidebarExpanded, setActiveScreen } = useNavigation();
+  const { sidebarPinned, setActiveScreen } = useNavigation();
   const { status, desktopRuntime, assistantReady } = useStatus();
 
   const workspaceLabel = status?.workspace.projectName ?? 'No project selected';
@@ -37,7 +52,6 @@ export function Topbar({
   const authLabel = activeProvider?.accountLabel ?? activeProvider?.name ?? 'Not connected';
   const connectedProviders =
     status?.assistantProviders.providers.filter((provider) => provider.appConnected) ?? [];
-  const showSwitcher = connectedProviders.length > 1;
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -48,7 +62,7 @@ export function Topbar({
           'bg-background/80 backdrop-blur-xl border-b border-border',
           'transition-[left] duration-300 ease-out'
         )}
-        style={{ left: sidebarExpanded ? 240 : 56 }}
+        style={{ left: sidebarPinned ? 240 : 56 }}
       >
         {/* Left: workspace info */}
         <div className="flex items-center gap-3 min-w-0">
@@ -77,82 +91,25 @@ export function Topbar({
             </Badge>
           )}
 
-          {assistantReady && showSwitcher && (
-            <div
-              role="radiogroup"
-              aria-label="Active assistant provider"
-              className="flex items-center gap-0.5 rounded-[var(--radius-control)] border border-border bg-surface-2 p-0.5"
-            >
-              {connectedProviders.map((provider) => {
-                const isActive = provider.id === activeProviderId;
-                return (
-                  <Tooltip key={provider.id}>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        role="radio"
-                        aria-checked={isActive}
-                        aria-label={`Switch to ${provider.name}`}
-                        onClick={() => {
-                          if (!isActive) {
-                            onProviderSwitch(provider.id);
-                          }
-                        }}
-                        className={cn(
-                          'flex items-center gap-1.5 rounded-[calc(var(--radius-control)-2px)] px-2 h-7 text-xs transition-colors',
-                          isActive
-                            ? 'bg-surface-1 text-text-primary shadow-sm'
-                            : 'text-text-secondary hover:text-text-primary'
-                        )}
-                      >
-                        <ProviderLogo
-                          providerId={provider.id}
-                          size="sm"
-                          className="h-4 w-4 rounded p-0.5 border-0 shadow-none"
-                        />
-                        {isActive && <span className="font-medium">{provider.name}</span>}
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      {isActive ? `${provider.name} (active)` : `Switch to ${provider.name}`}
-                    </TooltipContent>
-                  </Tooltip>
-                );
-              })}
-            </div>
+          {assistantReady && (
+            <ProviderSwitcher
+              providers={connectedProviders}
+              activeProviderId={activeProviderId}
+              authLabel={authLabel}
+              reachable={desktopRuntime ? desktopRuntime.apiReachable : true}
+              onSwitch={onProviderSwitch}
+              onConnectNew={() => setActiveScreen('settings')}
+            />
           )}
 
-          {assistantReady && desktopRuntime && !showSwitcher && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  onClick={() => setActiveScreen('settings')}
-                  className={cn(
-                    'flex items-center gap-1.5 rounded-[var(--radius-control)] border pl-1.5 pr-2 h-7 text-xs transition-colors cursor-pointer hover:bg-surface-2',
-                    desktopRuntime.apiReachable
-                      ? 'border-border text-text-secondary'
-                      : 'border-danger/40 text-danger'
-                  )}
-                >
-                  {activeProvider && (
-                    <ProviderLogo
-                      providerId={activeProvider.id}
-                      size="sm"
-                      className="h-5 w-5 rounded-md p-1 border-0 shadow-none"
-                    />
-                  )}
-                  <span
-                    className={cn(
-                      'w-1.5 h-1.5 rounded-full',
-                      desktopRuntime.apiReachable ? 'bg-success' : 'bg-danger'
-                    )}
-                  />
-                  <span>{authLabel}</span>
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>Manage providers</TooltipContent>
-            </Tooltip>
+          {assistantReady && (
+            <ModelPicker
+              activeProviderId={activeProviderId}
+              codexSettings={codexSettings}
+              claudeSettings={claudeSettings}
+              geminiSettings={geminiSettings}
+              onSelectModel={onSelectModel}
+            />
           )}
 
           <Tooltip>
@@ -193,5 +150,124 @@ export function Topbar({
         </div>
       </header>
     </TooltipProvider>
+  );
+}
+
+interface SwitchProvider {
+  id: AssistantProviderId;
+  name: string;
+}
+
+/**
+ * Topbar dropdown to switch the active agent + a "Connect new agent" action. Lightweight,
+ * self-contained (no menu library) — closes on outside click / Escape.
+ */
+function ProviderSwitcher({
+  providers,
+  activeProviderId,
+  authLabel,
+  reachable,
+  onSwitch,
+  onConnectNew
+}: {
+  providers: SwitchProvider[];
+  activeProviderId: AssistantProviderId | null;
+  authLabel: string;
+  reachable: boolean;
+  onSwitch: (id: AssistantProviderId) => void;
+  onConnectNew: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const active = providers.find((provider) => provider.id === activeProviderId) ?? null;
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        className="flex h-7 items-center gap-1.5 rounded-[var(--radius-control)] border border-border bg-surface-2 pl-1.5 pr-2 text-xs text-text-secondary transition-colors hover:text-text-primary"
+      >
+        {active ? (
+          <ProviderLogo
+            providerId={active.id}
+            size="sm"
+            className="h-4 w-4 rounded-radius-sm border-0 p-0.5 shadow-none"
+          />
+        ) : null}
+        <span className={cn('h-1.5 w-1.5 rounded-full', reachable ? 'bg-success' : 'bg-danger')} />
+        <span className="font-medium text-text-primary">{active?.name ?? authLabel}</span>
+        <ChevronDown size={13} className={cn('transition-transform', open && 'rotate-180')} />
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-[calc(100%+6px)] z-30 min-w-[200px] overflow-hidden rounded-[var(--radius-control)] border border-border bg-surface-1 p-1 shadow-lg"
+        >
+          {providers.map((provider) => {
+            const isActive = provider.id === activeProviderId;
+            return (
+              <button
+                key={provider.id}
+                type="button"
+                role="menuitemradio"
+                aria-checked={isActive}
+                onClick={() => {
+                  if (!isActive) onSwitch(provider.id);
+                  setOpen(false);
+                }}
+                className={cn(
+                  'flex w-full items-center gap-2 rounded-radius-sm px-2 py-1.5 text-xs transition-colors',
+                  isActive
+                    ? 'bg-accent-muted text-accent'
+                    : 'text-text-secondary hover:bg-surface-2 hover:text-text-primary'
+                )}
+              >
+                <ProviderLogo
+                  providerId={provider.id}
+                  size="sm"
+                  className="h-4 w-4 rounded-radius-sm border-0 p-0.5 shadow-none"
+                />
+                <span className="flex-1 text-left font-medium">{provider.name}</span>
+                {isActive && <Check size={13} />}
+              </button>
+            );
+          })}
+          <div className="my-1 h-px bg-border" />
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              onConnectNew();
+              setOpen(false);
+            }}
+            className="flex w-full items-center gap-2 rounded-radius-sm px-2 py-1.5 text-xs text-text-secondary transition-colors hover:bg-surface-2 hover:text-text-primary"
+          >
+            <Plus size={13} />
+            <span className="flex-1 text-left font-medium">Connect new agent</span>
+          </button>
+        </div>
+      )}
+    </div>
   );
 }

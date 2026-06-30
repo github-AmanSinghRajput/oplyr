@@ -31,9 +31,21 @@ import { EDGE_HOT, EDGE_IDLE } from './shared';
 
 type SimNode = SimulationNodeDatum & { id: string };
 type SimLink = SimulationLinkDatum<SimNode> & { kind: 'member' | 'import' };
-// Keep the simulation gently warm forever (never fully cools to a halt) so the graph always has the
-// soft "flowing" drift d3 graphs are known for. Bumped higher while dragging, restored after.
-const IDLE_ALPHA = 0.025;
+// Alpha the sim is warmed to during a drag so neighbours react; it cools back to a full stop after.
+const DRAG_ALPHA = 0.3;
+// Minimum empty distance kept between two node bounding circles so nodes never touch/cluster.
+const MIN_GAP = 22;
+// Collision radius for a node before React Flow has measured it (corrected once measured).
+const FALLBACK_RADIUS = 60;
+
+// Per-node collision radius from the node's *measured* size. Use half the bounding diagonal so the
+// circle fully contains the (wide) pill/chip — two non-overlapping circles then guarantee the
+// rectangles never overlap, regardless of how long a folder/file label is. Plus MIN_GAP of breathing
+// room so neighbours slide apart instead of clustering.
+function collideRadiusFor(size: { w: number; h: number } | undefined) {
+  if (!size) return FALLBACK_RADIUS;
+  return Math.hypot(size.w, size.h) / 2 + MIN_GAP;
+}
 
 function ForceFlow({
   map,
@@ -53,6 +65,8 @@ function ForceFlow({
   const simRef = useRef<Simulation<SimNode, SimLink> | null>(null);
   const simById = useRef<Map<string, SimNode>>(new Map());
   const posRef = useRef<Map<string, { x: number; y: number }>>(new Map());
+  // Live measured node sizes (from React Flow), keyed by id — feeds per-node collision radii.
+  const sizeRef = useRef<Map<string, { w: number; h: number }>>(new Map());
   const draggingIdRef = useRef<string | null>(null);
   // Stable adjacency (member + import) for neighbour highlighting — read from a ref so the
   // selection effect doesn't depend on the edge state it itself mutates (would loop).
@@ -98,6 +112,10 @@ function ForceFlow({
     });
     const byId = new Map(simNodes.map((n) => [n.id, n]));
     simById.current = byId;
+    // Drop measured sizes for nodes that no longer exist (collapsed away) so the map stays bounded.
+    for (const id of sizeRef.current.keys()) {
+      if (!byId.has(id)) sizeRef.current.delete(id);
+    }
 
     setNodes(
       visNodes.map((vn) => {
@@ -147,6 +165,8 @@ function ForceFlow({
       source: e.source,
       target: e.target
     }));
+    // Bump once per rebuild so the selection-highlight effect recomputes against fresh adjacency.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional one-time relayout trigger
     setStructureVersion((v) => v + 1);
 
     const links: SimLink[] = [
@@ -160,8 +180,16 @@ function ForceFlow({
 
     const simulation = forceSimulation<SimNode>(simNodes)
       .force('charge', forceManyBody<SimNode>().strength(-260).distanceMax(700))
-      // Softer collide (0.6) avoids the abrupt corrections that read as jitter (per d3 docs).
-      .force('collide', forceCollide<SimNode>(48).strength(0.6).iterations(2))
+      // Per-node collision sized to each node's measured bounds (+MIN_GAP) so folders/files/subfolders
+      // never overlap. Firm strength + extra iterations resolve separation reliably; velocityDecay
+      // (0.5) keeps it from reading as jitter.
+      .force(
+        'collide',
+        forceCollide<SimNode>()
+          .radius((n) => collideRadiusFor(sizeRef.current.get(n.id)))
+          .strength(0.9)
+          .iterations(4)
+      )
       .force(
         'link',
         forceLink<SimNode, SimLink>(links)
@@ -169,13 +197,15 @@ function ForceFlow({
           .distance((l) => (l.kind === 'member' ? 60 : 160))
           .strength((l) => (l.kind === 'member' ? 0.5 : 0.04))
       )
-      .force('x', forceX(0).strength(0.012))
-      .force('y', forceY(0).strength(0.012))
-      .alpha(0.8)
-      .alphaDecay(0.02)
-      // Higher friction = calmer, less oscillation/jitter; never fully stop (gentle perpetual flow).
-      .velocityDecay(0.5)
-      .alphaTarget(IDLE_ALPHA);
+      // Real center of gravity: strong enough to balance the charge repulsion so the graph settles
+      // into a compact, bounded layout around the origin instead of drifting outward forever.
+      .force('x', forceX(0).strength(0.08))
+      .force('y', forceY(0).strength(0.08))
+      .alpha(0.9)
+      .alphaDecay(0.028)
+      // Higher friction = calmer, less oscillation. alphaTarget stays at its default (0) so the sim
+      // cools to a full stop after settling — no perpetual drift.
+      .velocityDecay(0.55);
 
     simulation.on('tick', () => {
       // Positions only — keep each node's `data` reference identical so React Flow just transforms
@@ -277,11 +307,34 @@ function ForceFlow({
     (_e: MouseEvent | TouchEvent, node: Node) => {
       draggingIdRef.current = node.id;
       pin(node);
-      simRef.current?.alphaTarget(0.3).restart();
+      simRef.current?.alphaTarget(DRAG_ALPHA).restart();
     },
     [pin]
   );
   const onNodeDrag = useCallback((_e: MouseEvent | TouchEvent, node: Node) => pin(node), [pin]);
+
+  // Capture React Flow's measured node sizes so the collision force can size each node's bubble to
+  // its real footprint. When new measurements arrive, nudge the sim so collide re-resolves spacing.
+  const handleNodesChange = useCallback<typeof onNodesChange>(
+    (changes) => {
+      let measured = false;
+      for (const change of changes) {
+        if (change.type === 'dimensions' && change.dimensions) {
+          sizeRef.current.set(change.id, {
+            w: change.dimensions.width,
+            h: change.dimensions.height
+          });
+          measured = true;
+        }
+      }
+      onNodesChange(changes);
+      if (measured) {
+        const sim = simRef.current;
+        if (sim) sim.alpha(Math.max(sim.alpha(), 0.3)).restart();
+      }
+    },
+    [onNodesChange]
+  );
   const onNodeDragStop = useCallback((_e: MouseEvent | TouchEvent, node: Node) => {
     const sim = simById.current.get(node.id);
     if (sim) {
@@ -289,7 +342,8 @@ function ForceFlow({
       sim.fy = null;
     }
     draggingIdRef.current = null;
-    simRef.current?.alphaTarget(IDLE_ALPHA); // settle back to the gentle perpetual drift, not a halt
+    // Release the target so the sim cools to a full stop (alphaTarget default 0) instead of drifting.
+    simRef.current?.alphaTarget(0);
   }, []);
 
   return (
@@ -297,7 +351,7 @@ function ForceFlow({
       className="cbmap-flow"
       nodes={nodes}
       edges={edges}
-      onNodesChange={onNodesChange}
+      onNodesChange={handleNodesChange}
       onEdgesChange={onEdgesChange}
       nodeTypes={forceNodeTypes}
       onNodeClick={onNodeClick}

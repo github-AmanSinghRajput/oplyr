@@ -6,8 +6,9 @@ export type ScreenId =
   | 'review'
   | 'settings'
   | 'memory'
-  | 'notes'
-  | 'vibemusic'
+  | 'meetings'
+  | 'markdown'
+  | 'music'
   | 'codebase-map';
 
 // ── Codebase map ────────────────────────────────────────────────────────────
@@ -54,11 +55,15 @@ export interface CodebaseMapResponse {
   map: CodebaseMapData | null;
 }
 
+/** Mirrors the backend AssistantClientError kinds so the UI can react to (e.g.) rate limits. */
+export type AssistantErrorKind = 'auth' | 'rate_limit' | 'service' | 'unknown';
+
 export interface CodebaseFileSummaryResponse {
   path: string;
   summary: string | null;
   cached: boolean;
   error?: string;
+  errorKind?: AssistantErrorKind;
 }
 
 export interface CodebaseFileSymbol {
@@ -451,6 +456,7 @@ export type ChatStreamEvent =
   | {
       type: 'error';
       error: string;
+      errorKind?: AssistantErrorKind;
     };
 
 export interface SetWorkspaceResponse {
@@ -536,30 +542,20 @@ export interface ApprovalResponse {
   diff?: DiffSummary;
 }
 
-export interface NoteEntry {
-  id: string;
-  title: string;
-  body: string;
-  source: string;
-  createdAt: string;
-  updatedAt: string;
+export interface MarkdownFileEntry {
+  path: string;
+  name: string;
+  dir: string;
 }
 
-export interface NotesResponse {
-  notes: NoteEntry[];
+export interface MarkdownListResponse {
+  files: MarkdownFileEntry[];
 }
 
-export interface CreateNoteInput {
-  title: string;
-  body: string;
-  source?: string;
-  chunks?: string[];
-}
-
-export interface CreateNoteResponse {
-  note: {
-    id: string;
-  } | null;
+export interface MarkdownContentResponse {
+  path: string;
+  content: string | null;
+  error?: string;
 }
 
 export interface ApprovalHistoryEntry {

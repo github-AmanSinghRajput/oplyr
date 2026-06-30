@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-Oplyr — a desktop-first, voice-native AI coding workspace. Users talk to Codex or Claude Code via voice or text, work inside an explicit project boundary, and approve file changes before execution.
+Oplyr — a desktop-first, voice-native **multi-agent developer workspace** ("cockpit"). Users connect coding agents (Codex, Claude Code, soon Gemini) and direct the **active** one by voice or text — multiple can be connected, one is active per turn, switchable mid-session from the Topbar — working inside an explicit project boundary with reviewable diffs/approvals, a live codebase map, and a markdown docs browser. Planned: a true multi-agent room (several agents in one conversation via `@mention`), a shared local memory ("brain"), and meetings/notes. Local-first and approval-gated by design.
 
 ## Commands
 
@@ -30,11 +30,13 @@ npm run db:ready --workspace @oplyr/runtime
 
 ## Environment
 
-Copy `.env.example` to `.env`. The local runtime uses embedded SQLite via `RUNTIME_DATABASE_PATH`; the cloud control plane uses Postgres via `CLOUD_DATABASE_URL`. Runtime config is validated in `apps/api/src/config/env.ts`, and cloud config is validated in `apps/cloud-api/src/config/env.ts`.
+Copy `.env.example` to `.env`. The local runtime uses embedded SQLite via `RUNTIME_DATABASE_PATH`. Runtime config is validated in `apps/api/src/config/env.ts`.
+
+> **Note:** The public control plane (beta leads, invite validation, releases, download tracking, feedback) lives in the separate `vocod-website` repo (Next.js + Vercel Postgres). It is not part of this product repo.
 
 ## Architecture
 
-**Monorepo** with npm workspaces (`@oplyr/runtime`, `@oplyr/cloud-api`, `@oplyr/web`, `@oplyr/desktop`) and local speech runtimes.
+**Monorepo** with npm workspaces (`@oplyr/runtime`, `@oplyr/web`, `@oplyr/desktop`) and local speech runtimes.
 
 ### Backend (`apps/api`)
 
@@ -47,12 +49,6 @@ Copy `.env.example` to `.env`. The local runtime uses embedded SQLite via `RUNTI
 - **Runtime state**: `src/runtime.ts` — in-memory singleton (`runtimeState`) holding workspace, pendingApproval, lastDiff, audio, voiceSession state
 - **Shared libs**: `src/lib/` — logger (structured JSON), AppError class, Express helpers (asyncHandler, validators), EventBus (SSE), rate limiter
 - **Database**: `src/db/client.ts` embeds SQLite for local runtime data, with migrations in `database/sqlite/`
-
-### Cloud control plane (`apps/cloud-api`)
-
-- **Entry**: `src/index.ts` → validates env, calls `src/app/createApp.ts`
-- **Responsibilities**: beta leads, invite validation, releases, download tracking, install registration, feedback
-- **Database**: Postgres via `src/db/client.ts`, with migrations in `database/postgres/`
 
 ### Frontend (`apps/web`)
 
@@ -74,5 +70,4 @@ Copy `.env.example` to `.env`. The local runtime uses embedded SQLite via `RUNTI
 ## Known Issues
 
 - The product direction has pivoted to a desktop-first Electron app distributed via DMG. Browser-based development remains the fastest shell, but it is no longer the public runtime target.
-- Desktop STT uses renderer mic capture plus a single local engine: Parakeet v3 (`parakeet-tdt-0.6b-v3`) running natively on the Apple Neural Engine via the `oplyr-stt` Swift binary (FluidAudio CoreML). There is no fallback — a failure surfaces a generic "Something went wrong" to the user and logs the real error to the server console. Apple Silicon only.
-- The STT engine is native Swift/CoreML — no Python, no MLX, no venv (this removed the previous `parakeet-mlx` worker). The `native/` Apple Speech bridge, Moonshine, whisper.cpp, and the AssemblyAI fallback were all removed earlier in favor of Parakeet-only STT.
+- Desktop STT uses renderer mic capture plus a single native local engine: Parakeet v3 (`parakeet-tdt-0.6b-v3`) on the Apple Neural Engine via the `oplyr-stt` Swift binary (FluidAudio CoreML). **Apple Silicon only, no fallback** — a failure surfaces a generic "Something went wrong" to the user and logs the real error to the server console. No Python, no MLX, no TTS.

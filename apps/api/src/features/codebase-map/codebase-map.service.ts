@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 
-import { generateAssistantReply } from '../../assistant-client.js';
+import { generateAssistantReply, AssistantClientError } from '../../assistant-client.js';
 import { logger } from '../../lib/logger.js';
 import { isSecretRelativePath, resolveWorkspacePath } from '../../lib/path-security.js';
 import { getRuntimeState } from '../../runtime.js';
@@ -154,6 +154,17 @@ export class CodebaseMapService {
       }
       return { path: normalized, summary: summary || null, cached: false };
     } catch (error) {
+      // Surface the assistant's error classification (e.g. rate_limit) + its friendly message so the
+      // UI can show a clear "limit reached for <agent>" notice instead of a silent failure.
+      if (error instanceof AssistantClientError) {
+        return {
+          path: normalized,
+          summary: null,
+          cached: false,
+          error: error.friendlyMessage,
+          errorKind: error.kind
+        };
+      }
       return {
         path: normalized,
         summary: null,

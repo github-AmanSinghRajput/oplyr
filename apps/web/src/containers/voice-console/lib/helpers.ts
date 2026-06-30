@@ -11,6 +11,14 @@ import type {
   VoiceState
 } from './types';
 
+/** Time-aware greeting, optionally personalized with the user's name. */
+export function getGreeting(name?: string | null): string {
+  const hour = new Date().getHours();
+  const part = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+  const trimmed = name?.trim();
+  return trimmed ? `${part}, ${trimmed}` : part;
+}
+
 export function formatTimestamp(value: string) {
   return new Intl.DateTimeFormat(undefined, {
     hour: 'numeric',
@@ -164,24 +172,6 @@ export function buildNavigationHints(
         ...item,
         hint: 'Voice, models, providers',
         badge: null,
-        active: item.id === screenId
-      };
-    }
-
-    if (item.id === 'notes') {
-      return {
-        ...item,
-        hint: 'Coming in v1.2',
-        badge: 'soon',
-        active: item.id === screenId
-      };
-    }
-
-    if (item.id === 'vibemusic') {
-      return {
-        ...item,
-        hint: 'Coming in v2.0',
-        badge: 'soon',
         active: item.id === screenId
       };
     }

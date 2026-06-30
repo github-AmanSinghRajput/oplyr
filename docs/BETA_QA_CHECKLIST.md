@@ -21,8 +21,9 @@ This checklist covers the intended beta product shape:
 - macOS desktop app distributed as a DMG
 - local runtime on the user's machine
 - local SQLite for device-local app data
-- provider-backed coding through Codex and Claude Code
-- cloud control plane for website, beta access, downloads, releases, installs, and feedback
+- provider-backed coding through Codex and Claude Code (Gemini coming)
+- the public control plane (website, beta access, downloads, releases, installs, feedback) lives in
+  the **separate `vocod-website` repo** — it is NOT part of this app and is out of scope for this checklist
 
 This is not only a test checklist.
 It is also the intended user journey and quality bar for beta.
@@ -44,15 +45,12 @@ It is also the intended user journey and quality bar for beta.
 - provider CLI execution
 - local model runtimes and related support scripts
 
-### Cloud
+### Cloud — separate repo (`vocod-website`), out of scope here
 
-- website
-- beta access / invite flow
-- release metadata
-- download tracking
-- install registration
-- feedback collection
-- future update manifest
+The public control plane is no longer part of this app (the old `apps/cloud-api` was removed). It now
+lives in the `vocod-website` repo and owns: website, beta access / invite flow, release metadata,
+download tracking, install registration, feedback collection, and future update manifests. QA those
+in that repo — this checklist covers the **local desktop app** only.
 
 ### Must not be stored online by default in beta
 
@@ -309,7 +307,7 @@ Expected:
 - microphone input is captured
 - STT transcribes
 - assistant reasons
-- assistant reply is displayed as text (TTS is deferred to a future paid provider)
+- assistant reply is displayed as text (Oplyr is STT-only — there is no TTS / spoken reply)
 
 Expected:
 
@@ -529,19 +527,17 @@ Expected:
 - second machine starts clean unless cloud features later add sync
 - no local chat or review history magically appears on a second machine
 
-## 6.11 Cloud Control Plane Scenarios
+## 6.11 Cloud Control Plane Scenarios — moved to `vocod-website`
 
-- lead creation works
-- invite validation works
-- download event logging works
-- install registration works
-- feedback submission works
-- cloud outage does not brick the local coding runtime
+Lead creation, invite validation, download logging, install registration, and feedback submission are
+now owned by the **separate `vocod-website` repo** (the old in-repo `apps/cloud-api` was removed). QA
+those flows there. The only thing to verify *here*: a cloud/website outage must NOT brick the local
+coding runtime.
 
 Expected:
 
-- local runtime remains local-first
-- cloud failures should degrade beta logistics, not core local code execution
+- local runtime remains fully local-first and works with the website/control-plane unreachable
+- cloud failures degrade beta logistics only, never core local code execution
 
 ## 6.12 Update and Release Scenarios
 

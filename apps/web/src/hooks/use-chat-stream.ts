@@ -4,6 +4,7 @@ import { useToast } from '@/providers/ToastProvider';
 import { mergeUniqueMessages } from '@/containers/voice-console/lib/helpers';
 import type {
   ApprovalRequiredResponse,
+  AssistantErrorKind,
   ChatAttachment,
   ChatStreamEvent,
   MessageEntry,
@@ -11,6 +12,16 @@ import type {
 } from '@/containers/voice-console/lib/types';
 
 const TYPING_TICK_MS = 16;
+
+/** Carries the assistant error classification (e.g. rate_limit) up from a stream 'error' event. */
+class ChatStreamError extends Error {
+  readonly kind: AssistantErrorKind;
+  constructor(message: string, kind: AssistantErrorKind = 'unknown') {
+    super(message);
+    this.name = 'ChatStreamError';
+    this.kind = kind;
+  }
+}
 
 export interface ChatStreamHandle {
   messages: MessageEntry[];
@@ -206,7 +217,7 @@ export function useChatStream(): ChatStreamHandle {
                 return;
               }
 
-              throw new Error(event.error);
+              throw new ChatStreamError(event.error, event.errorKind);
             },
             {
               signal: abortController.signal,
@@ -216,6 +227,13 @@ export function useChatStream(): ChatStreamHandle {
           );
         } catch (streamError) {
           if (abortController.signal.aborted) throw streamError;
+          // On a rate limit, surface a clear notice and DON'T fall back to batch — a retry would
+          // just hit the same limit. The friendly message already names the agent + reset time.
+          if (streamError instanceof ChatStreamError && streamError.kind === 'rate_limit') {
+            clearActiveChatStreamDraft({ removeMessages: true });
+            pushToast('error', 'AI limit reached', streamError.message);
+            throw streamError; // caller restores the input so the user can retry later
+          }
           console.warn('[chat][stream] stream failed, falling back to batch', streamError);
         }
 
@@ -246,7 +264,13 @@ export function useChatStream(): ChatStreamHandle {
         }
       }
     },
-    [service, abortActiveChatStream, clearActiveChatStreamDraft, clearTypingStateForMessage]
+    [
+      service,
+      abortActiveChatStream,
+      clearActiveChatStreamDraft,
+      clearTypingStateForMessage,
+      pushToast
+    ]
   );
 
   const handleAttachFiles = useCallback(

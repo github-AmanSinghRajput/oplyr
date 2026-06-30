@@ -1,3 +1,4 @@
 #!/usr/bin/env sh
-npm run check:backend
+# Fast gate: format + lint ONLY the staged files (backend + frontend, per lint-staged config).
+# The full typecheck/test/build gate runs on pre-push and in CI.
 npx lint-staged

@@ -21,9 +21,10 @@ import { useApi } from '@/providers/ApiProvider';
 import { useChatStream } from '@/hooks/use-chat-stream';
 import { useVoiceSession } from '@/hooks/use-voice-session';
 import { useAppSettings, type AppSettingsHandle } from '@/hooks/use-app-settings';
-import { useNotes } from '@/hooks/use-notes';
 import { usePreferences } from '@/hooks/use-preferences';
+import { BrainCircuit, Music } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { StandbyScreen } from '@/components/screens/StandbyScreen';
 import { OplyrLogoMark } from '@/components/branding/OplyrLogoMark';
 import { cn } from '@/lib/cn';
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
@@ -52,8 +53,11 @@ const SettingsScreen = lazy(() =>
 const OnboardingScreen = lazy(() =>
   import('@/components/screens/OnboardingScreen').then((m) => ({ default: m.OnboardingScreen }))
 );
-const MemoryScreen = lazy(() =>
-  import('@/components/screens/MemoryScreen').then((m) => ({ default: m.MemoryScreen }))
+const MeetingsScreen = lazy(() =>
+  import('@/components/screens/MeetingsScreen').then((m) => ({ default: m.MeetingsScreen }))
+);
+const MarkdownScreen = lazy(() =>
+  import('@/components/screens/MarkdownScreen').then((m) => ({ default: m.MarkdownScreen }))
 );
 const CodebaseMapScreen = lazy(() =>
   import('@/components/screens/CodebaseMapScreen').then((m) => ({ default: m.CodebaseMapScreen }))
@@ -221,13 +225,12 @@ export function AppShell() {
   const { activeScreen, setActiveScreen } = useNavigation();
   const { status, system, refreshStatus, assistantReady } = useStatus();
   const { theme } = useTheme();
-  const { toasts } = useToast();
+  const { toasts, pushToast } = useToast();
   const { baseUrl, service } = useApi();
   const { approvals, handleApprove, handleReject, isApproving, isRejecting } = useApproval();
   const chat = useChatStream();
   const { loadLogs } = chat;
   const settings = useAppSettings();
-  const notes = useNotes();
   const { preferences, setPreference } = usePreferences();
   const voice = useVoiceSession({
     chat,
@@ -237,9 +240,28 @@ export function AppShell() {
   const handleReviewApprove = useCallback(async () => {
     const approved = await handleApprove();
     if (!approved) return;
+    // In 'auto' model mode the backend runs edits on the strongest model — surface which one, so the
+    // automatic upgrade is transparent (the frontend knows the top model from the provider's options).
+    const providerId = status?.assistantProviders.activeProviderId ?? null;
+    let modelNote: string | null = null;
+    if (providerId === 'codex' && settings.codexSettings?.settings.voiceModelMode === 'auto') {
+      const opts = settings.codexSettings.options.models;
+      const strong =
+        opts.find(
+          (o) => !/\b(mini|nano|small|flash|fast|lite)\b/i.test(`${o.slug} ${o.displayName}`)
+        ) ?? opts[0];
+      if (strong) modelNote = `Used ${strong.displayName} for this edit.`;
+    } else if (
+      providerId === 'claude' &&
+      settings.claudeSettings?.settings.voiceModelMode === 'auto'
+    ) {
+      const opus = settings.claudeSettings.options.models.find((o) => o.slug === 'opus');
+      if (opus) modelNote = `Used ${opus.displayName} for this edit.`;
+    }
+    if (modelNote) pushToast('info', 'Top model for this edit', modelNote);
     await loadLogs();
     startTransition(() => setActiveScreen('voice'));
-  }, [handleApprove, loadLogs, setActiveScreen]);
+  }, [handleApprove, loadLogs, setActiveScreen, status, settings, pushToast]);
 
   const handleReviewReject = useCallback(
     async (feedback?: string) => {
@@ -464,6 +486,7 @@ export function AppShell() {
             aiReply={lastAssistant}
             assistant={getVoiceAssistant(status, settings)}
             audioAvailable={status?.audio.available ?? false}
+            userName={displayName}
             onStart={voice.onStart}
             onStopAndSend={voice.onStopAndSend}
           />
@@ -542,23 +565,26 @@ export function AppShell() {
             geminiSettingsDirty={settings.geminiSettingsDirty}
           />
         );
+      case 'meetings':
+        return <MeetingsScreen />;
+      case 'markdown':
+        return <MarkdownScreen projectRoot={status?.workspace.projectRoot ?? null} />;
       case 'memory':
         return (
-          <MemoryScreen
-            editingNoteId={notes.editingNoteId}
-            noteBody={notes.noteBody}
-            noteSource={notes.noteSource}
-            noteTitle={notes.noteTitle}
-            notes={notes.notes}
-            trackedSessions={system?.auth.trackedSessions ?? []}
-            system={system}
-            onCreateNote={notes.onCreateNote}
-            onDeleteNote={notes.onDeleteNote}
-            onEditNote={notes.onEditNote}
-            onNoteBodyChange={notes.onNoteBodyChange}
-            onNoteSourceChange={notes.onNoteSourceChange}
-            onNoteTitleChange={notes.onNoteTitleChange}
-            onResetComposer={notes.onResetComposer}
+          <StandbyScreen
+            icon={BrainCircuit}
+            title="Memory"
+            description="Oplyr's unified, local-first memory — a shared brain every agent reads from and writes to, so your context, decisions, and codebase history persist across sessions and tools."
+            footnote="In active development"
+          />
+        );
+      case 'music':
+        return (
+          <StandbyScreen
+            icon={Music}
+            title="Music"
+            description="Focus audio while you build — coming to a future Oplyr release."
+            footnote="Coming soon"
           />
         );
       default:
@@ -643,6 +669,10 @@ export function AppShell() {
               }
             }}
             onProviderSwitch={(id) => void settings.handleProviderSwitch(id)}
+            codexSettings={settings.codexSettings}
+            claudeSettings={settings.claudeSettings}
+            geminiSettings={settings.geminiSettings}
+            onSelectModel={(id, slug) => void settings.handleSelectModel(id, slug)}
             busyLabel={settings.busyLabel}
             error={settings.error}
           />

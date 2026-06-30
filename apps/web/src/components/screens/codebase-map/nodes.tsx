@@ -1,3 +1,5 @@
+/* eslint-disable react-refresh/only-export-components -- node components + their shared helpers
+   (colorForDir, nodeTypes) are intentionally co-located; this rule is hot-reload DX only. */
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
 import { ChevronDown, ChevronRight, FileCode2, Folder } from 'lucide-react';
 
@@ -104,20 +106,25 @@ export function FolderNodeView({ data }: NodeProps<FolderNode>) {
   }
   return (
     <div
-      className="h-full w-full rounded-lg border bg-background/40"
-      style={{ borderColor: `color-mix(in srgb, ${accent}, transparent 70%)` }}
+      className="h-full w-full rounded-lg border-2 bg-background/30"
+      style={{ borderColor: `color-mix(in srgb, ${accent}, transparent 45%)` }}
     >
-      {/* Header strip (the click target lives across the whole node, handled by the flow). */}
-      <div className="flex items-center gap-1.5 px-2.5 py-1.5">
-        <ChevronDown size={12} className="shrink-0 text-text-tertiary" />
-        <Folder size={12} className="shrink-0" style={{ color: accent }} />
+      {/* Header strip (the click target lives across the whole node, handled by the flow). Accent-
+          tinted bar + larger, accent-coloured label so the folder name reads clearly on the canvas. */}
+      <div
+        className="flex items-center gap-1.5 rounded-t-[6px] px-2.5 py-1.5"
+        style={{ background: `color-mix(in srgb, ${accent}, transparent 85%)` }}
+      >
+        <ChevronDown size={15} className="shrink-0" style={{ color: accent }} />
+        <Folder size={15} className="shrink-0" style={{ color: accent }} />
         <span
-          className="truncate font-mono text-[11px] font-medium text-text-secondary"
+          className="truncate font-mono text-[13px] font-semibold"
+          style={{ color: accent }}
           title={data.name}
         >
           {data.name}
         </span>
-        <span className="ml-auto text-[10px] text-text-tertiary">{data.fileCount}</span>
+        <span className="ml-auto text-[11px] font-medium text-text-tertiary">{data.fileCount}</span>
       </div>
     </div>
   );

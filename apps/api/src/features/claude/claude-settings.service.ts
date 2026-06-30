@@ -96,22 +96,26 @@ function resolveExecutionOverrides(
   context?: { surface?: 'voice' | 'text'; intent?: 'discussion' | 'write' }
 ): ClaudeSettings {
   const settings = payload.settings;
-  if (context?.surface !== 'voice') {
+  const mode = settings.voiceModelMode;
+  const hasModel = (slug: string) => payload.options.models.some((option) => option.slug === slug);
+
+  // 'inherit' = always use exactly the picked model (manual control / escape hatch).
+  if (mode === 'inherit') {
     return settings;
   }
 
-  if (settings.voiceModelMode === 'inherit') {
-    return settings;
+  // Auto-upgrade for edits: file-editing turns get the strongest model (Opus).
+  if (context?.intent === 'write' && mode === 'auto' && hasModel('opus')) {
+    return { ...settings, model: 'opus' };
   }
 
-  if (context.intent === 'write' && settings.voiceModelMode === 'auto') {
-    return settings;
+  // Voice reads (and explicit 'fast' mode) downgrade to Haiku to save tokens. Text reads in 'auto'
+  // keep the user's picked model so the Topbar picker stays meaningful.
+  if ((mode === 'fast' || context?.surface === 'voice') && hasModel('haiku')) {
+    return { ...settings, model: 'haiku' };
   }
 
-  return {
-    ...settings,
-    model: payload.options.models.find((option) => option.slug === 'haiku')?.slug ?? settings.model
-  };
+  return settings;
 }
 
 function sanitizeVoiceModelMode(value: unknown): AssistantVoiceModelMode | null {

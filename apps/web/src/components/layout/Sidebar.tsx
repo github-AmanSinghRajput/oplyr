@@ -9,6 +9,9 @@ import {
   Settings,
   BrainCircuit,
   Network,
+  FileText,
+  CalendarClock,
+  Music,
   Pin,
   PinOff
 } from 'lucide-react';
@@ -28,11 +31,14 @@ interface NavItemDef {
 const navItems: NavItemDef[] = [
   { id: 'workspace', label: 'Workspace', icon: Folder },
   { id: 'voice', label: 'Voice', icon: Mic },
-  { id: 'terminal', label: 'Chat', icon: MessageSquare },
+  { id: 'terminal', label: 'Agentic Chat', icon: MessageSquare },
   { id: 'shell', label: 'Shell', icon: Terminal },
-  { id: 'codebase-map', label: 'Map', icon: Network },
+  { id: 'codebase-map', label: 'Codebase Map', icon: Network },
+  { id: 'markdown', label: 'Docs', icon: FileText },
   { id: 'review', label: 'Review', icon: GitCompare },
+  { id: 'meetings', label: 'Meetings', icon: CalendarClock },
   { id: 'memory', label: 'Memory', icon: BrainCircuit },
+  { id: 'music', label: 'Music', icon: Music },
   { id: 'settings', label: 'Settings', icon: Settings }
 ];
 
@@ -101,7 +107,7 @@ export function Sidebar({ badges }: SidebarProps) {
                   type="button"
                   onClick={() => setSidebarPinned(!sidebarPinned)}
                   className={cn(
-                    'ml-auto rounded-md p-1.5 transition-colors',
+                    'ml-auto rounded-radius-sm p-1.5 transition-colors',
                     sidebarPinned
                       ? 'text-accent bg-accent-muted'
                       : 'text-text-tertiary hover:text-text-primary'

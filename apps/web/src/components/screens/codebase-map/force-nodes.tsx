@@ -1,3 +1,5 @@
+/* eslint-disable react-refresh/only-export-components -- force-node components + their shared
+   exports (forceNodeTypes) are intentionally co-located; this rule is hot-reload DX only. */
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
 import { ChevronDown, ChevronRight, FileCode2 } from 'lucide-react';
 import { colorForDir } from './nodes';

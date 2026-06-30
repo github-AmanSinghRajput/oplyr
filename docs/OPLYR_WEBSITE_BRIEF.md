@@ -19,8 +19,8 @@ If this brief drifts from the product guide or milestones, update this brief.
 
 **Product name:** Oplyr
 **Pronunciation:** "OP-ler"
-**Tagline:** Talk to your code. Stay in control.
-**One-liner:** The voice-native AI coding operator for macOS.
+**Tagline:** Command your AI agents. Stay in control.
+**One-liner:** The voice-native multi-agent dev cockpit for macOS.
 
 **Brand personality:**
 - Technically sharp — built by engineers, for engineers
@@ -90,13 +90,13 @@ The site is a single scrolling page with distinct sections. No subpages needed f
 
 **Headline (large, bold):**
 ```
-Talk to your code.
+Command your AI agents.
 Stay in control.
 ```
 
 **Subheadline (medium, muted color):**
 ```
-Oplyr is a voice-native AI coding operator for macOS.
+Oplyr is a voice-native multi-agent dev cockpit for macOS.
 Speak naturally. Review every change. Ship with confidence.
 ```
 
@@ -191,7 +191,7 @@ no mystery servers touching your files.
 
 **Card 4: Multi-provider**
 ```
-Bring your own AI. Connect OpenAI Codex or Anthropic Claude Code
+Bring your own AI. Connect Codex or Claude Code (Gemini coming)
 using your existing subscription. No extra API keys.
 No per-token billing. $0 on top of what you already pay.
 ```
@@ -519,7 +519,7 @@ Made with voice, code, and an unreasonable amount of coffee.
 
 **Page title:**
 ```
-Oplyr — The Voice-Native AI Coding Operator for macOS
+Oplyr — The Voice-Native Multi-Agent Dev Cockpit for macOS
 ```
 
 **Meta description:**
@@ -529,8 +529,8 @@ Talk to your AI coding agent naturally. Review every file change before it happe
 
 **Open Graph tags:**
 ```
-og:title        → Oplyr — Talk to your code. Stay in control.
-og:description  → Voice-native AI coding operator for macOS. Approval-gated diffs. Local execution. Free during beta.
+og:title        → Oplyr — Command your AI agents. Stay in control.
+og:description  → Voice-native multi-agent dev cockpit for macOS. Approval-gated diffs. Local execution. Free during beta.
 og:image        → [Product screenshot or branded hero image, 1200x630px]
 og:type         → website
 og:url          → https://oplyr.com (or current domain)
@@ -539,8 +539,8 @@ og:url          → https://oplyr.com (or current domain)
 **Twitter card:**
 ```
 twitter:card         → summary_large_image
-twitter:title        → Oplyr — Talk to your code. Stay in control.
-twitter:description  → Voice-native AI coding operator for macOS. Invite-only beta.
+twitter:title        → Oplyr — Command your AI agents. Stay in control.
+twitter:description  → Voice-native multi-agent dev cockpit for macOS. Invite-only beta.
 twitter:image        → [Same as og:image]
 ```
 
@@ -555,12 +555,12 @@ twitter:image        → [Same as og:image]
 
 **Target keywords (natural integration, not keyword stuffing):**
 - voice coding assistant
-- AI coding operator
-- voice-first developer tool
+- multi-agent dev cockpit
+- AI coding workspace for macOS
 - macOS coding app
 - AI code review
 - voice-native IDE alternative
-- talk to AI coding agent
+- direct AI coding agents by voice
 
 **Structured data (JSON-LD):**
 ```json
@@ -570,7 +570,7 @@ twitter:image        → [Same as og:image]
   "name": "Oplyr",
   "operatingSystem": "macOS",
   "applicationCategory": "DeveloperApplication",
-  "description": "Voice-native AI coding operator for macOS",
+  "description": "Voice-native multi-agent dev cockpit for macOS",
   "offers": {
     "@type": "Offer",
     "price": "0",
@@ -698,8 +698,8 @@ For quick reference, here's every headline on the page:
 ```
 NAV:       Oplyr | Features | How it works | Security | Beta Access | [Get Beta Access]
 
-HERO:      Talk to your code. Stay in control.
-           Oplyr is a voice-native AI coding operator for macOS.
+HERO:      Command your AI agents. Stay in control.
+           Oplyr is a voice-native multi-agent dev cockpit for macOS.
 
 PROBLEM:   AI coding tools are stuck in a text box.
 

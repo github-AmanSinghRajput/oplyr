@@ -2,8 +2,6 @@ import { isDatabaseConfigured } from '../../db/client.js';
 import { withTransaction } from '../../db/transaction.js';
 
 const resetStatements = [
-  'DELETE FROM note_chunks',
-  'DELETE FROM notes',
   'DELETE FROM approval_events',
   'DELETE FROM conversation_attachments',
   'DELETE FROM conversation_messages',
