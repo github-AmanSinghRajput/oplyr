@@ -5,8 +5,6 @@ const STORAGE_KEY = 'oplyr.console-preferences';
 
 const defaults: ConsolePreferences = {
   defaultScreen: 'voice',
-  transcriptDensity: 'comfortable',
-  motionMode: 'full',
   autoSendVoice: true
 };
 

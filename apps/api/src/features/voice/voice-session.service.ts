@@ -60,7 +60,6 @@ export class VoiceSessionService {
 
     logger.info('voice.session.started', {
       silenceWindowMs: settings.silenceWindowMs,
-      locale: settings.voiceLocale,
       transport: 'desktop-media'
     });
     setVoiceSessionState({

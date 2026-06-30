@@ -272,9 +272,16 @@ export class ChatService {
     });
 
     // Apply the change now (working tree only) so the user reviews the real diff before deciding.
-    // Approve keeps it; reject reverts to the snapshot above.
+    // Approve keeps it; reject reverts to the snapshot above. Capture the assistant's own summary of
+    // what it did so approve can show it verbatim (its natural "I changed X, Y…" message).
     try {
-      await this.assistant.executeApprovedWrite(approval, history, workspace, correlation);
+      const writeResult = await this.assistant.executeApprovedWrite(
+        approval,
+        history,
+        workspace,
+        correlation
+      );
+      approval.executionSummary = writeResult.text.trim() || undefined;
     } catch (error) {
       if (baselineRef && this.assistant.revertWorkingTree) {
         const partial = await this.collectTurnDiff(
@@ -370,11 +377,12 @@ export class ChatService {
       approval.baselineUntracked ?? [],
       approval.baselineUntrackedSnapshots ?? []
     );
-    const assistantMessage = this.toChatMessage(
-      'assistant',
-      buildApprovalDecisionMessage('approved', approval.title, diff),
-      'text'
-    );
+    // Prefer the assistant's own post-edit summary (captured when the change was applied) so the
+    // approved turn reads like a real coding agent. Fall back to the templated diff summary.
+    const approvedText = approval.executionSummary?.trim()
+      ? approval.executionSummary.trim()
+      : buildApprovalDecisionMessage('approved', approval.title, diff);
+    const assistantMessage = this.toChatMessage('assistant', approvedText, 'text');
     await this.persistMessages([assistantMessage]);
     this.runtime.clearPendingApproval();
     this.runtime.setLastDiff(null);

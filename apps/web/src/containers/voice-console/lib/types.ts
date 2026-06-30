@@ -160,19 +160,12 @@ export interface VoiceSessionState {
 }
 
 export type TranscriptionModelProfile = 'parakeet';
-export type VoiceQualityProfile = 'low_memory' | 'balanced' | 'demo';
-export type VoiceNoiseMode = 'normal' | 'focused' | 'noisy_room';
 
 export interface TranscriptionModelOption {
   id: TranscriptionModelProfile;
   label: string;
   description: string;
   available: boolean;
-}
-
-export interface TranscriptionLanguageOption {
-  code: string;
-  label: string;
 }
 
 export type AppTheme = 'dark' | 'light';
@@ -185,26 +178,14 @@ export interface AppSettings {
 
 export interface VoiceSettings {
   silenceWindowMs: number;
-  voiceLocale: string;
   autoResumeAfterReply: boolean;
-  transcriptionLanguageCode: string;
   transcriptionModel: TranscriptionModelProfile;
-  qualityProfile: VoiceQualityProfile;
-  noiseMode: VoiceNoiseMode;
-}
-
-export interface VoiceSettingsCapabilities {
-  deviceSelection: boolean;
-  voiceSelection: boolean;
-  interruption: boolean;
 }
 
 export interface VoiceSettingsResponse {
   settings: VoiceSettings;
-  capabilities: VoiceSettingsCapabilities;
   options: {
     transcriptionModels: TranscriptionModelOption[];
-    transcriptionLanguages: TranscriptionLanguageOption[];
   };
   currentDevices: {
     inputLabel: string | null;
@@ -625,8 +606,6 @@ export interface MessageGroup {
 
 export interface ConsolePreferences {
   defaultScreen: Extract<ScreenId, 'workspace' | 'voice' | 'terminal'>;
-  transcriptDensity: 'comfortable' | 'compact';
-  motionMode: 'full' | 'reduced';
   // When false, a finished voice transcript is shown for review/edit before sending (not auto-sent).
   autoSendVoice: boolean;
 }

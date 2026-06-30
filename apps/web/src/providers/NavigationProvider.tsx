@@ -3,6 +3,28 @@ import { createContext, useCallback, useContext, useState, type ReactNode } from
 import type { ScreenId } from '@/containers/voice-console/lib/types';
 
 const PIN_STORAGE_KEY = 'oplyr.sidebar.pinned';
+const PREFERENCES_STORAGE_KEY = 'oplyr.console-preferences';
+
+// The screen a returning user lands on, from their saved "Default screen" preference.
+// (Onboarding still takes over for first-run users via AppShell's own gating.)
+function readInitialScreen(): ScreenId {
+  try {
+    const raw = localStorage.getItem(PREFERENCES_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as { defaultScreen?: string };
+      if (
+        parsed.defaultScreen === 'workspace' ||
+        parsed.defaultScreen === 'voice' ||
+        parsed.defaultScreen === 'terminal'
+      ) {
+        return parsed.defaultScreen;
+      }
+    }
+  } catch {
+    /* localStorage unavailable or malformed — fall through to default */
+  }
+  return 'workspace';
+}
 
 interface NavigationContextValue {
   activeScreen: ScreenId;
@@ -16,7 +38,7 @@ interface NavigationContextValue {
 const NavigationContext = createContext<NavigationContextValue | null>(null);
 
 export function NavigationProvider({ children }: { children: ReactNode }) {
-  const [activeScreen, setActiveScreenState] = useState<ScreenId>('workspace');
+  const [activeScreen, setActiveScreenState] = useState<ScreenId>(readInitialScreen);
   const [sidebarPinned, setSidebarPinnedState] = useState(() => {
     try {
       return localStorage.getItem(PIN_STORAGE_KEY) === 'true';
