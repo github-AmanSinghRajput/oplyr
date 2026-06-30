@@ -233,6 +233,26 @@ Not required for the 0.1 beta; revisit after launch.
   strength. The manual Topbar picker (agent dropdown + model picker) already covers this by click;
   this adds the hands-free voice path on top of the same apply-path.
 
+- [ ] **STT accuracy on technical terms + accented speech (HIGH BAR — "Claude mic-button" quality).**
+  **Problem:** Parakeet v3 runs with `config: .default` and a *general* English LM, so rare/domain words
+  lose to common ones — "Claude" → "God", "auth" → "earth", "Codex" → "codecs", "repo" → "depot" — and
+  Indian/non-US accents widen the gap. **It is NOT a mic, locale, or sample-rate bug.** FluidAudio's
+  Parakeet API exposes **no hotword/biasing/custom-vocab hook**, so the model can't be told to expect
+  our terms — the fix must be a correction layer (and/or a better engine).
+  **Target (explicit owner ask):** match the accuracy of Claude's web/desktop mic button — speak any
+  word (incl. tool names, code identifiers, abbreviations) → it transcribes accurately → fills the
+  message input box → the user reviews and sends. **No constraint on time / tokens / compute for
+  accuracy — do it properly.**
+  **Approach — go beyond the minimum (the chosen "best possible"):**
+  1. **LLM cleanup pass** after STT: rewrite the raw transcript in coding context, fixing mis-heard
+     tool names + technical terms without changing meaning (use a fast model; accuracy over latency).
+  2. **Guarded domain dictionary** for high-frequency safe fixes (agent names when addressing one,
+     `auth`, `repo`, `Codex`, `Gemini`) as a fast first layer feeding the LLM pass.
+  3. **Evaluate a stronger engine** if 1+2 fall short — a larger Parakeet, FluidAudio's Cohere ASR, or
+     (decision point) a top-tier **cloud STT**. ⚠️ Cloud STT conflicts with Oplyr's local-first/privacy
+     pillar — that trade-off must be decided explicitly, not slid into.
+  4. **UX:** transcript populates the input box for review/edit before send (not blind auto-send).
+
 ---
 
 ## Ongoing rules

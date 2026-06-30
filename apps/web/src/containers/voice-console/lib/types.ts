@@ -626,4 +626,6 @@ export interface ConsolePreferences {
   defaultScreen: Extract<ScreenId, 'workspace' | 'voice' | 'terminal'>;
   transcriptDensity: 'comfortable' | 'compact';
   motionMode: 'full' | 'reduced';
+  // When false, a finished voice transcript is shown for review/edit before sending (not auto-sent).
+  autoSendVoice: boolean;
 }

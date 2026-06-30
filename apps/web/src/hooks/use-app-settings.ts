@@ -23,9 +23,11 @@ export interface AppSettingsHandle {
   busyLabel: string;
   error: string;
   onboardingSavingDisplayName: boolean;
-  onboardingStep: 1 | 2 | 3;
+  onboardingStep: 1 | 2 | 3 | 4;
   onboardingSelectedProviderId: AssistantProviderId | null;
-  setOnboardingStep: (step: 1 | 2 | 3) => void;
+  onboardingProjectDismissed: boolean;
+  dismissOnboardingProject: () => void;
+  setOnboardingStep: (step: 1 | 2 | 3 | 4) => void;
   setOnboardingSelectedProviderId: (id: AssistantProviderId | null) => void;
   handleAppSettingChange: <Key extends keyof AppSettings>(
     key: Key,
@@ -86,7 +88,16 @@ export function useAppSettings(): AppSettingsHandle {
   const [busyLabel, setBusyLabel] = useState('');
   const [error, setError] = useState('');
   const [onboardingSavingDisplayName, setOnboardingSavingDisplayName] = useState(false);
-  const [onboardingStep, setOnboardingStep] = useState<1 | 2 | 3>(1);
+  const [onboardingStep, setOnboardingStep] = useState<1 | 2 | 3 | 4>(1);
+  // Whether the user has resolved the first-run "connect a project" step (connected one or skipped).
+  // Persisted so the step doesn't reappear after they've dealt with it once.
+  const [onboardingProjectDismissed, setOnboardingProjectDismissed] = useState(
+    () => localStorage.getItem('oplyr.onboarding.projectDismissed') === 'true'
+  );
+  const dismissOnboardingProject = useCallback(() => {
+    localStorage.setItem('oplyr.onboarding.projectDismissed', 'true');
+    setOnboardingProjectDismissed(true);
+  }, []);
   const [onboardingSelectedProviderId, setOnboardingSelectedProviderId] =
     useState<AssistantProviderId | null>(null);
   const activeProviderId = status?.assistantProviders.activeProviderId ?? null;
@@ -178,9 +189,21 @@ export function useAppSettings(): AppSettingsHandle {
       return;
     }
 
-    setOnboardingStep((current) => (current === 1 ? 2 : current));
+    // Name + an active provider are set. If no project is connected yet and the user hasn't skipped,
+    // advance to the final "connect your first project" step so they finish on a usable workspace.
     setOnboardingSelectedProviderId(activeProviderId);
-  }, [activeProviderId, status?.appSettings.displayName]);
+    const projectPending = !status?.workspace.projectRoot && !onboardingProjectDismissed;
+    if (projectPending) {
+      setOnboardingStep(4);
+      return;
+    }
+    setOnboardingStep((current) => (current === 1 || current === 2 ? 3 : current));
+  }, [
+    activeProviderId,
+    status?.appSettings.displayName,
+    status?.workspace.projectRoot,
+    onboardingProjectDismissed
+  ]);
 
   useEffect(() => {
     if (activeProviderId === 'codex') {
@@ -535,6 +558,8 @@ export function useAppSettings(): AppSettingsHandle {
     onboardingSavingDisplayName,
     onboardingStep,
     onboardingSelectedProviderId,
+    onboardingProjectDismissed,
+    dismissOnboardingProject,
     setOnboardingStep,
     setOnboardingSelectedProviderId,
     handleAppSettingChange,
