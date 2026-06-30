@@ -11,7 +11,7 @@ import type {
   CodebaseNode,
   FileSummaryResult
 } from './codebase-map.types.js';
-import { buildTree, isSourceFile, scanWorkspace } from './scanner.js';
+import { buildTree, isSourceFile, scanWorkspace, SUPPORTED_MAP_LANGUAGES } from './scanner.js';
 import { parseDependencies } from './dependency-parser.js';
 import { extractSymbols, type FileSymbol } from './symbol-parser.js';
 
@@ -103,6 +103,7 @@ export class CodebaseMapService {
         sourceFiles: sourceFiles.length,
         edges: keptEdges.length,
         languages,
+        supportedLanguages: SUPPORTED_MAP_LANGUAGES,
         truncated
       },
       scannedAt: new Date().toISOString()
@@ -185,7 +186,7 @@ export class CodebaseMapService {
     }
     try {
       const content = await fs.readFile(resolved.absolute, 'utf8');
-      return { path: resolved.normalized, symbols: extractSymbols(content) };
+      return { path: resolved.normalized, symbols: extractSymbols(content, resolved.normalized) };
     } catch {
       return { path: resolved.normalized, symbols: [], error: 'Could not read this file.' };
     }

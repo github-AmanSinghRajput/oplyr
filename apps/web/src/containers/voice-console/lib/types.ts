@@ -30,6 +30,7 @@ export interface CodebaseMapStats {
   sourceFiles: number;
   edges: number;
   languages: Record<string, number>;
+  supportedLanguages: string[];
   truncated: boolean;
 }
 

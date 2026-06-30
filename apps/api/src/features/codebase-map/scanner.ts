@@ -64,9 +64,19 @@ const LANGUAGE_BY_EXT: Record<string, string> = {
 };
 
 const JS_TS_EXTENSIONS = new Set(['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs']);
+const PYTHON_EXTENSIONS = new Set(['.py', '.pyi']);
+// Languages the codebase map can currently graph (nodes + dependency edges + symbols).
+const SUPPORTED_SOURCE_EXTENSIONS = new Set([...JS_TS_EXTENSIONS, ...PYTHON_EXTENSIONS]);
+
+// Human-readable list for the UI banner + graceful messaging. Keep in sync with the extension sets.
+export const SUPPORTED_MAP_LANGUAGES = ['TypeScript', 'JavaScript', 'Python'];
 
 export function isSourceFile(ext: string): boolean {
-  return JS_TS_EXTENSIONS.has(ext);
+  return SUPPORTED_SOURCE_EXTENSIONS.has(ext);
+}
+
+export function isPythonFile(ext: string): boolean {
+  return PYTHON_EXTENSIONS.has(ext);
 }
 
 function languageForExt(ext: string): string {

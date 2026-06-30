@@ -40,7 +40,10 @@ export interface CodebaseStats {
   totalFiles: number;
   sourceFiles: number;
   edges: number;
+  /** Per-language file counts across the WHOLE scan (incl. unsupported languages, for messaging). */
   languages: Record<string, number>;
+  /** Languages the map can currently graph (e.g. TypeScript, JavaScript, Python). */
+  supportedLanguages: string[];
   /** True when the graph was capped (very large repo) and only the most-connected files are shown. */
   truncated: boolean;
 }
