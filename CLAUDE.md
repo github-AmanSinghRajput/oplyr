@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-Oplyr — a desktop-first, voice-native **multi-agent developer workspace** ("cockpit"). Users direct coding agents (Codex, Claude Code, soon Gemini) by voice or text in an Agentic Chat, work inside an explicit project boundary with reviewable diffs/approvals, navigate a live codebase map and markdown docs, and (planned) draw on a shared local memory ("brain") plus meetings/notes. Local-first and approval-gated by design.
+Oplyr — a desktop-first, voice-native **multi-agent developer workspace** ("cockpit"). Users connect coding agents (Codex, Claude Code, soon Gemini) and direct the **active** one by voice or text — multiple can be connected, one is active per turn, switchable mid-session from the Topbar — working inside an explicit project boundary with reviewable diffs/approvals, a live codebase map, and a markdown docs browser. Planned: a true multi-agent room (several agents in one conversation via `@mention`), a shared local memory ("brain"), and meetings/notes. Local-first and approval-gated by design.
 
 ## Commands
 

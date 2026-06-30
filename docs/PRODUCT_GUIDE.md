@@ -144,7 +144,7 @@ Oplyr today is a desktop-oriented app with a local runtime and a voice/text UI.
 - app-level display name + personalized greeting
 - app-managed provider connections
 - support for Codex and Claude Code (Gemini coming)
-- multi-agent "Agentic Chat" with provider switching mid-session (topbar dropdown + connect-new)
+- multiple providers connected at once, with **one active at a time**; switch the active agent mid-session (topbar dropdown + connect-new). A collaborative multi-agent room (several agents in one conversation) is a future track.
 - per-agent model picker, plus auto-model-switch (strongest model for edits, leaner for routine turns)
 - clear "limit reached" alerts when a provider hits its usage cap
 - voice and text conversation modes

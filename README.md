@@ -15,9 +15,10 @@ development, but it is not the intended public product surface.
 
 ## Key features
 
-- **Agentic Chat — a multi-agent room.** Direct multiple AI coding agents in one
-  conversation by voice or text. `@mention` an agent to bring it in, hand work
-  between them, and switch the active agent mid-session from the topbar.
+- **Switch agents on the fly.** Connect multiple agents (Codex and Claude Code
+  today, Gemini soon) at once and switch the active one — and its model — mid-session
+  from the topbar. Each turn runs on the agent you've selected. (A full multi-agent
+  room where several agents collaborate in one conversation is on the way — see below.)
 - **Voice-native, text-mandatory.** Speak naturally and see the conversation as
   live text. Switch to typing whenever you prefer.
 - **Multi-provider, your accounts.** Run against OpenAI Codex or Anthropic Claude
@@ -42,6 +43,10 @@ development, but it is not the intended public product surface.
 
 ## Coming soon
 
+- **Agentic Chat — a true multi-agent room.** `@mention` several agents in one
+  conversation, have them reply in turn and hand work between each other, all over
+  shared memory. (Today you connect multiple agents and switch the active one; the
+  collaborative room is designed and on the way.)
 - **Shared memory ("brain").** A unified, local-first graph + vector memory every
   agent reads from and writes to — so your context, decisions, and codebase
   history persist across sessions and carry between agents.
