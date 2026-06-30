@@ -114,7 +114,7 @@ export function MarkdownScreen({ projectRoot }: MarkdownScreenProps) {
         {/* File list — search + pagination */}
         <div className="flex h-[calc(100vh-var(--topbar-height)-200px)] min-h-[460px] w-80 shrink-0 flex-col rounded-[var(--radius-panel)] border border-border bg-surface-1">
           <div className="border-b border-border p-2.5">
-            <div className="flex items-center gap-2 rounded-md border border-border bg-background px-2.5 py-1.5">
+            <div className="flex items-center gap-2 rounded-radius-sm border border-border bg-background px-2.5 py-1.5">
               <Search size={14} className="shrink-0 text-text-tertiary" />
               <input
                 value={query}
@@ -142,7 +142,7 @@ export function MarkdownScreen({ projectRoot }: MarkdownScreenProps) {
                     type="button"
                     onClick={() => openFile(file.path)}
                     className={cn(
-                      'flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors',
+                      'flex w-full items-start gap-2 rounded-radius-sm px-2 py-1.5 text-left transition-colors',
                       file.path === selectedPath
                         ? 'bg-accent-muted text-accent'
                         : 'text-text-secondary hover:bg-surface-2 hover:text-text-primary'
@@ -168,7 +168,7 @@ export function MarkdownScreen({ projectRoot }: MarkdownScreenProps) {
                 type="button"
                 onClick={() => setPage((p) => Math.max(0, p - 1))}
                 disabled={safePage === 0}
-                className="flex items-center gap-1 rounded-md px-1.5 py-1 transition-colors enabled:hover:text-text-primary disabled:opacity-40"
+                className="flex items-center gap-1 rounded-radius-sm px-1.5 py-1 transition-colors enabled:hover:text-text-primary disabled:opacity-40"
               >
                 <ChevronLeft size={13} /> Prev
               </button>
@@ -179,7 +179,7 @@ export function MarkdownScreen({ projectRoot }: MarkdownScreenProps) {
                 type="button"
                 onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
                 disabled={safePage >= pageCount - 1}
-                className="flex items-center gap-1 rounded-md px-1.5 py-1 transition-colors enabled:hover:text-text-primary disabled:opacity-40"
+                className="flex items-center gap-1 rounded-radius-sm px-1.5 py-1 transition-colors enabled:hover:text-text-primary disabled:opacity-40"
               >
                 Next <ChevronRight size={13} />
               </button>

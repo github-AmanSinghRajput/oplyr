@@ -225,6 +225,17 @@ This should only be pushed hard after the core coding and note-taking product is
 
 ---
 
+## Post-beta backlog (deferred good-to-haves)
+
+Not required for the 0.1 beta; revisit after launch.
+
+- [ ] **Voice control for the assistant model** — let the user, by voice, (a) switch the active AI
+  provider, (b) choose from that provider's available models, and (c) set the model's reasoning
+  strength. The manual Topbar picker (agent dropdown + model picker) already covers this by click;
+  this adds the hands-free voice path on top of the same apply-path.
+
+---
+
 ## Ongoing rules
 
 - [ ] keep the beta and launch experience grounded in trust and reliability

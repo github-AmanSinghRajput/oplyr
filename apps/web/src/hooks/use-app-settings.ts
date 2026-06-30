@@ -53,6 +53,7 @@ export interface AppSettingsHandle {
   codexSettingsDirty: boolean;
   claudeSettingsDirty: boolean;
   geminiSettingsDirty: boolean;
+  handleSelectModel: (providerId: AssistantProviderId, slug: string) => Promise<void>;
   handleProviderSwitch: (providerId: AssistantProviderId) => Promise<void>;
   handleProviderConnect: (providerId: AssistantProviderId) => Promise<void>;
   handleProviderDisconnect: (providerId: AssistantProviderId) => Promise<void>;
@@ -331,6 +332,29 @@ export function useAppSettings(): AppSettingsHandle {
     }
   }, [service, geminiSettings, pushToast, loadGeminiSettings]);
 
+  // Change the active provider's model and persist immediately (no dirty/save step) — used by the
+  // quick model picker in the Topbar so switching a model on the voice/chat screens takes effect now.
+  const handleSelectModel = useCallback(
+    async (providerId: AssistantProviderId, slug: string) => {
+      try {
+        if (providerId === 'codex') {
+          const next = await service.updateCodexSettings({ model: slug });
+          setCodexSettings(next);
+        } else if (providerId === 'claude') {
+          const next = await service.updateClaudeSettings({ model: slug });
+          setClaudeSettings(next);
+        } else {
+          const next = await service.updateGeminiSettings({ model: slug });
+          setGeminiSettings(next);
+        }
+        pushToast('success', 'Model updated', 'Your model preference is now in effect.');
+      } catch {
+        pushToast('error', 'Not saved', 'The model could not be updated.');
+      }
+    },
+    [service, pushToast]
+  );
+
   const handleProviderSwitch = useCallback(
     async (providerId: AssistantProviderId) => {
       setBusyLabel(`Switching to ${getProviderLabel(providerId)}...`);
@@ -518,6 +542,7 @@ export function useAppSettings(): AppSettingsHandle {
     handleCodexSettingChange,
     handleClaudeSettingChange,
     handleGeminiSettingChange,
+    handleSelectModel,
     handleSaveCodexSettings,
     handleSaveClaudeSettings,
     handleSaveGeminiSettings,

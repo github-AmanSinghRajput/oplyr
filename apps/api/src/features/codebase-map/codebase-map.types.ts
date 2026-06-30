@@ -60,4 +60,5 @@ export interface FileSummaryResult {
   summary: string | null;
   cached: boolean;
   error?: string;
+  errorKind?: 'auth' | 'rate_limit' | 'service' | 'unknown';
 }

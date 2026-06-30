@@ -15,7 +15,11 @@ const maxWidthClasses = {
 } as const;
 
 export function ContentFrame({ children, maxWidth = 'default' }: ContentFrameProps) {
-  const { sidebarExpanded } = useNavigation();
+  // Reserve space for the sidebar based on PINNED, not hover-expanded. When unpinned, the sidebar
+  // floats over the content on hover (a drawer) — so the content never reflows on every hover, which
+  // was causing flicker/lag (animating `left` is a layout property, and reflowing the voice screen's
+  // canvas each frame made it stutter). Content only shifts on the rare pin/unpin toggle.
+  const { sidebarPinned } = useNavigation();
 
   return (
     <div
@@ -23,7 +27,7 @@ export function ContentFrame({ children, maxWidth = 'default' }: ContentFramePro
         'fixed top-[var(--topbar-height)] bottom-0 right-0 overflow-y-auto',
         'transition-[left] duration-300 ease-out'
       )}
-      style={{ left: sidebarExpanded ? 240 : 56 }}
+      style={{ left: sidebarPinned ? 240 : 56 }}
     >
       <div className={cn('mx-auto px-6 py-6', maxWidthClasses[maxWidth])}>{children}</div>
     </div>

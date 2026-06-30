@@ -225,7 +225,7 @@ export function AppShell() {
   const { activeScreen, setActiveScreen } = useNavigation();
   const { status, system, refreshStatus, assistantReady } = useStatus();
   const { theme } = useTheme();
-  const { toasts } = useToast();
+  const { toasts, pushToast } = useToast();
   const { baseUrl, service } = useApi();
   const { approvals, handleApprove, handleReject, isApproving, isRejecting } = useApproval();
   const chat = useChatStream();
@@ -240,9 +240,28 @@ export function AppShell() {
   const handleReviewApprove = useCallback(async () => {
     const approved = await handleApprove();
     if (!approved) return;
+    // In 'auto' model mode the backend runs edits on the strongest model — surface which one, so the
+    // automatic upgrade is transparent (the frontend knows the top model from the provider's options).
+    const providerId = status?.assistantProviders.activeProviderId ?? null;
+    let modelNote: string | null = null;
+    if (providerId === 'codex' && settings.codexSettings?.settings.voiceModelMode === 'auto') {
+      const opts = settings.codexSettings.options.models;
+      const strong =
+        opts.find(
+          (o) => !/\b(mini|nano|small|flash|fast|lite)\b/i.test(`${o.slug} ${o.displayName}`)
+        ) ?? opts[0];
+      if (strong) modelNote = `Used ${strong.displayName} for this edit.`;
+    } else if (
+      providerId === 'claude' &&
+      settings.claudeSettings?.settings.voiceModelMode === 'auto'
+    ) {
+      const opus = settings.claudeSettings.options.models.find((o) => o.slug === 'opus');
+      if (opus) modelNote = `Used ${opus.displayName} for this edit.`;
+    }
+    if (modelNote) pushToast('info', 'Top model for this edit', modelNote);
     await loadLogs();
     startTransition(() => setActiveScreen('voice'));
-  }, [handleApprove, loadLogs, setActiveScreen]);
+  }, [handleApprove, loadLogs, setActiveScreen, status, settings, pushToast]);
 
   const handleReviewReject = useCallback(
     async (feedback?: string) => {
@@ -467,6 +486,7 @@ export function AppShell() {
             aiReply={lastAssistant}
             assistant={getVoiceAssistant(status, settings)}
             audioAvailable={status?.audio.available ?? false}
+            userName={displayName}
             onStart={voice.onStart}
             onStopAndSend={voice.onStopAndSend}
           />
@@ -649,6 +669,10 @@ export function AppShell() {
               }
             }}
             onProviderSwitch={(id) => void settings.handleProviderSwitch(id)}
+            codexSettings={settings.codexSettings}
+            claudeSettings={settings.claudeSettings}
+            geminiSettings={settings.geminiSettings}
+            onSelectModel={(id, slug) => void settings.handleSelectModel(id, slug)}
             busyLabel={settings.busyLabel}
             error={settings.error}
           />

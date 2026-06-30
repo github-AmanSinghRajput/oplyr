@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+# Full gate before code leaves the machine — mirrors CI (format check + lint + typecheck + tests,
+# backend + frontend). Catches anything pre-commit's staged-only pass can't, so CI rarely fails.
+npm run check

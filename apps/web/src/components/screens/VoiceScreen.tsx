@@ -7,6 +7,7 @@ import { MessageBubble } from '@/components/chat/MessageBubble';
 import { ProviderLogo } from '@/components/providers/ProviderLogo';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
+import { getGreeting } from '@/containers/voice-console/lib/helpers';
 import type {
   AssistantProviderId,
   AudioState,
@@ -31,6 +32,7 @@ interface VoiceScreenProps {
   aiReply: MessageEntry | null;
   assistant: VoiceAssistantInfo | null;
   audioAvailable: boolean;
+  userName?: string | null;
   onStart: () => void;
   onStopAndSend: () => void;
 }
@@ -53,6 +55,7 @@ export function VoiceScreen({
   aiReply,
   assistant,
   audioAvailable,
+  userName,
   onStart,
   onStopAndSend
 }: VoiceScreenProps) {
@@ -63,8 +66,11 @@ export function VoiceScreen({
   const showResponseBlock = Boolean(aiReply) || isWorking;
 
   return (
-    <div className="flex flex-col items-center gap-6 py-8 max-w-2xl mx-auto w-full">
+    <div className="flex w-full flex-col items-center gap-6 py-8">
       <div className="text-center">
+        {voiceState === 'idle' && userName?.trim() ? (
+          <p className="mb-1 text-sm font-medium text-text-secondary">{getGreeting(userName)}</p>
+        ) : null}
         <p className="text-xs font-medium text-text-tertiary uppercase tracking-wider mb-1">
           Voice · {audio?.transcriptionEngine ?? 'On-device speech'}
         </p>

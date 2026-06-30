@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
+  AlertTriangle,
   ChevronsDownUp,
   FolderTree,
   Loader2,
@@ -14,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
 import { useApi } from '@/providers/ApiProvider';
 import type {
+  AssistantErrorKind,
   CodebaseFileSummaryResponse,
   CodebaseFileSymbol,
   CodebaseMapData
@@ -26,7 +28,12 @@ interface CodebaseMapScreenProps {
   projectRoot: string | null;
 }
 
-type SummaryState = { loading: boolean; summary: string | null; error?: string };
+type SummaryState = {
+  loading: boolean;
+  summary: string | null;
+  error?: string;
+  errorKind?: AssistantErrorKind;
+};
 type SymbolState = { loading: boolean; items: CodebaseFileSymbol[]; error?: string };
 type ViewMode = 'tree' | 'force';
 
@@ -105,7 +112,12 @@ export function CodebaseMapScreen({ projectRoot }: CodebaseMapScreenProps) {
         const result: CodebaseFileSummaryResponse = await service.summarizeCodebaseFile(path);
         setSummaries((prev) => ({
           ...prev,
-          [path]: { loading: false, summary: result.summary, error: result.error }
+          [path]: {
+            loading: false,
+            summary: result.summary,
+            error: result.error,
+            errorKind: result.errorKind
+          }
         }));
       } catch {
         setSummaries((prev) => ({
@@ -259,7 +271,7 @@ export function CodebaseMapScreen({ projectRoot }: CodebaseMapScreenProps) {
               type="button"
               onClick={() => setView('tree')}
               className={cn(
-                'flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                'flex items-center gap-1.5 rounded-radius-sm px-2.5 py-1 text-xs font-medium transition-colors',
                 view === 'tree'
                   ? 'bg-accent-muted text-accent'
                   : 'text-text-tertiary hover:text-text-primary'
@@ -271,7 +283,7 @@ export function CodebaseMapScreen({ projectRoot }: CodebaseMapScreenProps) {
               type="button"
               onClick={() => setView('force')}
               className={cn(
-                'flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                'flex items-center gap-1.5 rounded-radius-sm px-2.5 py-1 text-xs font-medium transition-colors',
                 view === 'force'
                   ? 'bg-accent-muted text-accent'
                   : 'text-text-tertiary hover:text-text-primary'
@@ -353,7 +365,7 @@ export function CodebaseMapScreen({ projectRoot }: CodebaseMapScreenProps) {
               <button
                 type="button"
                 onClick={() => setSelectedId(null)}
-                className="rounded-md p-1 text-text-tertiary transition-colors hover:text-text-primary"
+                className="rounded-radius-sm p-1 text-text-tertiary transition-colors hover:text-text-primary"
                 aria-label="Close details"
               >
                 <X size={15} />
@@ -365,7 +377,7 @@ export function CodebaseMapScreen({ projectRoot }: CodebaseMapScreenProps) {
               <Badge variant="secondary">{selectedNode.degree} connections</Badge>
             </div>
 
-            <div className="rounded-md border border-accent-border/30 bg-background p-3">
+            <div className="rounded-radius-sm border border-accent-border/30 bg-background p-3">
               <div className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-text-tertiary">
                 <Sparkles size={12} className="text-accent" />
                 AI summary
@@ -379,6 +391,25 @@ export function CodebaseMapScreen({ projectRoot }: CodebaseMapScreenProps) {
                 <p className="text-sm leading-relaxed text-text-primary">
                   {selectedSummary.summary}
                 </p>
+              ) : selectedSummary?.errorKind === 'rate_limit' ? (
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-start gap-2 rounded-radius-sm border border-amber-500/30 bg-amber-500/10 p-2.5">
+                    <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-500" />
+                    <div>
+                      <p className="text-xs font-semibold text-amber-500">AI limit reached</p>
+                      <p className="mt-0.5 text-xs leading-relaxed text-text-secondary">
+                        {selectedSummary.error}
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => void requestSummary(selectedNode.id)}
+                  >
+                    <RefreshCw size={13} /> Try again
+                  </Button>
+                </div>
               ) : selectedSummary?.error ? (
                 <p className="text-sm text-text-tertiary">{selectedSummary.error}</p>
               ) : (
@@ -409,7 +440,7 @@ export function CodebaseMapScreen({ projectRoot }: CodebaseMapScreenProps) {
                   {symbolsByPath[selectedNode.id].items.map((symbol) => {
                     const fn = fnSummaries[selectedNode.id]?.[symbol.name];
                     return (
-                      <div key={symbol.name} className="rounded-md border border-border">
+                      <div key={symbol.name} className="rounded-radius-sm border border-border">
                         <button
                           type="button"
                           onClick={() => void requestFnSummary(selectedNode.id, symbol.name)}

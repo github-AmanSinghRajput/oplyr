@@ -55,11 +55,15 @@ export interface CodebaseMapResponse {
   map: CodebaseMapData | null;
 }
 
+/** Mirrors the backend AssistantClientError kinds so the UI can react to (e.g.) rate limits. */
+export type AssistantErrorKind = 'auth' | 'rate_limit' | 'service' | 'unknown';
+
 export interface CodebaseFileSummaryResponse {
   path: string;
   summary: string | null;
   cached: boolean;
   error?: string;
+  errorKind?: AssistantErrorKind;
 }
 
 export interface CodebaseFileSymbol {
@@ -452,6 +456,7 @@ export type ChatStreamEvent =
   | {
       type: 'error';
       error: string;
+      errorKind?: AssistantErrorKind;
     };
 
 export interface SetWorkspaceResponse {
