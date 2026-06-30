@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import readline from 'node:readline';
 import { logger } from '../../lib/logger.js';
-import { getDefaultSttProvisionCommand } from '../../runtime-paths.js';
+import { getDefaultSttProvisionCommand, resolveLoginShell } from '../../runtime-paths.js';
 
 /**
  * Downloads the speech model, reporting 0-100 progress via onProgress. Resolves when the model is
@@ -16,7 +16,7 @@ export function provisionSpeechModel(onProgress: (pct: number) => void): Promise
   }
 
   return new Promise<void>((resolve, reject) => {
-    const child = spawn('/bin/zsh', ['-lc', command], {
+    const child = spawn(resolveLoginShell(), ['-lc', command], {
       env: { ...process.env },
       stdio: ['ignore', 'pipe', 'pipe']
     });

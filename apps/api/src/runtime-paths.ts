@@ -20,6 +20,26 @@ function readEnv(name: string) {
   return process.env[name]?.trim() || '';
 }
 
+/**
+ * Resolve a login shell that actually exists on this machine. The STT worker is launched via
+ * `<shell> -lc <command>` so it inherits the user's PATH/dyld environment. Hardcoding `/bin/zsh`
+ * breaks on systems without zsh (e.g. Linux CI runners → `spawn /bin/zsh ENOENT`), so prefer the
+ * user's $SHELL and fall back through common shells to a guaranteed `/bin/sh`.
+ */
+export function resolveLoginShell(): string {
+  const candidates = [readEnv('SHELL'), '/bin/zsh', '/bin/bash', '/bin/sh'];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    try {
+      fs.accessSync(candidate, fs.constants.X_OK);
+      return candidate;
+    } catch {
+      continue;
+    }
+  }
+  return '/bin/sh';
+}
+
 export function resolvePortablePath(inputPath: string | undefined | null, baseDir = getRootDir()) {
   const trimmed = inputPath?.trim();
   if (!trimmed) {
