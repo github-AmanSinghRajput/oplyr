@@ -234,7 +234,8 @@ export function AppShell() {
   const { preferences, setPreference } = usePreferences();
   const voice = useVoiceSession({
     chat,
-    voiceSettings: settings.voiceSettings
+    voiceSettings: settings.voiceSettings,
+    autoSend: preferences.autoSendVoice
   });
 
   const handleReviewApprove = useCallback(async () => {
@@ -292,7 +293,13 @@ export function AppShell() {
   const [voiceBootstrap, setVoiceBootstrap] = useState<VoiceBootstrapStatus | null>(null);
   const bootstrapRequestedRef = useRef(false);
   const statusRefreshedAfterBootstrapRef = useRef(false);
-  const onboardingRequired = !displayName?.trim() || !assistantReady;
+  // Onboarding runs until: name set + an agent connected + the first-project step resolved
+  // (a project is connected, OR the user skipped it). The project step is the final, skippable nudge.
+  const projectConnected = Boolean(status?.workspace.projectRoot);
+  const onboardingRequired =
+    !displayName?.trim() ||
+    !assistantReady ||
+    (!projectConnected && !settings.onboardingProjectDismissed);
 
   useEffect(() => {
     setProjectInput(status?.workspace.projectRoot ?? '');
@@ -441,6 +448,13 @@ export function AppShell() {
           }}
           onBackToProviderChoice={() => settings.setOnboardingStep(2)}
           onBackToName={() => settings.setOnboardingStep(1)}
+          canBrowseProjectFolder={Boolean(window.desktopShell?.pickProjectFolder)}
+          onBrowseProjectFolder={async () => {
+            const folder = await window.desktopShell?.pickProjectFolder?.();
+            return folder ?? null;
+          }}
+          onConnectProject={(path) => void settings.handleSaveProject(path)}
+          onSkipProject={() => settings.dismissOnboardingProject()}
         />
       );
     }
@@ -489,6 +503,11 @@ export function AppShell() {
             userName={displayName}
             onStart={voice.onStart}
             onStopAndSend={voice.onStopAndSend}
+            autoSend={preferences.autoSendVoice}
+            onToggleAutoSend={() => setPreference('autoSendVoice', !preferences.autoSendVoice)}
+            pendingTranscript={voice.pendingTranscript}
+            onSendPendingTranscript={voice.sendPendingTranscript}
+            onDiscardPendingTranscript={voice.clearPendingTranscript}
           />
         );
       case 'terminal':

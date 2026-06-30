@@ -4,7 +4,7 @@ import type { Server } from 'node:http';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { env } from '../../config/env.js';
 import { logger } from '../../lib/logger.js';
-import { getDefaultSttStreamWorkerCommand } from '../../runtime-paths.js';
+import { getDefaultSttStreamWorkerCommand, resolveLoginShell } from '../../runtime-paths.js';
 
 const TYPE_AUDIO = 0;
 const TYPE_FINALIZE = 1;
@@ -34,7 +34,7 @@ export function attachVoiceStreamGateway(server: Server) {
       return;
     }
 
-    const worker: ChildProcessWithoutNullStreams = spawn('/bin/zsh', ['-lc', command], {
+    const worker: ChildProcessWithoutNullStreams = spawn(resolveLoginShell(), ['-lc', command], {
       env: { ...process.env },
       stdio: ['pipe', 'pipe', 'pipe']
     }) as ChildProcessWithoutNullStreams;

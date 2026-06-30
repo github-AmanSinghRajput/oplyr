@@ -16,7 +16,7 @@ interface OnboardingScreenProps {
   appSettings: AppSettings | null;
   error: string;
   isSavingDisplayName: boolean;
-  step: 1 | 2 | 3;
+  step: 1 | 2 | 3 | 4;
   selectedProviderId: AssistantProviderId | null;
   providers: AssistantProviderStatus[];
   onConnectProvider: (providerId: AssistantProviderId) => void;
@@ -26,6 +26,10 @@ interface OnboardingScreenProps {
   onContinueToInstructions: () => void;
   onBackToProviderChoice: () => void;
   onBackToName: () => void;
+  canBrowseProjectFolder: boolean;
+  onBrowseProjectFolder: () => Promise<string | null>;
+  onConnectProject: (path: string) => void;
+  onSkipProject: () => void;
 }
 
 export function OnboardingScreen({
@@ -41,9 +45,14 @@ export function OnboardingScreen({
   onSelectProvider,
   onContinueToInstructions,
   onBackToProviderChoice,
-  onBackToName
+  onBackToName,
+  canBrowseProjectFolder,
+  onBrowseProjectFolder,
+  onConnectProject,
+  onSkipProject
 }: OnboardingScreenProps) {
   const [displayNameInput, setDisplayNameInput] = useState(appSettings?.displayName ?? '');
+  const [projectInput, setProjectInput] = useState('');
   const [typedWelcome, setTypedWelcome] = useState('');
   const [showSwitchAccountGuide, setShowSwitchAccountGuide] = useState(false);
   const [syncedDisplayName, setSyncedDisplayName] = useState(appSettings?.displayName ?? null);
@@ -107,7 +116,7 @@ export function OnboardingScreen({
       <div className="w-full max-w-2xl">
         {/* Progress */}
         <div className="flex items-center justify-center gap-2 mb-8">
-          {[1, 2, 3].map((s) => (
+          {[1, 2, 3, 4].map((s) => (
             <div
               key={s}
               className={cn(
@@ -127,7 +136,7 @@ export function OnboardingScreen({
           <div className="w-12 h-12 rounded-2xl bg-surface-2 flex items-center justify-center mx-auto mb-3 ring-1 ring-border">
             <OplyrLogoMark className="h-9 w-9" />
           </div>
-          <p className="text-xs text-text-tertiary">Voice-first coding assistant</p>
+          <p className="text-xs text-text-tertiary">Your voice-native multi-agent dev cockpit</p>
         </div>
 
         <AnimatePresence mode="wait">
@@ -142,10 +151,21 @@ export function OnboardingScreen({
               <div className="min-h-[28rem] rounded-[calc(var(--radius-panel)+6px)] border border-border bg-surface-1 px-10 py-10 text-center">
                 <p className="text-xs text-text-tertiary uppercase tracking-wider mb-2">Step 1</p>
                 <h1 className="text-2xl font-semibold text-text-primary mb-3">
-                  What would you like Oplyr to call you?
+                  Welcome to Oplyr — what should we call you?
                 </h1>
-                <p className="mx-auto mb-8 max-w-xl text-sm text-text-secondary">
-                  This stays local to the app and you can change it later.
+                <p className="mx-auto mb-5 max-w-xl text-sm text-text-secondary">
+                  Oplyr is your voice-native dev cockpit: direct AI coding agents by voice or text,
+                  review every change before it lands, and navigate your codebase as you build.
+                </p>
+                <div className="mx-auto mb-7 flex max-w-lg flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs text-text-tertiary">
+                  <span>Talk or type to your agents</span>
+                  <span aria-hidden>·</span>
+                  <span>Approve every edit</span>
+                  <span aria-hidden>·</span>
+                  <span>Navigate your codebase</span>
+                </div>
+                <p className="mx-auto mb-6 max-w-xl text-xs text-text-tertiary">
+                  Your name stays local to the app and you can change it later.
                 </p>
                 {error && <p className="text-sm text-danger mb-4">{error}</p>}
                 <div className="mx-auto mb-8 max-w-sm">
@@ -181,11 +201,11 @@ export function OnboardingScreen({
                   </p>
                 )}
                 <h1 className="text-3xl font-semibold text-text-primary mb-3">
-                  Pick the assistant you want to start with.
+                  Pick the agent you want to start with.
                 </h1>
                 <p className="mx-auto mb-8 max-w-2xl text-sm text-text-secondary">
-                  Oplyr beta runs one provider at a time. You can switch later without losing local
-                  project memory.
+                  Pick one to start — you can connect more agents and switch the active one anytime,
+                  without losing your local project memory.
                 </p>
 
                 <div className="mx-auto mb-8 grid max-w-4xl grid-cols-1 gap-4 md:grid-cols-3">
@@ -378,6 +398,57 @@ export function OnboardingScreen({
                       )}
                     </p>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {step === 4 && (
+              <div className="min-h-[28rem] rounded-[calc(var(--radius-panel)+6px)] border border-border bg-surface-1 px-10 py-10 text-center">
+                <p className="text-xs text-text-tertiary uppercase tracking-wider mb-2">Step 4</p>
+                <h1 className="text-2xl font-semibold text-text-primary mb-3">
+                  Connect your first project
+                </h1>
+                <p className="mx-auto mb-8 max-w-xl text-sm text-text-secondary">
+                  Point Oplyr at a project folder to start working — it scans your codebase into a
+                  live map and your agents work inside this boundary. You can change it anytime.
+                </p>
+                {error && <p className="text-sm text-danger mb-4">{error}</p>}
+
+                <div className="mx-auto mb-6 flex max-w-md items-center gap-2">
+                  <Input
+                    autoFocus
+                    className="h-11 flex-1 rounded-[14px] px-4 text-sm"
+                    placeholder="/path/to/your/project"
+                    value={projectInput}
+                    onChange={(e) => setProjectInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && projectInput.trim()) onConnectProject(projectInput);
+                    }}
+                  />
+                  {canBrowseProjectFolder && (
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        void onBrowseProjectFolder().then((folder) => {
+                          if (folder) setProjectInput(folder);
+                        });
+                      }}
+                    >
+                      Browse…
+                    </Button>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-center gap-3">
+                  <Button variant="ghost" onClick={onSkipProject}>
+                    Skip for now
+                  </Button>
+                  <Button
+                    disabled={!projectInput.trim()}
+                    onClick={() => onConnectProject(projectInput)}
+                  >
+                    Connect project
+                  </Button>
                 </div>
               </div>
             )}

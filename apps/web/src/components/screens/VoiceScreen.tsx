@@ -1,4 +1,5 @@
-import { Mic, Square } from 'lucide-react';
+import { useState } from 'react';
+import { Mic, Square, Send, Check } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { VoiceWaveform } from '@/components/voice/VoiceWaveform';
 import { VoiceListeningStrip } from '@/components/voice/VoiceListeningStrip';
@@ -35,6 +36,11 @@ interface VoiceScreenProps {
   userName?: string | null;
   onStart: () => void;
   onStopAndSend: () => void;
+  autoSend: boolean;
+  onToggleAutoSend: () => void;
+  pendingTranscript: string;
+  onSendPendingTranscript: (text: string) => void;
+  onDiscardPendingTranscript: () => void;
 }
 
 const STATUS: Record<VoiceState, string> = {
@@ -57,8 +63,23 @@ export function VoiceScreen({
   audioAvailable,
   userName,
   onStart,
-  onStopAndSend
+  onStopAndSend,
+  autoSend,
+  onToggleAutoSend,
+  pendingTranscript,
+  onSendPendingTranscript,
+  onDiscardPendingTranscript
 }: VoiceScreenProps) {
+  // Editable draft of the transcript awaiting review (auto-send off). Synced render-phase when the
+  // pending transcript changes (https://react.dev/learn/you-might-not-need-an-effect).
+  const [draft, setDraft] = useState('');
+  const [syncedPending, setSyncedPending] = useState(pendingTranscript);
+  if (pendingTranscript !== syncedPending) {
+    setSyncedPending(pendingTranscript);
+    setDraft(pendingTranscript);
+  }
+  const reviewing = pendingTranscript.length > 0;
+
   const mode = isRecording ? 'recording' : voiceState === 'speaking' ? 'speaking' : 'idle';
   const busy = voiceState === 'thinking';
   const isWorking = voiceState === 'thinking' || voiceState === 'speaking';
@@ -76,6 +97,28 @@ export function VoiceScreen({
         </p>
         <h2 className="text-xl font-semibold text-text-primary">{STATUS[voiceState]}</h2>
       </div>
+
+      <button
+        type="button"
+        onClick={onToggleAutoSend}
+        aria-pressed={autoSend}
+        title={
+          autoSend
+            ? 'Auto-send on — your transcript is sent immediately'
+            : 'Auto-send off — review and edit your transcript before sending'
+        }
+        className="flex items-center gap-2 rounded-radius-pill border border-border bg-surface-1 px-3 py-1.5 text-xs text-text-secondary transition-colors hover:text-text-primary"
+      >
+        <span
+          className={cn(
+            'flex h-4 w-4 items-center justify-center rounded-[5px] border transition-colors',
+            autoSend ? 'border-accent bg-accent text-background' : 'border-border'
+          )}
+        >
+          {autoSend && <Check size={11} />}
+        </span>
+        Auto-send {autoSend ? 'on' : 'off'}
+      </button>
 
       <div className="w-full rounded-[var(--radius-panel)] border border-border bg-surface-1 px-4 py-4">
         <VoiceWaveform mode={mode} analyserRef={micAnalyserRef} />
@@ -113,7 +156,36 @@ export function VoiceScreen({
         )}
       </div>
 
-      {userTranscript && (
+      {reviewing ? (
+        <div className="w-full">
+          <p className="mb-1 text-xs font-medium uppercase tracking-wider text-text-tertiary">
+            Review &amp; edit before sending
+          </p>
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              // Cmd/Ctrl+Enter sends; plain Enter adds a newline (it's an editable message).
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && draft.trim()) {
+                e.preventDefault();
+                onSendPendingTranscript(draft);
+              }
+            }}
+            rows={3}
+            autoFocus
+            className="w-full resize-none rounded-[var(--radius-panel)] border border-accent-border bg-surface-1 px-4 py-3 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-1 focus:ring-accent"
+            placeholder="What the AI heard — fix anything off, then send."
+          />
+          <div className="mt-2 flex items-center justify-end gap-2">
+            <Button variant="ghost" onClick={onDiscardPendingTranscript}>
+              Discard
+            </Button>
+            <Button disabled={!draft.trim()} onClick={() => onSendPendingTranscript(draft)}>
+              <Send size={14} className="mr-1.5" /> Send
+            </Button>
+          </div>
+        </div>
+      ) : userTranscript ? (
         <div className="w-full">
           <p className="text-xs font-medium text-text-tertiary uppercase tracking-wider mb-1">
             You
@@ -122,7 +194,7 @@ export function VoiceScreen({
             <p className="text-sm text-text-primary whitespace-pre-wrap">{userTranscript}</p>
           </div>
         </div>
-      )}
+      ) : null}
 
       {showResponseBlock && (
         <div className="w-full">

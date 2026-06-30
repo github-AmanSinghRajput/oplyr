@@ -113,6 +113,31 @@ export function ReviewScreen({
     setFileTreeOpen(false);
   }, []);
 
+  const filePaths = useMemo(() => lastDiff?.files.map((f) => f.filePath) ?? [], [lastDiff]);
+
+  // GitHub-style keyboard nav: j / k jump to the next / previous changed file. Ignored while typing
+  // (e.g. the reject-feedback box) or with a modifier held.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.key !== 'j' && event.key !== 'k') return;
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable) return;
+      if (filePaths.length === 0) return;
+      event.preventDefault();
+      const currentIndex = activeFilePath ? filePaths.indexOf(activeFilePath) : -1;
+      const nextIndex =
+        event.key === 'j'
+          ? Math.min(filePaths.length - 1, currentIndex + 1)
+          : Math.max(0, currentIndex - 1);
+      const next = filePaths[nextIndex];
+      if (next) handleFileClick(next);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [filePaths, activeFilePath, handleFileClick]);
+
   const handleToggleCollapse = useCallback((filePath: string) => {
     setCollapsedFiles((prev) => {
       const next = new Set(prev);
@@ -125,8 +150,16 @@ export function ReviewScreen({
   const handleToggleViewed = useCallback((filePath: string) => {
     setViewedFiles((prev) => {
       const next = new Set(prev);
-      if (next.has(filePath)) next.delete(filePath);
-      else next.add(filePath);
+      const nowViewed = !next.has(filePath);
+      if (nowViewed) next.add(filePath);
+      else next.delete(filePath);
+      // GitHub behavior: collapse a file when it's marked viewed, expand it when unmarked.
+      setCollapsedFiles((collapsed) => {
+        const updated = new Set(collapsed);
+        if (nowViewed) updated.add(filePath);
+        else updated.delete(filePath);
+        return updated;
+      });
       return next;
     });
   }, []);

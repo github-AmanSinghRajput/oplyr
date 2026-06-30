@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import hljs from 'highlight.js/lib/common';
 import 'highlight.js/styles/atom-one-dark.css';
 import { parseFileDiff } from '@/containers/voice-console/lib/diff';
@@ -83,13 +83,48 @@ interface DiffViewerProps {
   mode: 'split' | 'unified';
 }
 
+// Beyond this many changed lines a diff is collapsed behind a "show" button so a huge AI change
+// can't lag or overwhelm the review (GitHub does the same with "Large diffs are not rendered").
+const LARGE_DIFF_LINES = 500;
+
 export function DiffViewer({ filePath, diff, mode }: DiffViewerProps) {
   const parsed = useMemo(() => parseFileDiff(diff), [diff]);
   const language = useMemo(() => resolveLanguage(filePath), [filePath]);
+  const isBinary = useMemo(
+    () => /^Binary files .* differ$/m.test(diff) || diff.includes('GIT binary patch'),
+    [diff]
+  );
+  const changeCount = parsed.stats.additions + parsed.stats.deletions;
+  const [forceShowLarge, setForceShowLarge] = useState(false);
+
+  // C — binary/asset files: show a compact card instead of empty/raw noise.
+  if (isBinary) {
+    return (
+      <div className="p-4 text-sm text-text-tertiary">Binary file changed — diff not shown.</div>
+    );
+  }
 
   if (parsed.hunks.length === 0) {
     return (
       <div className="p-4 text-sm text-text-tertiary">No diff content available for this file.</div>
+    );
+  }
+
+  // B — large diffs: defer rendering behind a button to keep the review fast and scannable.
+  if (changeCount > LARGE_DIFF_LINES && !forceShowLarge) {
+    return (
+      <div className="flex flex-col items-center gap-2 p-6 text-center">
+        <p className="text-sm text-text-secondary">
+          Large diff — {changeCount.toLocaleString()} changed lines.
+        </p>
+        <button
+          type="button"
+          onClick={() => setForceShowLarge(true)}
+          className="rounded-radius-sm border border-border bg-surface-2 px-3 py-1.5 text-xs font-medium text-text-primary transition-colors hover:bg-surface-3"
+        >
+          Show diff anyway
+        </button>
+      </div>
     );
   }
 

@@ -20,6 +20,9 @@ import type { ChatStreamHandle } from './use-chat-stream';
 interface VoiceSessionOptions {
   chat: ChatStreamHandle;
   voiceSettings: VoiceSettingsResponse | null;
+  // When false, a finished transcription is NOT auto-sent — it's surfaced for the user to
+  // review/edit, then sent manually (mitigates STT mis-hearings on technical terms).
+  autoSend: boolean;
 }
 
 interface VoiceSessionHandle {
@@ -37,9 +40,17 @@ interface VoiceSessionHandle {
   micAnalyserRef: RefObject<AnalyserNode | null>;
   isRecording: boolean;
   onStopAndSend: () => void;
+  // Manual-send (auto-send off) review flow:
+  pendingTranscript: string;
+  sendPendingTranscript: (text: string) => void;
+  clearPendingTranscript: () => void;
 }
 
-export function useVoiceSession({ chat, voiceSettings }: VoiceSessionOptions): VoiceSessionHandle {
+export function useVoiceSession({
+  chat,
+  voiceSettings,
+  autoSend
+}: VoiceSessionOptions): VoiceSessionHandle {
   const { service, baseUrl } = useApi();
   const { setActiveScreen } = useNavigation();
   const { refreshStatus, setStatus } = useStatus();
@@ -53,9 +64,16 @@ export function useVoiceSession({ chat, voiceSettings }: VoiceSessionOptions): V
   const [pendingCommandPrompt, setPendingCommandPrompt] = useState<string | null>(null);
   const [pendingCommandOptions, setPendingCommandOptions] = useState<VoiceCommandOption[]>([]);
   const [isRecording, setIsRecording] = useState(false);
+  // Transcript awaiting the user's review/edit when auto-send is OFF.
+  const [pendingTranscript, setPendingTranscript] = useState('');
 
   // Ref for the live partial transcript (avoids stale closure in safety timeout)
   const streamedTranscriptOverrideRef = useRef('');
+  // Ref-mirror of the autoSend pref so the (ref-heavy, long-lived) finalize path reads it fresh.
+  const autoSendRef = useRef(autoSend);
+  useEffect(() => {
+    autoSendRef.current = autoSend;
+  }, [autoSend]);
 
   // Streaming capture refs
   const wsRef = useRef<WebSocket | null>(null);
@@ -144,36 +162,13 @@ export function useVoiceSession({ chat, voiceSettings }: VoiceSessionOptions): V
     sessionActiveRef.current = false;
   }, [clearSilenceTimer]);
 
-  // handleFinal: called when the WS sends {type:'final'}
-  const handleFinal = useCallback(
-    (text: string) => {
-      // Close the WebSocket
-      if (wsRef.current) {
-        wsRef.current.close();
-        wsRef.current = null;
-      }
-
-      const transcript = text.trim();
-      // Replace any coarse streaming partial with the COMPLETE final transcript, so the voice
-      // screen shows the full thing the user said (the same text that is sent to the AI).
+  // sendTranscript: stream a (final or user-edited) transcript to the assistant.
+  const sendTranscript = useCallback(
+    (transcript: string) => {
       setStreamedTranscriptOverride(transcript);
-
-      if (!transcript) {
-        appendActivity('No speech detected');
-        sessionActiveRef.current = false;
-        updateVoiceSession({
-          active: false,
-          phase: 'idle',
-          liveTranscript: '',
-          error: 'No speech detected. Try again.'
-        });
-        processingTurnRef.current = false;
-        isFinalizingRef.current = false;
-        return;
-      }
-
       processingTurnRef.current = true;
       isFinalizingRef.current = false;
+      sessionActiveRef.current = true;
       updateVoiceSession({
         active: true,
         phase: 'thinking',
@@ -233,6 +228,55 @@ export function useVoiceSession({ chat, voiceSettings }: VoiceSessionOptions): V
       })();
     },
     [appendActivity, chat, pushToast, refreshStatus, setActiveScreen, updateVoiceSession]
+  );
+
+  // handleFinal: called when the WS sends {type:'final'}
+  const handleFinal = useCallback(
+    (text: string) => {
+      // Close the WebSocket
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+
+      const transcript = text.trim();
+      // Replace any coarse streaming partial with the COMPLETE final transcript, so the voice
+      // screen shows the full thing the user said (the same text that is sent to the AI).
+      setStreamedTranscriptOverride(transcript);
+
+      if (!transcript) {
+        appendActivity('No speech detected');
+        sessionActiveRef.current = false;
+        updateVoiceSession({
+          active: false,
+          phase: 'idle',
+          liveTranscript: '',
+          error: 'No speech detected. Try again.'
+        });
+        processingTurnRef.current = false;
+        isFinalizingRef.current = false;
+        return;
+      }
+
+      isFinalizingRef.current = false;
+
+      // Auto-send OFF: stash the transcript for the user to review/edit, return to idle, don't send.
+      if (!autoSendRef.current) {
+        setPendingTranscript(transcript);
+        processingTurnRef.current = false;
+        sessionActiveRef.current = false;
+        updateVoiceSession({
+          active: false,
+          phase: 'idle',
+          liveTranscript: transcript,
+          error: null
+        });
+        return;
+      }
+
+      sendTranscript(transcript);
+    },
+    [appendActivity, sendTranscript, updateVoiceSession]
   );
 
   // finalizeAndStop: called on silence detection or manual stop
@@ -500,6 +544,23 @@ export function useVoiceSession({ chat, voiceSettings }: VoiceSessionOptions): V
     finalizeAndStop('process');
   }, [finalizeAndStop]);
 
+  // Manual-send flow (auto-send off): send the user-reviewed/edited transcript, or discard it.
+  const sendPendingTranscript = useCallback(
+    (text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed) return;
+      setPendingTranscript('');
+      sendTranscript(trimmed);
+    },
+    [sendTranscript]
+  );
+
+  const clearPendingTranscript = useCallback(() => {
+    setPendingTranscript('');
+    setStreamedTranscriptOverride('');
+    updateVoiceSession({ active: false, phase: 'idle', liveTranscript: '', error: null });
+  }, [updateVoiceSession]);
+
   const onApplyCommandOption = useCallback(
     (option: VoiceCommandOption) => {
       void (async () => {
@@ -576,6 +637,9 @@ export function useVoiceSession({ chat, voiceSettings }: VoiceSessionOptions): V
     onStop,
     micAnalyserRef: analyserRef,
     isRecording,
-    onStopAndSend
+    onStopAndSend,
+    pendingTranscript,
+    sendPendingTranscript,
+    clearPendingTranscript
   };
 }
