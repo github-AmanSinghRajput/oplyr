@@ -1,11 +1,12 @@
 # Oplyr
 
-> A desktop-first, voice-native AI coding workspace for macOS.
+> A desktop-first, voice-native multi-agent developer cockpit for macOS.
 
-Oplyr lets you talk (or type) to AI coding providers, work inside an explicit
-project boundary, and approve every file change before it is written. It
-orchestrates provider CLIs you already use — Codex and Claude Code today, with
-Gemini coming soon — without taking custody of their credentials. Speech runs
+Oplyr is a workspace where you direct multiple AI coding agents — by voice or
+text — inside an explicit project boundary, reviewing and approving every file
+change before it is written. It orchestrates provider CLIs you already use —
+Codex and Claude Code today, with Gemini coming soon — without taking custody of
+their credentials, and lets you switch between them mid-session. Speech runs
 fully on-device on the Apple Neural Engine, and the coding runtime stays local
 to your machine.
 
@@ -14,19 +15,42 @@ development, but it is not the intended public product surface.
 
 ## Key features
 
-- **Voice-native, text-mandatory.** Speak naturally to a coding assistant and
-  see the conversation as live text. Switch to typing whenever you prefer.
-- **Multi-provider.** Run against OpenAI Codex or Anthropic Claude Code via
-  their own CLIs and accounts. Gemini support is coming soon. Oplyr manages
-  app-level connection state and preferences only — provider credentials stay
-  with the provider CLI.
+- **Agentic Chat — a multi-agent room.** Direct multiple AI coding agents in one
+  conversation by voice or text. `@mention` an agent to bring it in, hand work
+  between them, and switch the active agent mid-session from the topbar.
+- **Voice-native, text-mandatory.** Speak naturally and see the conversation as
+  live text. Switch to typing whenever you prefer.
+- **Multi-provider, your accounts.** Run against OpenAI Codex or Anthropic Claude
+  Code via their own CLIs and subscriptions (Gemini coming soon). Oplyr manages
+  app-level connection state only — provider credentials stay with the CLI.
+- **Smart model control.** Pick any model for the active agent from the topbar,
+  and let Oplyr auto-use the strongest model for edits and a leaner one for
+  routine turns to save tokens. Clear "limit reached" alerts when a provider caps out.
 - **Approval-gated edits.** The AI proposes changes; you review a GitHub-style
   diff and approve or reject before anything is written. Read-only by default.
+- **Live Codebase Map.** An auto-generated map of your repo — a structured tree
+  view and an interactive force/"brain" graph of files, folders, and imports,
+  with on-demand AI file/function summaries.
+- **Docs browser.** Browse and preview every Markdown doc in the connected repo,
+  with search and pagination.
+- **Integrated shell.** A built-in terminal scoped to your project.
 - **On-device speech + privacy.** Speech-to-text runs natively on the Apple
   Neural Engine — no audio leaves your machine for transcription.
 - **Local-first runtime.** The runtime executes against your machine and repo
   locally. Oplyr does not upload your repo to its servers. (Provider CLIs may
   talk to their own clouds under your accounts.)
+
+## Coming soon
+
+- **Shared memory ("brain").** A unified, local-first graph + vector memory every
+  agent reads from and writes to — so your context, decisions, and codebase
+  history persist across sessions and carry between agents.
+- **Meetings & Notes.** Connect your calendar to see meetings while you work, join
+  with one click, and get a heads-up alert before a call starts.
+- **Developer note-taker.** A Granola-level meeting/thinking companion built for
+  developers — transcripts, summaries, decisions, and recall.
+- **Vibe music.** An optional focus/ambience layer for long coding sessions.
+- **Gemini support** alongside Codex and Claude Code.
 
 ## Requirements
 

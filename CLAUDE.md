@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-Oplyr — a desktop-first, voice-native AI coding workspace. Users talk to Codex or Claude Code via voice or text, work inside an explicit project boundary, and approve file changes before execution.
+Oplyr — a desktop-first, voice-native **multi-agent developer workspace** ("cockpit"). Users direct coding agents (Codex, Claude Code, soon Gemini) by voice or text in an Agentic Chat, work inside an explicit project boundary with reviewable diffs/approvals, navigate a live codebase map and markdown docs, and (planned) draw on a shared local memory ("brain") plus meetings/notes. Local-first and approval-gated by design.
 
 ## Commands
 
@@ -70,5 +70,4 @@ Copy `.env.example` to `.env`. The local runtime uses embedded SQLite via `RUNTI
 ## Known Issues
 
 - The product direction has pivoted to a desktop-first Electron app distributed via DMG. Browser-based development remains the fastest shell, but it is no longer the public runtime target.
-- Desktop STT uses renderer mic capture plus a single local engine: Parakeet v3 (`parakeet-tdt-0.6b-v3`) running natively on the Apple Neural Engine via the `oplyr-stt` Swift binary (FluidAudio CoreML). There is no fallback — a failure surfaces a generic "Something went wrong" to the user and logs the real error to the server console. Apple Silicon only.
-- The STT engine is native Swift/CoreML — no Python, no MLX, no venv (this removed the previous `parakeet-mlx` worker). The `native/` Apple Speech bridge, Moonshine, whisper.cpp, and the AssemblyAI fallback were all removed earlier in favor of Parakeet-only STT.
+- Desktop STT uses renderer mic capture plus a single native local engine: Parakeet v3 (`parakeet-tdt-0.6b-v3`) on the Apple Neural Engine via the `oplyr-stt` Swift binary (FluidAudio CoreML). **Apple Silicon only, no fallback** — a failure surfaces a generic "Something went wrong" to the user and logs the real error to the server console. No Python, no MLX, no TTS.

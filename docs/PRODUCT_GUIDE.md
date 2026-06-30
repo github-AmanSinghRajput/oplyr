@@ -141,14 +141,19 @@ Oplyr today is a desktop-oriented app with a local runtime and a voice/text UI.
 ### Current working capabilities
 
 - multi-step onboarding
-- app-level display name
+- app-level display name + personalized greeting
 - app-managed provider connections
-- support for Codex and Claude Code
-- provider switching between app-connected providers
+- support for Codex and Claude Code (Gemini coming)
+- multi-agent "Agentic Chat" with provider switching mid-session (topbar dropdown + connect-new)
+- per-agent model picker, plus auto-model-switch (strongest model for edits, leaner for routine turns)
+- clear "limit reached" alerts when a provider hits its usage cap
 - voice and text conversation modes
 - read-only by default
 - approval-gated write flow
-- review screen for AI proposed changes
+- review screen for AI-proposed changes (GitHub-style diff)
+- live Codebase Map — structured tree view + interactive force/"brain" graph, with on-demand AI file/function summaries
+- Markdown docs browser (search, pagination, preview) over the connected repo
+- integrated project shell/terminal
 - chat persistence
 - settings for voice/theme/provider behavior
 - local STT path via Parakeet (single engine, no fallback)
@@ -268,6 +273,19 @@ Not every future idea needs to ship before the beta is valuable.
 Build developer memory and notes in a serious way, not as a throwaway sidebar.
 
 ## 15. Future Major Features
+
+### Shared memory ("brain")
+
+The flagship next track (design **approved** — see
+`docs/superpowers/specs/2026-06-25-oplyr-brain-memory-design.md`). A unified, local-first graph +
+vector memory that every agent reads from and (with per-agent permission) writes to — so context,
+decisions, and codebase history persist across sessions and carry between agents. The Memory screen
+later visualizes it as an interactive node/edge graph.
+
+### Meetings & calendar
+
+Connect a Google account to see today/upcoming meetings while coding, join with one click, and get a
+heads-up alert (a fly-in banner) shortly before a call — surfaced no matter which screen you're on.
 
 ### Granola-level note-taker
 

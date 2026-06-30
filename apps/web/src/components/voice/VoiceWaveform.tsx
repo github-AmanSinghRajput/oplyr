@@ -24,6 +24,7 @@ export function VoiceWaveform({ mode, analyserRef, height = 96 }: VoiceWaveformP
   const phaseRef = useRef(0);
   const accentRef = useRef('#00d4f5');
   const frameRef = useRef(0);
+  const lastDrawRef = useRef(0);
 
   useLayoutEffect(() => {
     modeRef.current = mode;
@@ -48,10 +49,19 @@ export function VoiceWaveform({ mode, analyserRef, height = 96 }: VoiceWaveformP
       ctx.lineTo(points[points.length - 1].x, points[points.length - 1].y);
     };
 
-    const draw = () => {
-      const dpr = window.devicePixelRatio || 1;
+    const draw = (now: number) => {
+      // Schedule the next frame first, then throttle to ~30fps. The wave is lerp-smoothed so 30fps
+      // looks fluid, and this roughly halves the per-frame fill/shadow cost (shadowBlur is pricey).
+      rafRef.current = window.requestAnimationFrame(draw);
+      if (now - lastDrawRef.current < 33) return;
+      lastDrawRef.current = now;
+
       const w = canvas.clientWidth;
       const h = canvas.clientHeight;
+      // Cap the backing resolution so a full-width waveform on a large monitor doesn't blow up the
+      // per-frame fill + double-shadow cost (only 80 points, so a lower backing density is invisible).
+      const rawDpr = Math.min(window.devicePixelRatio || 1, 2);
+      const dpr = w > 0 && w * rawDpr > 1280 ? 1280 / w : rawDpr;
       if (canvas.width !== Math.floor(w * dpr) || canvas.height !== Math.floor(h * dpr)) {
         canvas.width = Math.floor(w * dpr);
         canvas.height = Math.floor(h * dpr);
@@ -131,8 +141,6 @@ export function VoiceWaveform({ mode, analyserRef, height = 96 }: VoiceWaveformP
       tracePath(points);
       ctx.stroke();
       ctx.restore();
-
-      rafRef.current = window.requestAnimationFrame(draw);
     };
 
     rafRef.current = window.requestAnimationFrame(draw);

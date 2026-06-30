@@ -169,13 +169,12 @@ This starts moving Oplyr from "voice coding app" toward "voice-native developer 
 
 ## Post-Beta TODO
 
-### Shared memory / mind map
+### Shared memory ("brain")
 
-- [ ] design a durable memory schema for project knowledge
-- [ ] define cross-provider memory access rules
-- [ ] separate raw history from summaries and distilled context
-- [ ] decide whether structured local storage is enough or whether retrieval/search is needed
-- [ ] map how shared Oplyr memory should survive provider switching without leaking sensitive data
+The design is **approved** — see `docs/superpowers/specs/2026-06-25-oplyr-brain-memory-design.md`
+(unified local-first graph + vector memory; per-agent write permission; SQLite + sqlite-vec). The
+open schema/access/storage questions that used to live here are settled there. Build follows the
+spec's staged delivery (single-project loop → machine-wide → richer sources).
 
 This is intentionally deferred until after beta launch so bootstrap, onboarding, voice, chat, and
 provider reliability can reach demo quality first.

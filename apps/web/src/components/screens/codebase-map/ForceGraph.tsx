@@ -165,6 +165,8 @@ function ForceFlow({
       source: e.source,
       target: e.target
     }));
+    // Bump once per rebuild so the selection-highlight effect recomputes against fresh adjacency.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional one-time relayout trigger
     setStructureVersion((v) => v + 1);
 
     const links: SimLink[] = [

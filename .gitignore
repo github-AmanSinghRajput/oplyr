@@ -21,7 +21,9 @@ data/generated-audio
 native/
 stitch_mobile_voice_console/
 *.docx
-Codex/
+# Anchored to repo root — a bare `Codex/` also matched apps/api/src/features/codex/ (case-insensitive
+# on macOS), so that source dir was silently never committed and CI broke. Keep it root-only.
+/Codex/
 /Claude/
 .claude/
 LAUNCH_TRACKER.md
