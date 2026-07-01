@@ -12,6 +12,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 import { ContentFrame } from './ContentFrame';
+import { ProductTourOverlay } from '@/components/tour/ProductTourOverlay';
 import { useNavigation } from '@/providers/NavigationProvider';
 import { useStatus } from '@/providers/StatusProvider';
 import { useToast } from '@/providers/ToastProvider';
@@ -709,6 +710,7 @@ export function AppShell() {
               </motion.div>
             </AnimatePresence>
           </ContentFrame>
+          <ProductTourOverlay />
         </>
       )}
 

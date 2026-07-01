@@ -100,6 +100,7 @@ export function VoiceScreen({
 
       <button
         type="button"
+        data-tour="voice-autosend"
         onClick={onToggleAutoSend}
         aria-pressed={autoSend}
         title={
@@ -130,7 +131,7 @@ export function VoiceScreen({
       />
 
       <div className="flex items-center gap-3">
-        <motion.div whileTap={{ scale: 0.95 }}>
+        <motion.div whileTap={{ scale: 0.95 }} data-tour="voice-mic">
           <Button
             size="lg"
             className={cn(

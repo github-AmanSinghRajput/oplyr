@@ -4,6 +4,7 @@ import { StatusProvider } from '@/providers/StatusProvider';
 import { NavigationProvider } from '@/providers/NavigationProvider';
 import { ToastProvider } from '@/providers/ToastProvider';
 import { ApprovalProvider } from '@/providers/ApprovalProvider';
+import { TourProvider } from '@/providers/TourProvider';
 import { AppShell } from '@/components/layout/AppShell';
 import { DesktopOnlyScreen } from '@/components/screens/DesktopOnlyScreen';
 
@@ -29,7 +30,9 @@ export default function App() {
           <NavigationProvider>
             <ToastProvider>
               <ApprovalProvider>
-                <AppShell />
+                <TourProvider>
+                  <AppShell />
+                </TourProvider>
               </ApprovalProvider>
             </ToastProvider>
           </NavigationProvider>

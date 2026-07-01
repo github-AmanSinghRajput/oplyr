@@ -92,14 +92,16 @@ export function Topbar({
           )}
 
           {assistantReady && (
-            <ProviderSwitcher
-              providers={connectedProviders}
-              activeProviderId={activeProviderId}
-              authLabel={authLabel}
-              reachable={desktopRuntime ? desktopRuntime.apiReachable : true}
-              onSwitch={onProviderSwitch}
-              onConnectNew={() => setActiveScreen('settings')}
-            />
+            <span data-tour="topbar-provider" className="inline-flex">
+              <ProviderSwitcher
+                providers={connectedProviders}
+                activeProviderId={activeProviderId}
+                authLabel={authLabel}
+                reachable={desktopRuntime ? desktopRuntime.apiReachable : true}
+                onSwitch={onProviderSwitch}
+                onConnectNew={() => setActiveScreen('settings')}
+              />
+            </span>
           )}
 
           {assistantReady && (

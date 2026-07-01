@@ -44,18 +44,20 @@ export function ChatScreen({
         typedMessages={typedMessages}
         apiBaseUrl={apiBaseUrl}
       />
-      <ChatComposer
-        value={textInput}
-        onChange={onTextInputChange}
-        onSubmit={onSubmit}
-        onAttachFiles={onAttachFiles}
-        onRemoveAttachment={onRemoveAttachment}
-        onStartVoice={onStartVoice}
-        onCancelStreaming={onCancelStreaming}
-        draftAttachments={draftAttachments}
-        disabled={disabled}
-        isStreaming={isStreaming}
-      />
+      <div data-tour="composer">
+        <ChatComposer
+          value={textInput}
+          onChange={onTextInputChange}
+          onSubmit={onSubmit}
+          onAttachFiles={onAttachFiles}
+          onRemoveAttachment={onRemoveAttachment}
+          onStartVoice={onStartVoice}
+          onCancelStreaming={onCancelStreaming}
+          draftAttachments={draftAttachments}
+          disabled={disabled}
+          isStreaming={isStreaming}
+        />
+      </div>
     </div>
   );
 }

@@ -64,6 +64,23 @@ Ship a testable macOS desktop beta that feels coherent, safe enough to demo, and
 - [ ] real-device validation across multiple microphones and rooms
 - [ ] TTS deferred — intentionally not shipped in 0.1; future paid provider (e.g. ElevenLabs) planned
 
+### Platform reach
+
+Current hard floor: **Apple Silicon (M1+) + macOS 14 Sonoma** — gated by the STT engine
+(`apps/stt/Package.swift` → `.macOS(.v14)`, FluidAudio/CoreML on the Neural Engine, no fallback).
+
+- [x] **investigated lowering the floor to macOS 13 — not possible with the current engine.**
+  FluidAudio itself declares `platforms: [.macOS(.v14)]`, so our Swift package can't target Ventura
+  without dropping/replacing FluidAudio (same effort as cross-platform STT). Floor stays macOS 14.
+- [x] **graceful non-supported path** — voice availability now checks Apple Silicon + macOS 14
+  precisely (`apps/api/src/platform.ts` → `resolveVoicePlatformSupport()`), so an Intel or pre-Sonoma
+  Mac gets a clear reason (surfaced via `audio.error`) instead of a failed STT launch; `start()`
+  refuses cleanly without spawning the worker.
+- [ ] test on the oldest Apple Silicon we can (M1, 2020) to confirm the real minimum
+- [ ] document the true minimum in-app and on the site once validated on real old hardware
+- [ ] (only if we want Intel / macOS ≤13) replace FluidAudio with a cross-platform STT engine —
+  tracked with the Windows-voice work; a major sub-project, deliberately out of 0.1
+
 ### UI and UX
 
 - [x] step-based onboarding
@@ -75,6 +92,9 @@ Ship a testable macOS desktop beta that feels coherent, safe enough to demo, and
 - [x] chat screen with message-only scrolling
 - [ ] final full-app visual QA in light theme
 - [ ] final pass on spacing, copy, and consistency across every screen
+- [ ] **first-time UX + product tour** — a per-screen guided walkthrough that fires the first time a
+  user opens each screen (Agentic Chat, Voice, Review, Codebase Map, Markdown, Settings…): short,
+  dismissible, shown once per screen, with a "reset tour" control. Ties into onboarding completion.
 
 ### Security baseline
 
@@ -86,6 +106,12 @@ Ship a testable macOS desktop beta that feels coherent, safe enough to demo, and
 - [x] stricter desktop IPC/runtime boundary
 - [x] CSP baseline
 - [ ] dedicated security review after beta stabilization
+- [ ] **pentest / external-audit readiness (HIGH PRIORITY).** Harden so that an Apple notarization/app
+  review, a future Microsoft store review, or a hostile security run finds nothing to question.
+  Scope: written threat model; dependency + supply-chain audit (`npm audit`, pinned/verified native
+  binaries); IPC/preload boundary review (contextIsolation, no `nodeIntegration`, channel allowlist);
+  CSP + no remote code execution in the renderer; secret-handling + local-API-token review; no
+  telemetry/PII egress; signed + notarized artifacts; documented data-flow ("nothing leaves the Mac").
 
 ### Distribution baseline
 

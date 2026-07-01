@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
+import { useTour } from '@/providers/TourProvider';
 import { formatReasoningEffort } from '@/containers/voice-console/lib/helpers';
 import type {
   AppSettings,
@@ -327,6 +328,7 @@ export function SettingsScreen({
   claudeSettingsDirty,
   geminiSettingsDirty
 }: SettingsScreenProps) {
+  const { resetTours } = useTour();
   const activeProvider = status?.assistantProviders.activeProvider ?? null;
   const activeProviderId = activeProvider?.id ?? null;
   const allProviders = status?.assistantProviders.providers ?? [];
@@ -419,6 +421,19 @@ export function SettingsScreen({
                 <option value="terminal">Agentic Chat</option>
                 <option value="workspace">Workspace</option>
               </select>
+            </SettingRow>
+            <SettingRow
+              label="Product tour"
+              hint="Replay the guided walkthrough that appears the first time you open each screen."
+            >
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => resetTours()}
+              >
+                Replay tour
+              </Button>
             </SettingRow>
           </SectionCard>
 

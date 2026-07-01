@@ -5,6 +5,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { env } from './config/env.js';
 import { isSecretRelativePath } from './lib/path-security.js';
+import { resolveVoicePlatformSupport } from './platform.js';
 import type {
   AssistantProviderId,
   AudioBridgeState,
@@ -34,6 +35,8 @@ const secretPolicy = [
   'credentials/'
 ];
 
+const voiceSupport = resolveVoicePlatformSupport();
+
 const runtimeState: RuntimeState = {
   activeProviderId: null,
   workspace: {
@@ -48,14 +51,14 @@ const runtimeState: RuntimeState = {
   lastDiff: null,
   audio: {
     platform: process.platform,
-    available: process.platform === 'darwin',
+    available: voiceSupport.supported,
     inputDeviceLabel: null,
     outputDeviceLabel: null,
-    transcriptionEngine:
-      process.platform === 'darwin' ? 'Desktop media capture + STT provider' : 'Unavailable',
+    transcriptionEngine: voiceSupport.supported
+      ? 'Desktop media capture + STT provider'
+      : 'Unavailable',
     lastCheckedAt: null,
-    error:
-      process.platform === 'darwin' ? null : 'Desktop voice capture currently supports macOS only.'
+    error: voiceSupport.reason
   },
   voiceSession: {
     active: false,
@@ -63,7 +66,7 @@ const runtimeState: RuntimeState = {
     liveTranscript: '',
     lastTranscript: null,
     silenceWindowMs: 800,
-    transport: process.platform === 'darwin' ? 'desktop-media' : 'unsupported',
+    transport: voiceSupport.supported ? 'desktop-media' : 'unsupported',
     error: null
   }
 };

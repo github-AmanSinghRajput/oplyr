@@ -71,7 +71,7 @@ export function ReviewHeader({
         </div>
 
         {pendingApproval && (
-          <div className="flex items-center gap-2 shrink-0">
+          <div data-tour="review-actions" className="flex items-center gap-2 shrink-0">
             <Button
               className="bg-success hover:bg-success/90 text-background"
               disabled={isApproving || isRejecting}
