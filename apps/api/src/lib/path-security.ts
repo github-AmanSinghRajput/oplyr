@@ -1,9 +1,39 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-const exactSecretNames = new Set(['.env', '.env.local', 'id_rsa', 'id_ed25519', '.npmrc']);
-const suffixSecretPatterns = ['.pem', '.key', '.p12', '.pfx'];
-const directoryMarkers = ['.aws', 'secrets', 'credentials'];
+const exactSecretNames = new Set([
+  '.env',
+  '.env.local',
+  'id_rsa',
+  'id_dsa',
+  'id_ecdsa',
+  'id_ed25519',
+  '.npmrc',
+  '.netrc',
+  '.pgpass',
+  '.git-credentials',
+  'credentials',
+  'authorized_keys',
+  'known_hosts'
+]);
+const suffixSecretPatterns = [
+  '.pem',
+  '.key',
+  '.p8',
+  '.p12',
+  '.pfx',
+  '.pkcs12',
+  '.jks',
+  '.keystore',
+  '.asc',
+  '.gpg',
+  '.kdbx',
+  '.ppk',
+  '.ovpn',
+  '.env',
+  '.tfstate'
+];
+const directoryMarkers = ['.aws', '.ssh', '.gnupg', 'secrets', 'credentials', 'private', 'certs'];
 const exactRelativePaths = ['.docker/config.json'];
 
 function normalizePathSegment(input: string) {
@@ -14,8 +44,23 @@ function normalizePathSegment(input: string) {
     .trim();
 }
 
+// `git status`/`git diff --name-status` wrap paths containing non-ASCII or special bytes in double
+// quotes and C-escape them (e.g. `"caf\303\251.pem"`), which would otherwise defeat suffix/segment
+// matching. Strip the wrapping quotes and collapse escape sequences before matching so the
+// security-relevant ASCII tokens (extensions, dir names) are seen. Matching-only — not a real path.
+function dequoteGitPath(input: string): string {
+  let value = input.trim();
+  if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
+    value = value
+      .slice(1, -1)
+      .replace(/\\[0-7]{1,3}/g, '')
+      .replace(/\\(.)/g, '$1');
+  }
+  return value;
+}
+
 export function isSecretRelativePath(relativePath: string) {
-  const normalized = normalizePathSegment(relativePath).toLowerCase();
+  const normalized = normalizePathSegment(dequoteGitPath(relativePath)).toLowerCase();
   if (!normalized) {
     return false;
   }

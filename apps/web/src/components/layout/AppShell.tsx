@@ -4,6 +4,7 @@ import {
   startTransition,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type FormEvent
@@ -31,7 +32,11 @@ import { cn } from '@/lib/cn';
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
 import { formatReasoningEffort, getVoiceState } from '@/containers/voice-console/lib/helpers';
 import type { VoiceAssistantInfo } from '@/components/screens/VoiceScreen';
-import type { StatusResponse, VoiceBootstrapStatus } from '@/containers/voice-console/lib/types';
+import type {
+  MessageEntry,
+  StatusResponse,
+  VoiceBootstrapStatus
+} from '@/containers/voice-console/lib/types';
 
 const ChatScreen = lazy(() =>
   import('@/components/screens/ChatScreen').then((m) => ({ default: m.ChatScreen }))
@@ -290,6 +295,18 @@ export function AppShell() {
   const voiceState = getVoiceState(status);
   const lastAssistant = [...chat.messages].reverse().find((m) => m.role === 'assistant') ?? null;
   const lastUser = [...chat.messages].reverse().find((m) => m.role === 'user') ?? null;
+  // Voice shows only the CURRENT turn's reply (cleared when a new command starts), so the previous
+  // answer never lingers. Driven by the per-turn preview rather than the full chat history.
+  const voiceReply = useMemo<MessageEntry | null>(() => {
+    if (!voice.spokenReplyPreview.trim()) return null;
+    return {
+      id: 'voice-live-reply',
+      role: 'assistant',
+      text: voice.spokenReplyPreview,
+      createdAt: lastAssistant?.createdAt ?? new Date().toISOString(),
+      source: 'voice'
+    };
+  }, [voice.spokenReplyPreview, lastAssistant?.createdAt]);
   const [projectInput, setProjectInput] = useState(status?.workspace.projectRoot ?? '');
   const [voiceBootstrap, setVoiceBootstrap] = useState<VoiceBootstrapStatus | null>(null);
   const bootstrapRequestedRef = useRef(false);
@@ -498,7 +515,8 @@ export function AppShell() {
               status?.voiceSession?.lastTranscript ||
               ''
             }
-            aiReply={lastAssistant}
+            aiReply={voiceReply}
+            voiceActivity={voice.voiceActivity}
             assistant={getVoiceAssistant(status, settings)}
             audioAvailable={status?.audio.available ?? false}
             userName={displayName}
@@ -521,6 +539,7 @@ export function AppShell() {
             isStreaming={chat.isStreaming}
             streamingMessageId={chat.activeChatStreamMessageId}
             typedMessages={chat.typedMessageText}
+            liveActivity={chat.liveActivity}
             disabled={chat.isSubmittingTurn}
             onTextInputChange={chat.setTextInput}
             onSubmit={handleTextSubmit}

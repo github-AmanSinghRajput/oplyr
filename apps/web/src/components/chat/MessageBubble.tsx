@@ -3,7 +3,7 @@ import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import { cn } from '@/lib/cn';
 import { CodeBlock } from './CodeBlock';
-import { TypingDots } from '@/components/voice/TypingDots';
+import { AgentActivityIndicator } from './AgentActivityIndicator';
 import type { MessageEntry } from '@/containers/voice-console/lib/types';
 import { formatClock } from '@/containers/voice-console/lib/helpers';
 
@@ -12,11 +12,19 @@ interface MessageBubbleProps {
   isStreaming?: boolean;
   typedText?: string;
   apiBaseUrl?: string;
+  /** Current agent action shown while this bubble is streaming (e.g. "Reading page.tsx"). */
+  liveActivity?: string | null;
 }
 
-export function MessageBubble({ message, isStreaming, typedText }: MessageBubbleProps) {
+export function MessageBubble({
+  message,
+  isStreaming,
+  typedText,
+  liveActivity
+}: MessageBubbleProps) {
   const isUser = message.role === 'user';
   const displayText = typedText ?? message.text;
+  const hasText = displayText.trim().length > 0;
 
   return (
     <div className={cn('flex flex-col gap-1', isUser ? 'items-end' : 'items-start')}>
@@ -31,24 +39,33 @@ export function MessageBubble({ message, isStreaming, typedText }: MessageBubble
         {isUser ? (
           <p className="text-sm leading-relaxed whitespace-pre-wrap">{displayText}</p>
         ) : (
-          <div className="text-sm leading-relaxed prose-sm">
-            {isStreaming && !displayText.trim() ? (
-              <TypingDots />
-            ) : (
-              <>
-                <Markdown
-                  remarkPlugins={[remarkGfm]}
-                  rehypePlugins={[rehypeHighlight]}
-                  components={{ code: CodeBlock }}
-                >
-                  {displayText}
-                </Markdown>
-                {isStreaming && (
-                  <span className="inline-block w-1.5 h-4 bg-accent rounded-full animate-pulse ml-0.5" />
-                )}
-              </>
+          <>
+            <div className="text-sm leading-relaxed prose-sm">
+              {isStreaming && !hasText ? (
+                // No text yet — surface what the agent is actually doing instead of a blank bubble.
+                <AgentActivityIndicator activity={liveActivity} />
+              ) : (
+                <>
+                  <Markdown
+                    remarkPlugins={[remarkGfm]}
+                    rehypePlugins={[rehypeHighlight]}
+                    components={{ code: CodeBlock }}
+                  >
+                    {displayText}
+                  </Markdown>
+                  {isStreaming && (
+                    <span className="inline-block w-1.5 h-4 bg-accent rounded-full animate-pulse ml-0.5" />
+                  )}
+                </>
+              )}
+            </div>
+            {isStreaming && hasText && (
+              // Text is flowing — keep the current action visible as a subtle caption beneath it.
+              <div className="mt-2 border-t border-border/50 pt-2">
+                <AgentActivityIndicator activity={liveActivity} size="sm" />
+              </div>
             )}
-          </div>
+          </>
         )}
 
         {message.attachments?.length ? (

@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import readline from 'node:readline';
 import { logger } from '../../lib/logger.js';
 import { getDefaultSttProvisionCommand, resolveLoginShell } from '../../runtime-paths.js';
+import { verifyModelIntegrity } from './model-integrity.js';
 
 /**
  * Downloads the speech model, reporting 0-100 progress via onProgress. Resolves when the model is
@@ -49,6 +50,14 @@ export function provisionSpeechModel(onProgress: (pct: number) => void): Promise
       // Success if the script reported done or exited cleanly — and never reported an error.
       // (The provision script hard-exits, but tolerate odd exit codes when 'done' was seen.)
       if (!failed && (done || code === 0)) {
+        // Tamper canary: refuse a present-but-mismatched model (fail-open if not found).
+        const integrity = verifyModelIntegrity();
+        if (integrity.checked && !integrity.ok) {
+          reject(
+            new Error('The downloaded speech model failed its integrity check and was not loaded.')
+          );
+          return;
+        }
         onProgress(100);
         resolve();
       } else {

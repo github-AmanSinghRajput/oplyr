@@ -1,0 +1,82 @@
+# electron-builder config for the Oplyr macOS app (DMG, Developer ID, notarized).
+# STARTING SCAFFOLD — the first real build will need iteration (see docs/DISTRIBUTION.md Phase 2).
+# Run from apps/desktop:  npm run dist   (after `npm run build` compiles src → dist)
+appId: com.oplyr.desktop
+productName: Oplyr
+copyright: © 2026 Oplyr
+# Set explicitly so electron-builder doesn't need to resolve the (hoisted) electron module to find it.
+electronVersion: 42.5.0
+# Monorepo: do NOT let electron-builder install/rebuild/prune the hoisted root node_modules (that step
+# was deleting devDeps like typescript). We rebuild native modules (better-sqlite3) ourselves and ship
+# them via extraResources. Native app deps (node-pty) are rebuilt manually with @electron/rebuild.
+npmRebuild: false
+
+directories:
+  output: release
+  buildResources: assets # holds icon.icns + entitlements.mac.plist (tracked; not the gitignored build/)
+
+# Files that make up the Electron app itself (compiled main + preload).
+files:
+  - dist/**/*
+  - package.json
+
+# Things shipped alongside the app under Contents/Resources/…
+# ⚠️ The API needs its runtime dependencies too. `../api/dist` alone is NOT enough — better-sqlite3
+# (native) and the API's other prod deps must be present. Recommended approach (see docs): bundle the
+# API with esbuild into a single file with better-sqlite3 marked external, and ship better-sqlite3 +
+# its deps here. This block is the target layout main.ts expects (resources/api, resources/stt).
+extraResources:
+  # The web UI (React build). main.ts loads Resources/web/dist/index.html in packaged mode.
+  # Build it first: `npm run build -w @oplyr/web` (with vite base './' so file:// asset paths work).
+  - from: ../web/dist
+    to: web/dist
+  # esbuild bundle of the API (run `npm run build:pack -w @oplyr/runtime` first).
+  - from: ../api/dist-pack/server.mjs
+    to: api/server.mjs
+  # SQL migrations are read from disk at runtime (not bundled into the JS).
+  - from: ../api/database
+    to: api/database
+  # Native better-sqlite3 — MUST be rebuilt for Electron's ABI before packaging (see docs Phase 2).
+  # Shipped OUTSIDE asar so the forked (ELECTRON_RUN_AS_NODE) API process can require it.
+  - from: ../../node_modules/better-sqlite3
+    to: api/node_modules/better-sqlite3
+  - from: ../../node_modules/bindings
+    to: api/node_modules/bindings
+  # bindings' runtime dependency (better-sqlite3 → bindings → file-uri-to-path).
+  - from: ../../node_modules/file-uri-to-path
+    to: api/node_modules/file-uri-to-path
+  # Native STT binary (build first: cd ../stt && swift build -c release).
+  - from: ../stt/.build/release/oplyr-stt
+    to: stt/oplyr-stt
+
+# Native addons (*.node) can't run from inside the asar archive — keep them unpacked.
+asarUnpack:
+  - "**/*.node"
+
+mac:
+  category: public.app-category.developer-tools
+  icon: assets/icon.icns
+  hardenedRuntime: true
+  entitlements: assets/entitlements.mac.plist
+  entitlementsInherit: assets/entitlements.mac.plist
+  gatekeeperAssess: false
+  target:
+    - dmg
+  # FREE BUILD (no paid Apple account): notarization OFF. electron-builder signs with whatever cert
+  # is in your keychain (the free "Apple Development" cert works for running on YOUR OWN Mac). The
+  # resulting DMG is TESTING-ONLY — other Macs will warn ("can't verify developer"); the user must
+  # right-click → Open. To distribute for real: get the paid account, set `notarize: true`, and
+  # export APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID before `npm run dist`.
+  notarize: false
+
+dmg:
+  # The DMG volume icon also uses the Oplyr logo.
+  icon: assets/icon.icns
+  contents:
+    - x: 130
+      y: 220
+      type: file
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications

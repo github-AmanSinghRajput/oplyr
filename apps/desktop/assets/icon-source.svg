@@ -1,0 +1,19 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>Oplyr</title>
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="40%" r="70%">
+      <stop offset="0%" stop-color="#123024" />
+      <stop offset="100%" stop-color="#0B1510" />
+    </radialGradient>
+  </defs>
+  <!-- On-brand dark rounded background (macOS-style). Dark bg is what makes the light waveform show. -->
+  <rect width="1024" height="1024" rx="224" fill="url(#bg)" />
+  <!-- Oplyr mark, scaled from the 256 source and centered with padding. -->
+  <g transform="translate(212, 212) scale(2.34)">
+    <path d="M211 91C195 52 158 29 116 34C66 40 30 82 36 132C42 183 84 222 135 219C174 217 206 194 220 160" stroke="#14241D" stroke-width="28" stroke-linecap="round" />
+    <path d="M211 91C195 52 158 29 116 34C66 40 30 82 36 132C42 183 84 222 135 219C174 217 206 194 220 160" stroke="#6EFBBE" stroke-width="16" stroke-linecap="round" />
+    <path d="M56 130H80L93 97L110 164L129 76L145 150L159 114H188" stroke="#F2FCFF" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" />
+    <circle cx="211" cy="91" r="10" fill="#6EFBBE" />
+    <circle cx="220" cy="160" r="7" fill="#6EFBBE" />
+  </g>
+</svg>

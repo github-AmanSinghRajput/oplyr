@@ -136,6 +136,19 @@ export function createApp(options?: { apiAuthToken?: string }) {
     app.set('trust proxy', 1);
   }
 
+  // Defense-in-depth against DNS-rebinding: the local runtime only ever serves the loopback host, so
+  // reject any request whose Host header points elsewhere (e.g. a hostile site rebinding its domain
+  // to 127.0.0.1 to treat the local API as same-origin). Runs before everything, incl. health checks.
+  const loopbackHosts = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
+  app.use((request: Request, _response: Response, next: NextFunction) => {
+    const hostname = (request.headers.host ?? '').split(':')[0].toLowerCase();
+    if (hostname && !loopbackHosts.has(hostname) && hostname !== env.host) {
+      next(new AppError(403, 'Requests must target the local Oplyr runtime.', 'FORBIDDEN'));
+      return;
+    }
+    next();
+  });
+
   app.use(
     cors({
       origin: env.allowedOrigin
@@ -951,7 +964,7 @@ export function createApp(options?: { apiAuthToken?: string }) {
           type: 'error',
           error:
             classified?.friendlyMessage ??
-            (error instanceof Error ? error.message : 'Unable to stream chat response.'),
+            (isAppError(error) ? error.message : 'Unable to stream chat response.'),
           errorKind: classified?.kind ?? 'unknown'
         });
       }
@@ -1066,10 +1079,16 @@ export function createApp(options?: { apiAuthToken?: string }) {
     });
 
     const classified = error instanceof AssistantClientError ? error : null;
+    // Only surface messages meant for users — AppError (validation/business rules) and the assistant
+    // client's friendly message. An unclassified error is an unexpected 500 whose raw message may
+    // carry filesystem paths / internals, so return a generic string and keep the detail in the log.
+    const clientMessage =
+      classified?.friendlyMessage ??
+      (isAppError(error)
+        ? error.message
+        : 'Something went wrong. Check the Oplyr server logs for details.');
     response.status(isAppError(error) ? error.statusCode : 500).json({
-      error:
-        classified?.friendlyMessage ??
-        (error instanceof Error ? error.message : 'Internal server error.'),
+      error: clientMessage,
       code: isAppError(error) ? error.code : 'INTERNAL_SERVER_ERROR',
       errorKind: classified?.kind ?? undefined,
       requestId

@@ -29,6 +29,8 @@ export interface ChatStreamHandle {
   typedMessageText: Record<string, string>;
   typingTargets: Record<string, string>;
   activeChatStreamMessageId: string | null;
+  /** The agent's current streamed action (e.g. "Reading page.tsx"), or null when not streaming. */
+  liveActivity: string | null;
   draftAttachments: ChatAttachment[];
   setDraftAttachments: React.Dispatch<React.SetStateAction<ChatAttachment[]>>;
   textInput: string;
@@ -64,6 +66,7 @@ export function useChatStream(): ChatStreamHandle {
   const [typedMessageText, setTypedMessageText] = useState<Record<string, string>>({});
   const [typingTargets, setTypingTargets] = useState<Record<string, string>>({});
   const [activeChatStreamMessageId, setActiveChatStreamMessageId] = useState<string | null>(null);
+  const [liveActivity, setLiveActivity] = useState<string | null>(null);
 
   const chatStreamAbortRef = useRef<AbortController | null>(null);
   const activeChatStreamDraftRef = useRef<{
@@ -122,6 +125,7 @@ export function useChatStream(): ChatStreamHandle {
       setActiveChatStreamMessageId((current) =>
         current === draft.assistantMessageId ? null : current
       );
+      setLiveActivity(null);
       clearTypingStateForMessage(draft.assistantMessageId);
 
       if (activeVoiceAssistantMessageIdRef.current === draft.assistantMessageId) {
@@ -175,6 +179,7 @@ export function useChatStream(): ChatStreamHandle {
                   assistantMessageId: event.assistantMessage.id
                 };
                 setActiveChatStreamMessageId(event.assistantMessage.id);
+                setLiveActivity(null);
                 setMessages((current) =>
                   mergeUniqueMessages(current, [event.userMessage, event.assistantMessage])
                 );
@@ -201,6 +206,7 @@ export function useChatStream(): ChatStreamHandle {
               }
 
               if (event.type === 'activity') {
+                setLiveActivity(event.activity);
                 options.onActivity?.(event);
                 return;
               }
@@ -317,6 +323,7 @@ export function useChatStream(): ChatStreamHandle {
     typedMessageText,
     typingTargets,
     activeChatStreamMessageId,
+    liveActivity,
     draftAttachments,
     setDraftAttachments,
     textInput,

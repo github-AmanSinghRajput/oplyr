@@ -93,9 +93,12 @@ export class GeminiSettingsService {
 }
 
 function sanitizeGeminiSettings(input: Partial<GeminiSettings> | null | undefined): GeminiSettings {
-  const model = typeof input?.model === 'string' ? input.model.trim() : '';
+  const requested = typeof input?.model === 'string' ? input.model.trim() : '';
+  // Only persist a known slug — it's passed to `gemini --model`, so never let an arbitrary string
+  // through. Unknown/empty falls back to the provider default (null).
+  const model = knownGeminiModels.some((option) => option.slug === requested) ? requested : null;
   return {
-    model: model || null,
+    model,
     voiceModelMode: sanitizeVoiceModelMode(input?.voiceModelMode) ?? 'auto'
   };
 }

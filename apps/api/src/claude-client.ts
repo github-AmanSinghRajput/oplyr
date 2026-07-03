@@ -1,4 +1,5 @@
 import { execFile, spawn } from 'node:child_process';
+import { agentSpawnEnv } from './lib/spawn-env.js';
 import path from 'node:path';
 import type { ChatMessage, PendingApproval, WorkspaceState } from './types.js';
 import type { ClaudeSettingsService } from './features/claude/claude-settings.service.js';
@@ -45,7 +46,7 @@ function execClaudeCommand(args: string[], cwd: string) {
       args,
       {
         cwd,
-        env: process.env,
+        env: agentSpawnEnv(),
         timeout: 10 * 60 * 1000,
         maxBuffer: 1024 * 1024 * 12
       },
@@ -94,7 +95,7 @@ function execClaudeCommandWithStdin(args: string[], cwd: string, stdinData: stri
       args,
       {
         cwd,
-        env: process.env,
+        env: agentSpawnEnv(),
         timeout: 10 * 60 * 1000,
         maxBuffer: 1024 * 1024 * 12
       },
@@ -769,7 +770,7 @@ async function runClaudePromptStream(options: {
         attachChild(
           spawn(getClaudeCommand(), args, {
             cwd: options.cwd,
-            env: process.env,
+            env: agentSpawnEnv(),
             stdio: ['pipe', 'pipe', 'pipe']
           })
         );

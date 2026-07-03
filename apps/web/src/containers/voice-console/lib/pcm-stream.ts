@@ -1,4 +1,9 @@
 import { downsampleTo16k, floatToInt16 } from './stream-protocol';
+// Import the worklet source as a string and load it via a Blob URL. This works regardless of origin
+// (the packaged app runs under file://, where an absolute "/pcm-worklet.js" path 404s and data: URLs
+// aren't reliably accepted by addModule). The worklet runs in its own global scope, so `?raw` keeps
+// it untransformed.
+import pcmWorkletSource from '@/assets/pcm-worklet.js?raw';
 
 export interface PcmCapture {
   analyser: AnalyserNode;
@@ -20,7 +25,14 @@ export async function startPcmCapture(
   if (audioContext.state === 'suspended') {
     await audioContext.resume().catch(() => undefined);
   }
-  await audioContext.audioWorklet.addModule('/pcm-worklet.js');
+  const workletUrl = URL.createObjectURL(
+    new Blob([pcmWorkletSource], { type: 'application/javascript' })
+  );
+  try {
+    await audioContext.audioWorklet.addModule(workletUrl);
+  } finally {
+    URL.revokeObjectURL(workletUrl);
+  }
   const source = audioContext.createMediaStreamSource(stream);
 
   const analyser = audioContext.createAnalyser();

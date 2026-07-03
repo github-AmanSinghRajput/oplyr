@@ -33,7 +33,10 @@ async function bootstrap() {
       url: `http://${env.host}:${env.port}`
     });
   });
-  const voiceStreamServer = attachVoiceStreamGateway(server);
+  const voiceStreamServer = attachVoiceStreamGateway(server, {
+    authToken: apiAuthToken,
+    allowedOrigin: env.allowedOrigin
+  });
 
   async function shutdown() {
     for (const client of voiceStreamServer.clients) {

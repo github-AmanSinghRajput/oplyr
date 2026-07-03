@@ -166,6 +166,9 @@ export function useVoiceSession({
   const sendTranscript = useCallback(
     (transcript: string) => {
       setStreamedTranscriptOverride(transcript);
+      // Clear the previous turn's answer immediately so a new command never shows the old reply.
+      setSpokenReplyPreview('');
+      setVoiceActivity(null);
       processingTurnRef.current = true;
       isFinalizingRef.current = false;
       sessionActiveRef.current = true;
@@ -472,6 +475,9 @@ export function useVoiceSession({
       }
     };
 
+    // A new command is starting — wipe the previous turn's answer/transcript so nothing stale shows.
+    setSpokenReplyPreview('');
+    setStreamedTranscriptOverride('');
     updateVoiceSession({ active: true, phase: 'listening', liveTranscript: '', error: null });
     appendActivity('Listening for your request');
     setIsRecording(true);

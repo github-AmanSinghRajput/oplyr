@@ -5,6 +5,7 @@ import { VoiceWaveform } from '@/components/voice/VoiceWaveform';
 import { VoiceListeningStrip } from '@/components/voice/VoiceListeningStrip';
 import { TypingDots } from '@/components/voice/TypingDots';
 import { MessageBubble } from '@/components/chat/MessageBubble';
+import { AgentActivityIndicator } from '@/components/chat/AgentActivityIndicator';
 import { ProviderLogo } from '@/components/providers/ProviderLogo';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
@@ -31,6 +32,7 @@ interface VoiceScreenProps {
   micAnalyserRef: React.RefObject<AnalyserNode | null>;
   userTranscript: string;
   aiReply: MessageEntry | null;
+  voiceActivity: string | null;
   assistant: VoiceAssistantInfo | null;
   audioAvailable: boolean;
   userName?: string | null;
@@ -59,6 +61,7 @@ export function VoiceScreen({
   micAnalyserRef,
   userTranscript,
   aiReply,
+  voiceActivity,
   assistant,
   audioAvailable,
   userName,
@@ -219,13 +222,13 @@ export function VoiceScreen({
                 Assistant
               </span>
             )}
-            {isWorking && <TypingDots size="sm" className="ml-1" />}
+            {isWorking && !replyText && <TypingDots size="sm" className="ml-1" />}
           </div>
           {aiReply && replyText ? (
-            <MessageBubble message={aiReply} />
+            <MessageBubble message={aiReply} isStreaming={isWorking} liveActivity={voiceActivity} />
           ) : (
-            <div className="rounded-[var(--radius-panel)] border border-border bg-surface-1 px-4 py-5 flex items-center justify-center">
-              <TypingDots />
+            <div className="rounded-[var(--radius-panel)] border border-border bg-surface-1 px-4 py-5 flex items-center">
+              <AgentActivityIndicator activity={voiceActivity} />
             </div>
           )}
         </div>

@@ -115,12 +115,21 @@ Current hard floor: **Apple Silicon (M1+) + macOS 14 Sonoma** — gated by the S
 
 ### Distribution baseline
 
-- [ ] DMG packaging path
+Full step-by-step guide: **`docs/DISTRIBUTION.md`** (Apple account → packaged runtime → DMG → sign +
+notarize → hosting → website/email → post-public Homebrew & Mac App Store).
+
+- [ ] wire the packaged runtime (bundle + start the API, bundle STT binary + models) — the real gate
+- [ ] DMG packaging path (electron-builder) + app/DMG icon from the Oplyr logo (`apps/desktop/scripts/make-icon.sh`)
+- [ ] sign + notarize + staple (requires the paid Apple Developer Program)
 - [ ] first-launch dependency/model setup experience
-- [ ] install/update instructions
-- [ ] invite-only beta website/download flow
+- [ ] host the DMG (GitHub Releases) + wire `content/releases.ts` / `/download`
+- [ ] invite-approval email with the download link
 - [x] beta QA checklist documented in `docs/BETA_QA_CHECKLIST.md`
 - [x] voice runtime bootstrap policy documented in `docs/VOICE_RUNTIME_BOOTSTRAP.md`
+
+Post-public distribution (documented in `docs/DISTRIBUTION.md`, build after public launch):
+- [ ] Homebrew cask via own tap (`brew install --cask oplyr`)
+- [ ] Mac App Store submission (separate cert + App Sandbox entitlements + review)
 
 ---
 
