@@ -13,10 +13,15 @@ interface AgentActivityIndicatorProps {
 }
 
 const ROTATE_MS = 2400;
+// How long a freshly-arrived real activity is held before we resume rotating engagement phrases.
+// This keeps the indicator alive during long non-streamed work (e.g. edit tasks that plan-then-write
+// for a minute or more with no intermediate events) instead of freezing on one static line.
+const REAL_HOLD_MS = 3600;
 
 /**
- * A single-line "the agent is working" status. Prefers the real streamed activity; falls back to a
- * gently rotating playful phrase during quiet stretches. Used by both the chat and voice surfaces.
+ * A single-line "the agent is working" status. Surfaces the real streamed activity when one arrives
+ * (held briefly), and otherwise continuously rotates a gentle engagement phrase so the user always
+ * sees the agent is alive — even across long stretches with no events. Shared by chat + voice.
  */
 export function AgentActivityIndicator({
   activity,
@@ -24,16 +29,27 @@ export function AgentActivityIndicator({
   className
 }: AgentActivityIndicatorProps) {
   const [tick, setTick] = useState(0);
+  const [showReal, setShowReal] = useState(false);
   const trimmed = activity?.trim() ?? '';
 
+  // Always rotate the fallback phrases on a steady cadence.
   useEffect(() => {
-    // Only rotate phrases while there's no concrete activity to show.
-    if (trimmed) return;
     const id = window.setInterval(() => setTick((value) => value + 1), ROTATE_MS);
     return () => window.clearInterval(id);
+  }, []);
+
+  // When a new concrete activity arrives, show it and hold briefly, then fall back to rotation.
+  useEffect(() => {
+    if (!trimmed) {
+      setShowReal(false);
+      return;
+    }
+    setShowReal(true);
+    const id = window.setTimeout(() => setShowReal(false), REAL_HOLD_MS);
+    return () => window.clearTimeout(id);
   }, [trimmed]);
 
-  const label = trimmed || getFallbackPhrase(tick);
+  const label = showReal && trimmed ? trimmed : getFallbackPhrase(tick);
 
   return (
     <span

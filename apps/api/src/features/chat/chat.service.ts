@@ -170,7 +170,10 @@ export class ChatService {
         userMessage,
         correlation,
         history,
-        workspace
+        workspace,
+        // The write path is batch (plan → apply), not token-streamed — surface its phases as activity
+        // so the UI shows real progress across the long edit instead of a frozen line.
+        (activity) => callbacks?.onActivity?.({ activity })
       );
     }
 
@@ -212,7 +215,8 @@ export class ChatService {
     userMessage: ChatMessage,
     correlation?: CodexCorrelationOptions,
     existingHistory?: ChatMessage[],
-    existingWorkspace?: ReturnType<ChatRuntimeAdapter['getWorkspaceState']>
+    existingWorkspace?: ReturnType<ChatRuntimeAdapter['getWorkspaceState']>,
+    onActivity?: (activity: string) => void
   ): Promise<ChatTurnResult> {
     const workspace = existingWorkspace ?? this.runtime.getWorkspaceState();
     const history = existingHistory ?? (await this.readConversationHistory());
@@ -234,7 +238,11 @@ export class ChatService {
       };
     }
 
-    const decision = await this.assistant.decideWriteIntent(text, history, workspace, correlation);
+    onActivity?.('Reviewing your request and planning the changes');
+    const decision = await this.assistant.decideWriteIntent(text, history, workspace, {
+      ...correlation,
+      onActivity
+    });
     logger.info('chat.write_intent.decided', {
       source,
       intent: decision.intent,
@@ -242,7 +250,15 @@ export class ChatService {
     });
 
     if (decision.intent === 'reply') {
-      const assistantMessage = this.toChatMessage('assistant', decision.assistant_text, source);
+      // A provider occasionally returns an empty reply (e.g. a structured-output miss after heavy
+      // file reading). Never surface a blank bubble — fall back to a clear, actionable message.
+      const replyText = decision.assistant_text?.trim()
+        ? decision.assistant_text
+        : "I looked into that but couldn't put together a response. Could you rephrase it or try again?";
+      if (!decision.assistant_text?.trim()) {
+        logger.warn('chat.reply.empty_text', { source, title: decision.proposal_title ?? null });
+      }
+      const assistantMessage = this.toChatMessage('assistant', replyText, source);
       await this.persistMessages([userMessage, assistantMessage]);
 
       return {
@@ -275,12 +291,13 @@ export class ChatService {
     // Approve keeps it; reject reverts to the snapshot above. Capture the assistant's own summary of
     // what it did so approve can show it verbatim (its natural "I changed X, Y…" message).
     try {
-      const writeResult = await this.assistant.executeApprovedWrite(
-        approval,
-        history,
-        workspace,
-        correlation
+      onActivity?.(
+        `Making the changes${decision.proposal_title ? `: ${decision.proposal_title}` : ''}`
       );
+      const writeResult = await this.assistant.executeApprovedWrite(approval, history, workspace, {
+        ...correlation,
+        onActivity
+      });
       approval.executionSummary = writeResult.text.trim() || undefined;
     } catch (error) {
       if (baselineRef && this.assistant.revertWorkingTree) {
@@ -302,6 +319,7 @@ export class ChatService {
       throw error;
     }
 
+    onActivity?.('Preparing the diff for your review');
     let diff = await this.collectTurnDiff(
       workspace.projectRoot,
       baselineRef,
@@ -324,7 +342,12 @@ export class ChatService {
       changedFiles: diff.files.length
     });
 
-    const assistantMessage = this.toChatMessage('assistant', decision.assistant_text, source);
+    // Guard against an empty spoken explanation so the review turn always has a visible summary.
+    const proposalText =
+      decision.assistant_text?.trim() ||
+      decision.proposal_summary?.trim() ||
+      `I prepared changes${approval.title ? `: ${approval.title}` : ''}. Review the diff to approve or reject.`;
+    const assistantMessage = this.toChatMessage('assistant', proposalText, source);
     await this.persistMessages([userMessage, assistantMessage]);
 
     return {

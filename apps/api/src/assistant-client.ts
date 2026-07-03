@@ -97,13 +97,13 @@ interface CodingAssistantProvider {
     userText: string,
     history: ChatMessage[],
     workspace: WorkspaceState,
-    options?: { voiceTurnId?: string }
+    options?: { voiceTurnId?: string; onActivity?: (activity: string) => void }
   ): Promise<WriteDecision>;
   executeApprovedWrite(
     approval: PendingApproval,
     history: ChatMessage[],
     workspace: WorkspaceState,
-    options?: { voiceTurnId?: string }
+    options?: { voiceTurnId?: string; onActivity?: (activity: string) => void }
   ): Promise<{ text: string }>;
 }
 
@@ -324,7 +324,7 @@ export async function decideWriteIntent(
   userText: string,
   history: ChatMessage[],
   workspace: WorkspaceState,
-  options?: { voiceTurnId?: string }
+  options?: { voiceTurnId?: string; onActivity?: (activity: string) => void }
 ) {
   const provider = await getActiveProvider();
   return provider.decideWriteIntent(userText, history, workspace, options);
@@ -334,7 +334,7 @@ export async function executeApprovedWrite(
   approval: PendingApproval,
   history: ChatMessage[],
   workspace: WorkspaceState,
-  options?: { voiceTurnId?: string }
+  options?: { voiceTurnId?: string; onActivity?: (activity: string) => void }
 ) {
   const provider = await getActiveProvider();
   return provider.executeApprovedWrite(approval, history, workspace, options);

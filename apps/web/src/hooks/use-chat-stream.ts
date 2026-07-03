@@ -213,12 +213,19 @@ export function useChatStream(): ChatStreamHandle {
 
               if (event.type === 'completed') {
                 result = event.result;
-                setMessages((current) =>
-                  mergeUniqueMessages(current, [
+                const draft = activeChatStreamDraftRef.current;
+                setMessages((current) => {
+                  // The write path streams under a placeholder id, then finalizes under a NEW id.
+                  // Drop the now-orphaned empty placeholder so it doesn't linger as a blank bubble.
+                  const withoutStub =
+                    draft && draft.assistantMessageId !== event.result.assistantMessage.id
+                      ? current.filter((message) => message.id !== draft.assistantMessageId)
+                      : current;
+                  return mergeUniqueMessages(withoutStub, [
                     event.result.userMessage,
                     event.result.assistantMessage
-                  ])
-                );
+                  ]);
+                });
                 clearActiveChatStreamDraft({ removeMessages: false });
                 return;
               }

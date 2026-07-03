@@ -561,6 +561,7 @@ async function runClaudePromptStream(options: {
   prompt: string;
   allowedTools: string;
   signal?: AbortSignal;
+  outputSchema?: unknown;
   onTextSnapshot?: (text: string) => void;
   onActivityUpdate?: (activity: string) => void;
   executionContext?: { surface: 'voice' | 'text'; intent: 'discussion' | 'write' };
@@ -575,6 +576,12 @@ async function runClaudePromptStream(options: {
       '--allowedTools',
       options.allowedTools
     ];
+
+    // Structured-output turns (e.g. the write-intent decision) still stream tool activity, but the
+    // final result is the schema-conforming JSON.
+    if (options.outputSchema) {
+      baseArgs.push('--json-schema', JSON.stringify(options.outputSchema));
+    }
 
     let stdoutBuffer = '';
     let stderrBuffer = '';
@@ -666,7 +673,13 @@ async function runClaudePromptStream(options: {
           child?.kill('SIGTERM');
           return;
         }
-        const resultText = typeof message.result === 'string' ? message.result.trim() : '';
+        // A schema turn may surface the payload as an object rather than a string — normalize both.
+        const resultText =
+          typeof message.result === 'string'
+            ? message.result.trim()
+            : message.result && typeof message.result === 'object'
+              ? JSON.stringify(message.result)
+              : '';
         finalText = resultText || latestText;
         if (finalText && finalText !== latestText) {
           options.onTextSnapshot?.(finalText);
@@ -783,7 +796,7 @@ export async function decideClaudeWriteIntent(
   userText: string,
   history: ChatMessage[],
   workspace: WorkspaceState,
-  options?: { voiceTurnId?: string }
+  options?: { voiceTurnId?: string; onActivity?: (activity: string) => void }
 ) {
   await assertClaudeReady();
   const cwd = workspace.projectRoot ?? getRootDir();
@@ -801,11 +814,14 @@ export async function decideClaudeWriteIntent(
     required: ['intent', 'assistant_text', 'proposal_title', 'proposal_summary', 'tasks', 'agents'],
     additionalProperties: false
   };
-  const raw = await runClaudePrompt({
+  // Stream (not the batch runner) so Claude's real reads ("Reading X", "Searching …") surface as
+  // activity during the planning phase; the final result is still the schema-conforming JSON.
+  const raw = await runClaudePromptStream({
     cwd,
     prompt: buildWriteDecisionPrompt(userText, history, workspace),
     allowedTools: 'Read',
     outputSchema: schema,
+    onActivityUpdate: options?.onActivity,
     executionContext: {
       surface: options?.voiceTurnId ? 'voice' : 'text',
       intent: 'write'
@@ -820,7 +836,27 @@ export async function decideClaudeWriteIntent(
     responseLength: raw.length
   });
 
-  const parsed = JSON.parse(raw) as Record<string, unknown>;
+  // Resilient parse: if the streamed payload isn't clean JSON, try to extract the embedded object
+  // rather than throwing (which would fail the whole turn). Fall back to a reply so the user gets one.
+  let parsed = tryParseJson(raw) as Record<string, unknown> | null;
+  if (!parsed || typeof parsed !== 'object') {
+    try {
+      parsed = extractClaudeJsonPayload(raw) as Record<string, unknown>;
+    } catch {
+      parsed = null;
+    }
+  }
+  if (!parsed || typeof parsed !== 'object') {
+    logger.warn('claude.write_intent.unparsable', { projectName: path.basename(cwd) });
+    return {
+      intent: 'reply' as const,
+      assistant_text: '',
+      proposal_title: '',
+      proposal_summary: '',
+      tasks: [],
+      agents: []
+    };
+  }
   return {
     intent: parsed.intent === 'propose_write' ? ('propose_write' as const) : ('reply' as const),
     assistant_text: typeof parsed.assistant_text === 'string' ? parsed.assistant_text : '',
@@ -839,14 +875,16 @@ export async function executeClaudeApprovedWrite(
   approval: PendingApproval,
   history: ChatMessage[],
   workspace: WorkspaceState,
-  options?: { voiceTurnId?: string }
+  options?: { voiceTurnId?: string; onActivity?: (activity: string) => void }
 ) {
   await assertClaudeReady();
   const startedAt = Date.now();
-  const text = await runClaudePrompt({
+  // Stream the real edits ("Reading X", "Editing Y") through the long write phase.
+  const text = await runClaudePromptStream({
     cwd: approval.projectRoot,
     prompt: buildWriteExecutionPrompt(approval, history, workspace),
     allowedTools: 'Read,Edit,Bash',
+    onActivityUpdate: options?.onActivity,
     executionContext: {
       surface: options?.voiceTurnId ? 'voice' : 'text',
       intent: 'write'
