@@ -13,10 +13,10 @@ interface AgentActivityIndicatorProps {
 }
 
 const ROTATE_MS = 2400;
-// How long a freshly-arrived real activity is held before we resume rotating engagement phrases.
-// This keeps the indicator alive during long non-streamed work (e.g. edit tasks that plan-then-write
-// for a minute or more with no intermediate events) instead of freezing on one static line.
-const REAL_HOLD_MS = 3600;
+// How many rotation ticks a freshly-arrived real activity is held before we resume rotating
+// engagement phrases (~ROTATE_MS each). Keeps the indicator alive during long non-streamed work
+// (e.g. edit tasks that plan-then-write for a minute with no events) instead of freezing on a line.
+const REAL_HOLD_TICKS = 2;
 
 /**
  * A single-line "the agent is working" status. Surfaces the real streamed activity when one arrives
@@ -29,27 +29,26 @@ export function AgentActivityIndicator({
   className
 }: AgentActivityIndicatorProps) {
   const [tick, setTick] = useState(0);
-  const [showReal, setShowReal] = useState(false);
   const trimmed = activity?.trim() ?? '';
 
-  // Always rotate the fallback phrases on a steady cadence.
+  // Adjust state when the activity prop changes — React's recommended render-phase pattern for
+  // deriving state from props (no setState-in-effect cascade). When a fresh real activity arrives,
+  // hold it for REAL_HOLD_TICKS before rotation resumes.
+  const [prevActivity, setPrevActivity] = useState(activity);
+  const [realUntilTick, setRealUntilTick] = useState(() => (trimmed ? REAL_HOLD_TICKS : -1));
+  if (activity !== prevActivity) {
+    setPrevActivity(activity);
+    setRealUntilTick(trimmed ? tick + REAL_HOLD_TICKS : -1);
+  }
+
+  // Rotate the fallback phrases on a steady cadence (setState in a callback — no effect cascade).
   useEffect(() => {
     const id = window.setInterval(() => setTick((value) => value + 1), ROTATE_MS);
     return () => window.clearInterval(id);
   }, []);
 
-  // When a new concrete activity arrives, show it and hold briefly, then fall back to rotation.
-  useEffect(() => {
-    if (!trimmed) {
-      setShowReal(false);
-      return;
-    }
-    setShowReal(true);
-    const id = window.setTimeout(() => setShowReal(false), REAL_HOLD_MS);
-    return () => window.clearTimeout(id);
-  }, [trimmed]);
-
-  const label = showReal && trimmed ? trimmed : getFallbackPhrase(tick);
+  const showReal = Boolean(trimmed) && tick < realUntilTick;
+  const label = showReal ? trimmed : getFallbackPhrase(tick);
 
   return (
     <span
