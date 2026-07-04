@@ -11,6 +11,7 @@ interface MessageListProps {
   typedMessages?: Record<string, string>;
   apiBaseUrl?: string;
   liveActivity?: string | null;
+  activityLog?: string[];
 }
 
 export function MessageList({
@@ -18,7 +19,8 @@ export function MessageList({
   streamingMessageId,
   typedMessages,
   apiBaseUrl,
-  liveActivity
+  liveActivity,
+  activityLog
 }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -62,6 +64,7 @@ export function MessageList({
               typedText={typedMessages?.[msg.id]}
               apiBaseUrl={apiBaseUrl}
               liveActivity={msg.id === streamingMessageId ? liveActivity : null}
+              activityLog={msg.id === streamingMessageId ? activityLog : undefined}
             />
           </motion.div>
         ))}

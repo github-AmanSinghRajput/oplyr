@@ -3,7 +3,7 @@ import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import { cn } from '@/lib/cn';
 import { CodeBlock } from './CodeBlock';
-import { AgentActivityIndicator } from './AgentActivityIndicator';
+import { AgentActivityTimeline } from './AgentActivityTimeline';
 import type { MessageEntry } from '@/containers/voice-console/lib/types';
 import { formatClock } from '@/containers/voice-console/lib/helpers';
 
@@ -14,13 +14,16 @@ interface MessageBubbleProps {
   apiBaseUrl?: string;
   /** Current agent action shown while this bubble is streaming (e.g. "Reading page.tsx"). */
   liveActivity?: string | null;
+  /** Chronological log of the turn's actions, for the expandable timeline. */
+  activityLog?: string[];
 }
 
 export function MessageBubble({
   message,
   isStreaming,
   typedText,
-  liveActivity
+  liveActivity,
+  activityLog
 }: MessageBubbleProps) {
   const isUser = message.role === 'user';
   const displayText = typedText ?? message.text;
@@ -43,7 +46,11 @@ export function MessageBubble({
             <div className="text-sm leading-relaxed prose-sm">
               {isStreaming && !hasText ? (
                 // No text yet — surface what the agent is actually doing instead of a blank bubble.
-                <AgentActivityIndicator activity={liveActivity} />
+                <AgentActivityTimeline
+                  activities={activityLog ?? []}
+                  working
+                  current={liveActivity}
+                />
               ) : (
                 <>
                   <Markdown
@@ -60,9 +67,13 @@ export function MessageBubble({
               )}
             </div>
             {isStreaming && hasText && (
-              // Text is flowing — keep the current action visible as a subtle caption beneath it.
+              // Text is flowing — keep the action timeline visible as a subtle caption beneath it.
               <div className="mt-2 border-t border-border/50 pt-2">
-                <AgentActivityIndicator activity={liveActivity} size="sm" />
+                <AgentActivityTimeline
+                  activities={activityLog ?? []}
+                  working
+                  current={liveActivity}
+                />
               </div>
             )}
           </>

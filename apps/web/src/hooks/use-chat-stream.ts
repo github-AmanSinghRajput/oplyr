@@ -31,12 +31,16 @@ export interface ChatStreamHandle {
   activeChatStreamMessageId: string | null;
   /** The agent's current streamed action (e.g. "Reading page.tsx"), or null when not streaming. */
   liveActivity: string | null;
+  /** Chronological log of the current turn's actions, for the expandable activity timeline. */
+  activityLog: string[];
   draftAttachments: ChatAttachment[];
   setDraftAttachments: React.Dispatch<React.SetStateAction<ChatAttachment[]>>;
   textInput: string;
   setTextInput: (value: string) => void;
   isSubmittingTurn: boolean;
   isStreaming: boolean;
+  /** True for the entire turn (send → resolve), across chat + voice. Use to gate single-flight. */
+  isTurnActive: boolean;
   streamChatMessage: (
     message: string,
     source: 'voice' | 'text',
@@ -63,10 +67,15 @@ export function useChatStream(): ChatStreamHandle {
   const [draftAttachments, setDraftAttachments] = useState<ChatAttachment[]>([]);
   const [textInput, setTextInput] = useState('');
   const [isSubmittingTurn] = useState(false);
+  // True for the WHOLE turn — from the moment a message is sent until it resolves — including the
+  // pre-stream gap. This is the single source of truth for "an agent turn is in flight", shared by
+  // the chat and voice views so both reflect the same turn and neither can start a second one.
+  const [isTurnActive, setIsTurnActive] = useState(false);
   const [typedMessageText, setTypedMessageText] = useState<Record<string, string>>({});
   const [typingTargets, setTypingTargets] = useState<Record<string, string>>({});
   const [activeChatStreamMessageId, setActiveChatStreamMessageId] = useState<string | null>(null);
   const [liveActivity, setLiveActivity] = useState<string | null>(null);
+  const [activityLog, setActivityLog] = useState<string[]>([]);
 
   const chatStreamAbortRef = useRef<AbortController | null>(null);
   const activeChatStreamDraftRef = useRef<{
@@ -165,6 +174,7 @@ export function useChatStream(): ChatStreamHandle {
       abortActiveChatStream();
       const abortController = new AbortController();
       chatStreamAbortRef.current = abortController;
+      setIsTurnActive(true);
       let result: ReplyResponse | ApprovalRequiredResponse | null = null;
 
       try {
@@ -180,6 +190,7 @@ export function useChatStream(): ChatStreamHandle {
                 };
                 setActiveChatStreamMessageId(event.assistantMessage.id);
                 setLiveActivity(null);
+                setActivityLog([]);
                 setMessages((current) =>
                   mergeUniqueMessages(current, [event.userMessage, event.assistantMessage])
                 );
@@ -207,6 +218,10 @@ export function useChatStream(): ChatStreamHandle {
 
               if (event.type === 'activity') {
                 setLiveActivity(event.activity);
+                setActivityLog((current) => {
+                  if (current[current.length - 1] === event.activity) return current;
+                  return [...current, event.activity].slice(-40);
+                });
                 options.onActivity?.(event);
                 return;
               }
@@ -252,12 +267,21 @@ export function useChatStream(): ChatStreamHandle {
 
         if (!result) {
           clearActiveChatStreamDraft({ removeMessages: true });
-          const batchResult = await service.sendMessage(
-            message,
-            source,
-            options.voiceTurnId,
-            options.attachmentIds ?? []
-          );
+          let batchResult;
+          try {
+            batchResult = await service.sendMessage(
+              message,
+              source,
+              options.voiceTurnId,
+              options.attachmentIds ?? []
+            );
+          } catch (batchError) {
+            // Never fail silently — the turn is over and the input is restored, so tell the user why.
+            const message =
+              batchError instanceof Error ? batchError.message : 'The agent could not respond.';
+            pushToast('error', "Couldn't complete that", message);
+            throw batchError;
+          }
           setMessages((current) =>
             mergeUniqueMessages(current, [batchResult.userMessage, batchResult.assistantMessage])
           );
@@ -271,6 +295,7 @@ export function useChatStream(): ChatStreamHandle {
       } finally {
         if (chatStreamAbortRef.current === abortController) {
           chatStreamAbortRef.current = null;
+          setIsTurnActive(false);
         }
         if (!result && !abortController.signal.aborted) {
           setActiveChatStreamMessageId(null);
@@ -331,12 +356,14 @@ export function useChatStream(): ChatStreamHandle {
     typingTargets,
     activeChatStreamMessageId,
     liveActivity,
+    activityLog,
     draftAttachments,
     setDraftAttachments,
     textInput,
     setTextInput,
     isSubmittingTurn,
     isStreaming: Boolean(activeChatStreamMessageId),
+    isTurnActive,
     streamChatMessage,
     abortActiveChatStream,
     handleAttachFiles,

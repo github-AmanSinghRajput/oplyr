@@ -12,6 +12,7 @@ interface ChatScreenProps {
   streamingMessageId: string | null;
   typedMessages: Record<string, string>;
   liveActivity: string | null;
+  activityLog: string[];
   disabled: boolean;
   onTextInputChange: (value: string) => void;
   onSubmit: (e: FormEvent<HTMLFormElement>) => void;
@@ -30,6 +31,7 @@ export function ChatScreen({
   streamingMessageId,
   typedMessages,
   liveActivity,
+  activityLog,
   disabled,
   onTextInputChange,
   onSubmit,
@@ -46,6 +48,7 @@ export function ChatScreen({
         typedMessages={typedMessages}
         apiBaseUrl={apiBaseUrl}
         liveActivity={liveActivity}
+        activityLog={activityLog}
       />
       <div data-tour="composer">
         <ChatComposer

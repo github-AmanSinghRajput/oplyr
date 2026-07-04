@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import cors from 'cors';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import {
-  AssistantClientError,
+  classifyAssistantError,
   connectAssistantProvider,
   disconnectAssistantProvider,
   getAssistantState,
@@ -959,7 +959,7 @@ export function createApp(options?: { apiAuthToken?: string }) {
           errorCode: isAppError(error) ? error.code : 'INTERNAL_SERVER_ERROR',
           message: error instanceof Error ? error.message : 'Unhandled API error'
         });
-        const classified = error instanceof AssistantClientError ? error : null;
+        const classified = classifyAssistantError(error);
         writeNdjson(response, {
           type: 'error',
           error:
@@ -1078,7 +1078,7 @@ export function createApp(options?: { apiAuthToken?: string }) {
       details
     });
 
-    const classified = error instanceof AssistantClientError ? error : null;
+    const classified = classifyAssistantError(error);
     // Only surface messages meant for users — AppError (validation/business rules) and the assistant
     // client's friendly message. An unclassified error is an unexpected 500 whose raw message may
     // carry filesystem paths / internals, so return a generic string and keep the detail in the log.

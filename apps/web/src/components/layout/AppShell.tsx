@@ -4,7 +4,6 @@ import {
   startTransition,
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
   type FormEvent
@@ -295,18 +294,18 @@ export function AppShell() {
   const voiceState = getVoiceState(status);
   const lastAssistant = [...chat.messages].reverse().find((m) => m.role === 'assistant') ?? null;
   const lastUser = [...chat.messages].reverse().find((m) => m.role === 'user') ?? null;
-  // Voice shows only the CURRENT turn's reply (cleared when a new command starts), so the previous
-  // answer never lingers. Driven by the per-turn preview rather than the full chat history.
-  const voiceReply = useMemo<MessageEntry | null>(() => {
-    if (!voice.spokenReplyPreview.trim()) return null;
-    return {
-      id: 'voice-live-reply',
-      role: 'assistant',
-      text: voice.spokenReplyPreview,
-      createdAt: lastAssistant?.createdAt ?? new Date().toISOString(),
-      source: 'voice'
-    };
-  }, [voice.spokenReplyPreview, lastAssistant?.createdAt]);
+  // Chat + voice share ONE turn state (the chat hook). The voice view reflects the same turn no
+  // matter where it was started: while a turn is active, show the streaming assistant message (empty
+  // until text arrives → the working timeline shows); otherwise the last completed reply. Hidden
+  // while recording a new command so the previous answer never lingers.
+  const streamingAssistant = chat.activeChatStreamMessageId
+    ? (chat.messages.find((m) => m.id === chat.activeChatStreamMessageId) ?? null)
+    : null;
+  const voiceReply: MessageEntry | null = voice.isRecording
+    ? null
+    : chat.isTurnActive
+      ? streamingAssistant
+      : lastAssistant;
   const [projectInput, setProjectInput] = useState(status?.workspace.projectRoot ?? '');
   const [voiceBootstrap, setVoiceBootstrap] = useState<VoiceBootstrapStatus | null>(null);
   const bootstrapRequestedRef = useRef(false);
@@ -414,7 +413,8 @@ export function AppShell() {
 
   function handleTextSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (chat.isSubmittingTurn) return;
+    // Single-flight: one agent turn at a time (chat OR voice) so history never interleaves.
+    if (chat.isSubmittingTurn || chat.isTurnActive) return;
 
     const nextMessage = chat.textInput.trim();
     if (!nextMessage && chat.draftAttachments.length === 0) return;
@@ -516,7 +516,9 @@ export function AppShell() {
               ''
             }
             aiReply={voiceReply}
-            voiceActivity={voice.voiceActivity}
+            voiceActivity={chat.liveActivity}
+            voiceActivities={chat.activityLog}
+            agentWorking={chat.isTurnActive}
             assistant={getVoiceAssistant(status, settings)}
             audioAvailable={status?.audio.available ?? false}
             userName={displayName}
@@ -540,7 +542,8 @@ export function AppShell() {
             streamingMessageId={chat.activeChatStreamMessageId}
             typedMessages={chat.typedMessageText}
             liveActivity={chat.liveActivity}
-            disabled={chat.isSubmittingTurn}
+            activityLog={chat.activityLog}
+            disabled={chat.isSubmittingTurn || chat.isTurnActive}
             onTextInputChange={chat.setTextInput}
             onSubmit={handleTextSubmit}
             onAttachFiles={(files) => void chat.handleAttachFiles(files)}
