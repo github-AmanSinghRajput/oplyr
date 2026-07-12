@@ -63,7 +63,7 @@ Copy `.env.example` to `.env`. The local runtime uses embedded SQLite via `RUNTI
 ## Key Patterns
 
 - **Approval flow**: Chat service detects write intent via Codex → creates pendingApproval → frontend shows diff review → user approves/rejects → approved writes execute with `--sandbox workspace-write`
-- **SSE for real-time**: EventBus in `src/lib/event-bus.ts` pushes voice state and chat updates to frontend via `/api/voice/events`
+- **Real-time transports**: voice uses a **WebSocket**; chat replies stream as **NDJSON** over `fetch` (`streamMessage`). The `EventBus` (`src/lib/event-bus.ts`) powers a separate **SSE** stream at `/api/voice/events` — consumed by the Memory screen (via `streamAppEvents`) for `brain_update` events. Don't assume the frontend reads voice/chat over that SSE stream; it doesn't.
 - **Secret policy**: Hardcoded patterns in `runtime.ts` block access to .env, *.pem, *.key, .aws/, .npmrc, .docker/ etc.
 - **Strict TypeScript**: `tsconfig.base.json` with `strict: true`, ES2022 target, ESNext modules, Bundler resolution. API emits JS to `dist/`; web uses Vite (no emit)
 

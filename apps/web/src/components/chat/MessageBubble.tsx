@@ -4,6 +4,7 @@ import rehypeHighlight from 'rehype-highlight';
 import { cn } from '@/lib/cn';
 import { CodeBlock } from './CodeBlock';
 import { AgentActivityTimeline } from './AgentActivityTimeline';
+import { MemoryChip } from './MemoryChip';
 import type { MessageEntry } from '@/containers/voice-console/lib/types';
 import { formatClock } from '@/containers/voice-console/lib/helpers';
 
@@ -76,6 +77,9 @@ export function MessageBubble({
                 />
               </div>
             )}
+            {!isStreaming && message.memory?.atoms?.length ? (
+              <MemoryChip atoms={message.memory.atoms} />
+            ) : null}
           </>
         )}
 

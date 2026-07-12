@@ -53,6 +53,7 @@ export interface ChatStreamHandle {
     }
   ) => Promise<ReplyResponse | ApprovalRequiredResponse>;
   abortActiveChatStream: () => void;
+  resetChatState: () => void;
   handleAttachFiles: (files: File[]) => Promise<void>;
   handleRemoveDraftAttachment: (attachmentId: string) => void;
   loadLogs: () => Promise<void>;
@@ -157,7 +158,26 @@ export function useChatStream(): ChatStreamHandle {
     chatStreamAbortRef.current?.abort();
     chatStreamAbortRef.current = null;
     clearActiveChatStreamDraft({ removeMessages: true });
+    setIsTurnActive(false);
+    setActiveChatStreamMessageId(null);
+    setLiveActivity(null);
   }, [clearActiveChatStreamDraft]);
+
+  const resetChatState = useCallback(() => {
+    chatStreamAbortRef.current?.abort();
+    chatStreamAbortRef.current = null;
+    activeChatStreamDraftRef.current = null;
+    activeVoiceAssistantMessageIdRef.current = null;
+    setMessages([]);
+    setDraftAttachments([]);
+    setTextInput('');
+    setIsTurnActive(false);
+    setTypedMessageText({});
+    setTypingTargets({});
+    setActiveChatStreamMessageId(null);
+    setLiveActivity(null);
+    setActivityLog([]);
+  }, []);
 
   const streamChatMessage = useCallback(
     async (
@@ -366,6 +386,7 @@ export function useChatStream(): ChatStreamHandle {
     isTurnActive,
     streamChatMessage,
     abortActiveChatStream,
+    resetChatState,
     handleAttachFiles,
     handleRemoveDraftAttachment,
     loadLogs,

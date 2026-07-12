@@ -26,6 +26,9 @@ export interface CodebaseNode {
 export interface CodebaseEdge {
   from: string;
   to: string;
+  /** `import` = a real dependency (JS/TS/Python). `directory` = a soft folder-cluster link so
+   *  non-source files (configs, docs, data) still attach to their neighborhood on the canvas. */
+  kind?: 'import' | 'directory';
 }
 
 export interface CodebaseTreeNode {
@@ -38,6 +41,8 @@ export interface CodebaseTreeNode {
 
 export interface CodebaseStats {
   totalFiles: number;
+  /** Count of JS/TS/Python files that receive import-edge + symbol analysis — NOT the node count
+   *  (nodes now include every mappable file type; this is only the import-traced subset). */
   sourceFiles: number;
   edges: number;
   /** Per-language file counts across the WHOLE scan (incl. unsupported languages, for messaging). */

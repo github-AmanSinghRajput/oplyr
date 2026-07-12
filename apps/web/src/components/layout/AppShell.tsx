@@ -23,7 +23,7 @@ import { useChatStream } from '@/hooks/use-chat-stream';
 import { useVoiceSession } from '@/hooks/use-voice-session';
 import { useAppSettings, type AppSettingsHandle } from '@/hooks/use-app-settings';
 import { usePreferences } from '@/hooks/use-preferences';
-import { BrainCircuit, Music } from 'lucide-react';
+import { Music } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StandbyScreen } from '@/components/screens/StandbyScreen';
 import { OplyrLogoMark } from '@/components/branding/OplyrLogoMark';
@@ -66,6 +66,9 @@ const MarkdownScreen = lazy(() =>
 );
 const CodebaseMapScreen = lazy(() =>
   import('@/components/screens/CodebaseMapScreen').then((m) => ({ default: m.CodebaseMapScreen }))
+);
+const MemoryScreen = lazy(() =>
+  import('@/components/screens/MemoryScreen').then((m) => ({ default: m.MemoryScreen }))
 );
 
 function shouldPollVoiceBootstrap(status: VoiceBootstrapStatus | null) {
@@ -242,6 +245,14 @@ export function AppShell() {
     voiceSettings: settings.voiceSettings,
     autoSend: preferences.autoSendVoice
   });
+
+  const handleResetApp = useCallback(async () => {
+    const didReset = await settings.handleResetApp();
+    if (!didReset) return;
+
+    chat.resetChatState();
+    startTransition(() => setActiveScreen('workspace'));
+  }, [chat, settings, setActiveScreen]);
 
   const handleReviewApprove = useCallback(async () => {
     const approved = await handleApprove();
@@ -498,7 +509,7 @@ export function AppShell() {
             }}
             onSaveProject={() => void settings.handleSaveProject(projectInput)}
             onToggleWriteAccess={(enabled) => void settings.handleToggleWriteAccess(enabled)}
-            onResetApp={() => void settings.handleResetApp()}
+            onResetApp={() => void handleResetApp()}
           />
         );
       case 'voice':
@@ -538,7 +549,7 @@ export function AppShell() {
             messages={chat.messages}
             textInput={chat.textInput}
             draftAttachments={chat.draftAttachments}
-            isStreaming={chat.isStreaming}
+            isStreaming={chat.isTurnActive}
             streamingMessageId={chat.activeChatStreamMessageId}
             typedMessages={chat.typedMessageText}
             liveActivity={chat.liveActivity}
@@ -613,14 +624,7 @@ export function AppShell() {
       case 'markdown':
         return <MarkdownScreen projectRoot={status?.workspace.projectRoot ?? null} />;
       case 'memory':
-        return (
-          <StandbyScreen
-            icon={BrainCircuit}
-            title="Memory"
-            description="Oplyr's unified, local-first memory — a shared brain every agent reads from and writes to, so your context, decisions, and codebase history persist across sessions and tools."
-            footnote="In active development"
-          />
-        );
+        return <MemoryScreen />;
       case 'music':
         return (
           <StandbyScreen

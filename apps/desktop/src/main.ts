@@ -319,6 +319,9 @@ function buildApiEnv(): NodeJS.ProcessEnv {
     OPLYR_STT_BINARY: process.env.OPLYR_STT_BINARY ?? getPackagedSttBinary(),
     // SQL migrations are shipped as files (not bundled into the JS) — point the API at them.
     OPLYR_MIGRATIONS_DIR: path.join(process.resourcesPath, 'api', 'database', 'sqlite'),
+    // Same for the brain's own migrations, else the packaged brain.db is created with zero tables
+    // and every capture/recall silently no-ops.
+    OPLYR_BRAIN_MIGRATIONS_DIR: path.join(process.resourcesPath, 'api', 'database', 'brain'),
     // The API bundle keeps better-sqlite3 external; resolve it from the shipped module folder.
     NODE_PATH: path.join(process.resourcesPath, 'api', 'node_modules')
   };

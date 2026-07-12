@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
-    "build:pack": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist-pack/server.mjs --external:better-sqlite3 --banner:js=\"import { createRequire } from 'module'; const require = createRequire(import.meta.url);\"",
+    "build:pack": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist-pack/server.mjs --external:better-sqlite3 --external:@xenova/transformers --banner:js=\"import { createRequire } from 'module'; const require = createRequire(import.meta.url);\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "node dist/index.js",
     "db:migrate": "node --import tsx src/scripts/db-migrate.ts",
@@ -19,6 +19,9 @@
     "dotenv": "^16.6.1",
     "express": "^4.21.2",
     "ws": "^8.21.0"
+  },
+  "optionalDependencies": {
+    "@xenova/transformers": "^2.17.2"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

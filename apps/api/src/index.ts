@@ -1,4 +1,5 @@
 import { closeDatabasePool, initializeDatabase } from './db/client.js';
+import { closeBrainDatabase, initializeBrainDatabase } from './db/brain-client.js';
 import { env, validateEnv } from './config/env.js';
 import { createApp } from './app/createApp.js';
 import { logger } from './lib/logger.js';
@@ -10,6 +11,7 @@ void bootstrap();
 async function bootstrap() {
   validateEnv();
   await initializeDatabase();
+  await initializeBrainDatabase();
   const apiAuthToken = await resolveLocalApiAuthToken(env.localApiAuthToken);
   const {
     app,
@@ -46,6 +48,7 @@ async function bootstrap() {
     server.close(async () => {
       await voiceTranscriptionService.shutdown();
       await closeDatabasePool();
+      await closeBrainDatabase();
       logger.info('server.stopped');
       process.exit(0);
     });

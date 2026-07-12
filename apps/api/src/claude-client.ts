@@ -158,6 +158,45 @@ function normalizeStatusText(output: string) {
     .trim();
 }
 
+export function extractClaudeResultErrorMessage(value: unknown): string | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const apiStatus =
+    typeof record.api_error_status === 'number'
+      ? record.api_error_status
+      : typeof record.api_error_status === 'string'
+        ? Number(record.api_error_status)
+        : null;
+  const isError = record.is_error === true || apiStatus === 429;
+  if (!isError) {
+    return null;
+  }
+
+  const directCandidates = [record.result, record.error, record.message];
+  for (const candidate of directCandidates) {
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+
+  if (record.result && typeof record.result === 'object') {
+    const nested = getObjectText(record.result);
+    if (nested) return nested;
+  }
+
+  return apiStatus === 429
+    ? 'Claude Code session limit reached. Try again after your quota resets.'
+    : 'Claude Code returned an error.';
+}
+
+function extractClaudeJsonErrorMessage(text: string): string | null {
+  const parsed = tryParseJson(text.trim());
+  return parsed ? extractClaudeResultErrorMessage(parsed) : null;
+}
+
 function extractAccountLabelFromObject(value: unknown): string | null {
   if (!value || typeof value !== 'object') {
     return null;
@@ -222,7 +261,11 @@ function classifyClaudeError(error: unknown) {
   const message = extractClaudeErrorMessage(error);
   const lower = message.toLowerCase();
 
-  if (/you'?ve hit your limit|usage limit|resets\s+\d/i.test(lower)) {
+  if (
+    /you'?ve hit .*limit|session limit|usage limit|api_error_status["']?\s*:\s*429|resets\s+\d/i.test(
+      lower
+    )
+  ) {
     return new ClaudeClientError('rate_limit', message, message);
   }
 
@@ -272,11 +315,23 @@ function extractClaudeErrorMessage(error: unknown) {
     .filter(Boolean);
 
   for (const candidate of detailCandidates) {
+    const structuredCandidate = extractClaudeJsonErrorMessage(candidate);
+    if (structuredCandidate) {
+      return structuredCandidate;
+    }
+
     const lines = candidate
       .split('\n')
       .map((line) => line.trim())
       .filter(Boolean)
       .filter((line) => !line.startsWith('Warning: no stdin data received in 3s'));
+
+    for (const line of lines) {
+      const structuredLine = extractClaudeJsonErrorMessage(line);
+      if (structuredLine) {
+        return structuredLine;
+      }
+    }
 
     const limitLineIndex = lines.findIndex((line) => /you'?ve hit your limit/i.test(line));
     if (limitLineIndex >= 0) {
@@ -668,7 +723,8 @@ async function runClaudePromptStream(options: {
       if (message.type === 'result') {
         if (message.is_error === true) {
           const errorText =
-            typeof message.result === 'string' ? message.result : 'Claude returned an error.';
+            extractClaudeResultErrorMessage(message) ??
+            (typeof message.result === 'string' ? message.result : 'Claude returned an error.');
           rejectOnce(classifyClaudeError(new Error(errorText)));
           child?.kill('SIGTERM');
           return;
@@ -942,6 +998,11 @@ function extractClaudeText(raw: string) {
     return raw.trim();
   }
 
+  const errorMessage = extractClaudeResultErrorMessage(parsed);
+  if (errorMessage) {
+    throw new Error(errorMessage);
+  }
+
   if (typeof parsed === 'string') {
     return parsed.trim();
   }
@@ -957,6 +1018,11 @@ function extractClaudeText(raw: string) {
 function extractClaudeJsonPayload(raw: string) {
   const parsed = tryParseJson(raw);
   if (parsed && typeof parsed === 'object') {
+    const errorMessage = extractClaudeResultErrorMessage(parsed);
+    if (errorMessage) {
+      throw new Error(errorMessage);
+    }
+
     if ('result' in parsed && typeof parsed.result === 'object' && parsed.result) {
       return parsed.result;
     }

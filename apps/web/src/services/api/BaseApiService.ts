@@ -40,9 +40,50 @@ export class BaseApiService {
           : typeof body.details === 'string'
             ? body.details
             : '';
-      throw new Error([body.error ?? 'Request failed.', details].filter(Boolean).join(' '));
+      throw new Error(
+        [
+          normalizeApiErrorText(body.error ?? 'Request failed.'),
+          details ? normalizeApiErrorText(details) : ''
+        ]
+          .filter(Boolean)
+          .join(' ')
+      );
     }
 
     return body as T;
   }
+}
+
+export function normalizeApiErrorText(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith('{')) {
+    return value;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+    const status =
+      typeof parsed.api_error_status === 'number'
+        ? parsed.api_error_status
+        : typeof parsed.api_error_status === 'string'
+          ? Number(parsed.api_error_status)
+          : null;
+    if (
+      (parsed.is_error === true || status === 429) &&
+      typeof parsed.result === 'string' &&
+      parsed.result.trim()
+    ) {
+      return parsed.result.trim();
+    }
+    if (typeof parsed.error === 'string' && parsed.error.trim()) {
+      return parsed.error.trim();
+    }
+    if (typeof parsed.message === 'string' && parsed.message.trim()) {
+      return parsed.message.trim();
+    }
+  } catch {
+    return value;
+  }
+
+  return value;
 }

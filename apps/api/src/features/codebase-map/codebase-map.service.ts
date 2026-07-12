@@ -9,9 +9,16 @@ import type {
   CodebaseEdge,
   CodebaseMap,
   CodebaseNode,
-  FileSummaryResult
+  FileSummaryResult,
+  ScannedFile
 } from './codebase-map.types.js';
-import { buildTree, isSourceFile, scanWorkspace, SUPPORTED_MAP_LANGUAGES } from './scanner.js';
+import {
+  buildTree,
+  isMappableFile,
+  isSourceFile,
+  scanWorkspace,
+  SUPPORTED_MAP_LANGUAGES
+} from './scanner.js';
 import { parseDependencies } from './dependency-parser.js';
 import { extractSymbols, type FileSymbol } from './symbol-parser.js';
 
@@ -61,8 +68,16 @@ export class CodebaseMapService {
   private async buildMap(rootPath: string, projectName: string): Promise<CodebaseMap> {
     const files = await scanWorkspace(rootPath);
     const tree = buildTree(files);
+    // Every non-binary file becomes a node (max coverage); only real source files get import edges.
+    const mappableFiles = files.filter((file) => isMappableFile(file.name, file.ext));
     const sourceFiles = files.filter((file) => isSourceFile(file.ext));
-    const edges = await parseDependencies(rootPath, sourceFiles);
+
+    const importEdges: CodebaseEdge[] = (await parseDependencies(rootPath, sourceFiles)).map(
+      (edge) => ({ ...edge, kind: 'import' as const })
+    );
+    // Soft folder-cluster links so configs/docs/data attach to their neighborhood instead of floating.
+    const directoryEdges = buildDirectoryEdges(mappableFiles, importEdges);
+    const edges = [...importEdges, ...directoryEdges];
 
     const degree = new Map<string, number>();
     for (const edge of edges) {
@@ -70,7 +85,7 @@ export class CodebaseMapService {
       degree.set(edge.to, (degree.get(edge.to) ?? 0) + 1);
     }
 
-    let nodes: CodebaseNode[] = sourceFiles.map((file) => ({
+    let nodes: CodebaseNode[] = mappableFiles.map((file) => ({
       id: file.path,
       label: file.name,
       dir: file.dir,
@@ -214,4 +229,64 @@ export class CodebaseMapService {
     }
     return { ok: true, normalized, absolute: resolved.absolutePath };
   }
+}
+
+/**
+ * For each directory holding 2+ files, link its files to a single anchor (the most import-connected
+ * file, else the first). This clusters every folder on the canvas and gives non-source files a
+ * degree so they survive the node cap — without exploding into a fully-connected mesh.
+ */
+function buildDirectoryEdges(files: ScannedFile[], importEdges: CodebaseEdge[]): CodebaseEdge[] {
+  const importDegree = new Map<string, number>();
+  for (const edge of importEdges) {
+    importDegree.set(edge.from, (importDegree.get(edge.from) ?? 0) + 1);
+    importDegree.set(edge.to, (importDegree.get(edge.to) ?? 0) + 1);
+  }
+  const existing = new Set(importEdges.map((edge) => edgeKey(edge.from, edge.to)));
+
+  const byDir = new Map<string, ScannedFile[]>();
+  for (const file of files) {
+    const parent = parentDir(file.path);
+    const list = byDir.get(parent);
+    if (list) {
+      list.push(file);
+    } else {
+      byDir.set(parent, [file]);
+    }
+  }
+
+  const edges: CodebaseEdge[] = [];
+  for (const list of byDir.values()) {
+    if (list.length < 2) {
+      continue;
+    }
+    // Files arrive path-sorted from scanWorkspace, so `list[0]` is a stable default anchor.
+    let anchor = list[0]!;
+    let bestDegree = importDegree.get(anchor.path) ?? 0;
+    for (const file of list) {
+      const degree = importDegree.get(file.path) ?? 0;
+      if (degree > bestDegree) {
+        bestDegree = degree;
+        anchor = file;
+      }
+    }
+    for (const file of list) {
+      const key = edgeKey(file.path, anchor.path);
+      if (file.path === anchor.path || existing.has(key)) {
+        continue;
+      }
+      existing.add(key); // defensive: cross-dir dupes are structurally impossible, but keep the set truthful
+      edges.push({ from: file.path, to: anchor.path, kind: 'directory' });
+    }
+  }
+  return edges;
+}
+
+function parentDir(relPath: string): string {
+  const index = relPath.lastIndexOf('/');
+  return index === -1 ? '.' : relPath.slice(0, index);
+}
+
+function edgeKey(a: string, b: string): string {
+  return a < b ? `${a} ${b}` : `${b} ${a}`;
 }

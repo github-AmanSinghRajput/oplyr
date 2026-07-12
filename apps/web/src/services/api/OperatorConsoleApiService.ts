@@ -1,6 +1,13 @@
-import { BaseApiService } from './BaseApiService';
+import { BaseApiService, normalizeApiErrorText } from './BaseApiService';
 import type {
   AppSettings,
+  AppSseEvent,
+  AssistantErrorKind,
+  BrainGraphResponse,
+  BrainProjectSettings,
+  BrainSearchResponse,
+  BrainSettings,
+  BrainStatusResponse,
   ChatAttachment,
   AssistantProvidersState,
   ApprovalHistoryResponse,
@@ -54,6 +61,85 @@ export class OperatorConsoleApiService extends BaseApiService {
       },
       body: JSON.stringify(input)
     });
+  }
+
+  getBrainStatus() {
+    return this.request<BrainStatusResponse>('/api/brain/status', {
+      cache: 'no-store'
+    });
+  }
+
+  updateBrainSettings(
+    input: Partial<
+      Pick<
+        BrainSettings,
+        | 'mode'
+        | 'enabled'
+        | 'recallEnabled'
+        | 'captureEnabled'
+        | 'crossProjectEnabled'
+        | 'rawArchiveEnabled'
+        | 'allowSensitiveCapture'
+        | 'allowSensitiveInjection'
+        | 'maxRecallAtoms'
+        | 'maxRecallCharacters'
+        | 'maxGraphHops'
+      >
+    > & {
+      agentWritePermissions?: Partial<Record<'codex' | 'claude' | 'gemini', boolean>>;
+    }
+  ) {
+    return this.request<BrainSettings>('/api/brain/settings', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(input)
+    });
+  }
+
+  deleteBrainAtom(atomId: string) {
+    return this.request<ClearResponse>(`/api/brain/atoms/${atomId}`, {
+      method: 'DELETE'
+    });
+  }
+
+  resetBrain() {
+    return this.request<ClearResponse>('/api/brain/reset', {
+      method: 'POST'
+    });
+  }
+
+  getBrainGraph() {
+    return this.request<BrainGraphResponse>('/api/brain/graph', {
+      cache: 'no-store'
+    });
+  }
+
+  searchBrain(query: string) {
+    return this.request<BrainSearchResponse>('/api/brain/search', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ query })
+    });
+  }
+
+  updateBrainProjectSettings(
+    projectKey: string,
+    input: { isolate?: boolean; captureEnabled?: boolean }
+  ) {
+    return this.request<BrainProjectSettings>(
+      `/api/brain/projects/${encodeURIComponent(projectKey)}`,
+      {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(input)
+      }
+    );
   }
 
   getLogs() {
@@ -208,11 +294,26 @@ export class OperatorConsoleApiService extends BaseApiService {
     });
 
     if (!response.ok) {
-      const body = (await response.json()) as {
+      const raw = await response.text();
+      let body: {
         error?: string;
+        errorKind?: AssistantErrorKind;
         details?: unknown;
-      };
-      throw new Error(body.error ?? 'Unable to stream chat response.');
+      } = {};
+      if (raw) {
+        try {
+          body = JSON.parse(raw) as typeof body;
+        } catch {
+          body = { error: raw.slice(0, 200) };
+        }
+      }
+      const error = normalizeApiErrorText(body.error ?? 'Unable to stream chat response.');
+      onEvent({
+        type: 'error',
+        error,
+        errorKind: body.errorKind ?? (response.status === 429 ? 'rate_limit' : 'unknown')
+      });
+      throw new Error(error);
     }
 
     if (!response.body) {
@@ -260,6 +361,71 @@ export class OperatorConsoleApiService extends BaseApiService {
         }
         break;
       }
+    }
+  }
+
+  /**
+   * Subscribe to the server-sent `/api/voice/events` stream via fetch (not EventSource) so the
+   * local API auth token can ride in the header layer the runtime enforces — EventSource cannot set
+   * headers. Parses SSE `data:` frames and invokes `onEvent` per event. Resolves when the stream
+   * ends or the signal aborts.
+   */
+  async streamAppEvents(onEvent: (event: AppSseEvent) => void, options?: { signal?: AbortSignal }) {
+    const response = await fetch(`${this.baseUrl}/api/voice/events`, {
+      headers: {
+        ...Object.fromEntries(this.createHeaders().entries()),
+        Accept: 'text/event-stream'
+      },
+      cache: 'no-store',
+      signal: options?.signal
+    });
+
+    if (!response.ok || !response.body) {
+      throw new Error('Unable to open the event stream.');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    const flush = (block: string) => {
+      const dataLines = block
+        .split('\n')
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice(5).trim());
+      if (dataLines.length === 0) {
+        return;
+      }
+      try {
+        onEvent(JSON.parse(dataLines.join('\n')) as AppSseEvent);
+      } catch {
+        // Ignore keep-alives / non-JSON frames.
+      }
+    };
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
+
+        // SSE events are separated by a blank line.
+        let boundary = buffer.indexOf('\n\n');
+        while (boundary >= 0) {
+          flush(buffer.slice(0, boundary));
+          buffer = buffer.slice(boundary + 2);
+          boundary = buffer.indexOf('\n\n');
+        }
+
+        if (done) {
+          if (buffer.trim()) {
+            flush(buffer);
+          }
+          break;
+        }
+      }
+    } finally {
+      // Release the ReadableStream lock on abort/drop so the connection is torn down cleanly.
+      reader.cancel().catch(() => {});
     }
   }
 

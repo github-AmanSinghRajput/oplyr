@@ -95,6 +95,21 @@ export interface ChatAttachment {
   excerpt: string | null;
 }
 
+/** A memory the brain injected into an assistant turn, for the "used N memories" chip. */
+export interface ChatMemoryAtom {
+  id: string;
+  type: string;
+  text: string;
+  scope: 'global' | 'project';
+  projectKey: string | null;
+  crossProject: boolean;
+  contributors: string[];
+}
+
+export interface ChatMemoryUsage {
+  atoms: ChatMemoryAtom[];
+}
+
 export interface MessageEntry {
   id: string;
   role: ChatRole;
@@ -102,6 +117,8 @@ export interface MessageEntry {
   createdAt: string;
   source: MessageSource;
   attachments?: ChatAttachment[];
+  /** Present on assistant messages when recall injected memory into the turn. */
+  memory?: ChatMemoryUsage;
 }
 
 export interface WorkspaceState {
@@ -363,6 +380,155 @@ export interface DatabaseStatus {
   message: string;
 }
 
+export interface BrainAgentWritePermission {
+  writeEnabled: boolean;
+  updatedAt: string | null;
+}
+
+// `standard` = everyday capture + recall (cross-project gated by crossProjectEnabled, sensitive
+// atoms never touched). `local_god` = explicit power-user unlock that makes sensitive
+// capture/injection settable (still off until toggled).
+export type BrainMode = 'standard' | 'local_god';
+export type BrainAtomType = 'fact' | 'entity' | 'preference' | 'convention' | 'decision';
+export type BrainAtomScope = 'global' | 'project';
+export type BrainAtomSensitivity = 'normal' | 'sensitive';
+export type BrainSourceType = 'chat_turn' | 'diff' | 'transcript' | 'file_snapshot' | 'meeting';
+
+export interface BrainSettings {
+  mode: BrainMode;
+  enabled: boolean;
+  recallEnabled: boolean;
+  captureEnabled: boolean;
+  /** Tiered, labeled cross-project recall. Per-project `isolate` overrides this. */
+  crossProjectEnabled: boolean;
+  rawArchiveEnabled: boolean;
+  allowSensitiveCapture: boolean;
+  allowSensitiveInjection: boolean;
+  maxRecallAtoms: number;
+  maxRecallCharacters: number;
+  maxGraphHops: number;
+  agentWritePermissions: Record<AssistantProviderId, BrainAgentWritePermission>;
+}
+
+/** Per-project overrides returned by PUT /api/brain/projects/:projectKey and in status.project. */
+export interface BrainProjectSettings {
+  isolate: boolean;
+  captureEnabled: boolean;
+}
+
+export interface BrainProvenance {
+  source: BrainSourceType;
+  providerId: AssistantProviderId;
+  sessionId: string | null;
+  userMessageId: string | null;
+  assistantMessageId: string | null;
+  projectRoot: string | null;
+  capturedAt: string;
+}
+
+/** One agent's assertion of an atom. Multiple contributors = corroboration across agents. */
+export interface BrainContributor {
+  providerId: AssistantProviderId;
+  sessionId: string | null;
+  lastAssertedAt: string;
+}
+
+export interface BrainAtom {
+  id: string;
+  type: BrainAtomType;
+  text: string;
+  normalizedText: string;
+  scope: BrainAtomScope;
+  projectKey: string | null;
+  sourceHash: string;
+  sensitivity: BrainAtomSensitivity;
+  confidence: number;
+  salience: number;
+  provenance: BrainProvenance;
+  /** Named things this atom is about — the graph derives its edges from these. */
+  entities: string[];
+  contributors: BrainContributor[];
+  createdAt: string;
+  lastSeenAt: string;
+  deletedAt: string | null;
+}
+
+export interface BrainStatusResponse {
+  settings: BrainSettings;
+  stats: {
+    totalAtoms: number;
+    projectAtoms: number;
+    globalAtoms: number;
+    deletedAtoms: number;
+  };
+  recentAtoms: BrainAtom[];
+  project: {
+    key: string | null;
+    isolate: boolean;
+    captureEnabled: boolean;
+  };
+  embeddingsModel: string;
+}
+
+// ── Knowledge graph (real, backend-computed edges — never derived on the frontend) ──────────────
+export interface BrainGraphNode {
+  id: string;
+  label: string;
+  type: BrainAtomType;
+  scope: BrainAtomScope;
+  projectKey: string | null;
+  salience: number;
+  confidence: number;
+  contributors: AssistantProviderId[];
+  entities: string[];
+}
+
+export interface BrainGraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  weight: number;
+  sharedEntities: string[];
+}
+
+export interface BrainGraphResponse {
+  nodes: BrainGraphNode[];
+  edges: BrainGraphEdge[];
+}
+
+// ── Semantic search (browse, not inject) ────────────────────────────────────────────────────────
+export interface BrainRecallAtom {
+  id: string;
+  type: BrainAtomType;
+  text: string;
+  scope: BrainAtomScope;
+  projectKey: string | null;
+  sensitivity: BrainAtomSensitivity;
+  score: number;
+  provenance: BrainProvenance;
+  lastSeenAt: string;
+  /** True when this atom belongs to a different project than the one being searched from. */
+  crossProject: boolean;
+  contributors: AssistantProviderId[];
+}
+
+export interface BrainSearchResponse {
+  atoms: BrainRecallAtom[];
+}
+
+/** New event pushed through the existing /api/voice/events SSE stream on brain writes. */
+export interface BrainUpdateEvent {
+  type: 'brain_update';
+  payload: { projectKey: string | null; capturedAtoms: number };
+}
+
+/** Any frame the /api/voice/events SSE stream may deliver. Consumers narrow on `type`. */
+export type AppSseEvent =
+  | BrainUpdateEvent
+  | { type: 'voice_state'; payload: unknown }
+  | { type: 'chat_append'; payload: unknown }
+  | { type: 'status_refresh'; payload: Record<string, never> };
+
 export interface StatusResponse {
   codexStatus: CodexStatus;
   assistantProviders: AssistantProvidersState;
@@ -374,12 +540,14 @@ export interface StatusResponse {
   voiceSession: VoiceSessionState;
   system: {
     database: DatabaseStatus;
+    brainDatabase: DatabaseStatus;
   };
 }
 
 export interface SystemResponse {
   environment: string;
   database: DatabaseStatus;
+  brainDatabase: DatabaseStatus;
   providers: {
     tts: string;
     queue: string;

@@ -32,6 +32,7 @@ export const env = {
   speechModelVersion: process.env.SPEECH_MODEL_VERSION?.trim() || 'v3',
   transcriptionLanguageCode: process.env.TRANSCRIPTION_LANGUAGE_CODE?.trim() || 'en',
   runtimeDatabasePath: resolvePortablePath(process.env.RUNTIME_DATABASE_PATH) || '',
+  brainDatabasePath: resolvePortablePath(process.env.BRAIN_DATABASE_PATH) || '',
   queueProvider: process.env.QUEUE_PROVIDER ?? 'inline',
   emailProvider: process.env.EMAIL_PROVIDER ?? 'none',
   vectorProvider: process.env.VECTOR_PROVIDER ?? 'none',
@@ -92,6 +93,13 @@ export function validateEnv() {
     const resolved = env.runtimeDatabasePath;
     if (resolved.includes('\0')) {
       throw new Error('RUNTIME_DATABASE_PATH must not contain null bytes.');
+    }
+  }
+
+  if (env.brainDatabasePath) {
+    const resolved = env.brainDatabasePath;
+    if (resolved.includes('\0')) {
+      throw new Error('BRAIN_DATABASE_PATH must not contain null bytes.');
     }
   }
 }
