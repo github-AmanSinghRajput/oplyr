@@ -1,10 +1,15 @@
 import { cn } from '@/lib/cn';
 import type { AssistantProviderId } from '@/containers/voice-console/lib/types';
+// Import as modules so Vite emits base-relative hashed URLs. Absolute "/provider-logos/…" paths
+// break under file:// in the packaged app (they resolve to the disk root → blank white logos).
+import openaiLogo from '@/assets/provider-logos/openai.svg';
+import anthropicLogo from '@/assets/provider-logos/anthropic.svg';
+import geminiLogo from '@/assets/provider-logos/gemini.svg';
 
 const providerLogoSrc: Record<AssistantProviderId, string> = {
-  codex: '/provider-logos/openai.svg',
-  claude: '/provider-logos/anthropic.svg',
-  gemini: '/provider-logos/gemini.svg'
+  codex: openaiLogo,
+  claude: anthropicLogo,
+  gemini: geminiLogo
 };
 
 export function ProviderLogo({

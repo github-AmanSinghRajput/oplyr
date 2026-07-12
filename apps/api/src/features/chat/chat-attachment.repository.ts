@@ -129,8 +129,9 @@ export class ChatAttachmentRepository {
     const kind = getAttachmentKind(safeFileName, input.mimeType);
     const excerpt = buildExcerpt(kind, input.buffer);
 
-    await fs.mkdir(storageDir, { recursive: true });
-    await fs.writeFile(storagePath, input.buffer);
+    // Attachment blobs are private user data — owner-only dir + file.
+    await fs.mkdir(storageDir, { recursive: true, mode: 0o700 });
+    await fs.writeFile(storagePath, input.buffer, { mode: 0o600 });
 
     const row = database
       .prepare(

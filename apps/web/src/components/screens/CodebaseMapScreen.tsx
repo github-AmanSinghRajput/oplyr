@@ -401,19 +401,14 @@ export function CodebaseMapScreen({ projectRoot }: CodebaseMapScreenProps) {
             <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
               <Workflow size={28} className="text-text-tertiary" />
               <p className="max-w-md text-sm text-text-secondary">
-                Nothing to map here yet. Oplyr currently maps{' '}
-                <span className="font-medium text-text-primary">{supportedLabel}</span> code.
+                Nothing to map here yet — no source, config, or document files were found inside
+                this project&rsquo;s boundary.
               </p>
-              {unmappedLanguages.length > 0 ? (
-                <p className="max-w-md text-xs text-text-tertiary">
-                  This repo looks like {formatLanguageList(unmappedLanguages.map(([lang]) => lang))}{' '}
-                  — support for those languages is on the way. Re-scan once you add mappable files.
-                </p>
-              ) : (
-                <p className="max-w-md text-xs text-text-tertiary">
-                  Re-scan, or open a repo with {supportedLabel} files.
-                </p>
-              )}
+              <p className="max-w-md text-xs text-text-tertiary">
+                Oplyr maps every non-binary file as a node; import links are traced for{' '}
+                <span className="font-medium text-text-primary">{supportedLabel}</span>. Re-scan
+                after adding files.
+              </p>
             </div>
           ) : null}
         </div>

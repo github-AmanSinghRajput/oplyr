@@ -48,6 +48,12 @@ coverage/
 *.tsbuildinfo
 .tmp-qa-repo/
 
+# Packaging outputs (tracked source lives in apps/desktop/assets/: icon.icns, icon-source.svg, entitlements)
+apps/desktop/release/
+apps/desktop/assets/icon-1024.png
+apps/desktop/assets/icon.iconset/
+apps/api/dist-pack/
+
 # Internal-only docs (kept local, not published to the public repo)
 docs/superpowers/
 docs/LOCAL_SHARED_MEMORY_GRAPH_RESEARCH.md

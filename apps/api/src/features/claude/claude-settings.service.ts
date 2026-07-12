@@ -84,9 +84,12 @@ export class ClaudeSettingsService {
 }
 
 function sanitizeClaudeSettings(input: Partial<ClaudeSettings> | null | undefined): ClaudeSettings {
-  const model = typeof input?.model === 'string' ? input.model.trim() : '';
+  const requested = typeof input?.model === 'string' ? input.model.trim() : '';
+  // Only persist a model that's in our known list — the slug is passed to `claude --model`, so an
+  // arbitrary string must never reach the CLI. Unknown/empty falls back to the provider default (null).
+  const model = knownClaudeModels.some((option) => option.slug === requested) ? requested : null;
   return {
-    model: model || null,
+    model,
     voiceModelMode: sanitizeVoiceModelMode(input?.voiceModelMode) ?? 'auto'
   };
 }

@@ -1,4 +1,5 @@
 import { execFile, spawn } from 'node:child_process';
+import { agentSpawnEnv } from './lib/spawn-env.js';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -297,7 +298,7 @@ async function runCodexCommand(args: string[], cwd: string, timeoutMs = 10 * 60 
     // already-closed stdin so it uses the prompt arg and exits instead of hanging the whole turn.
     const child = spawn(getCodexCommand(), args, {
       cwd,
-      env: process.env,
+      env: agentSpawnEnv(),
       stdio: ['ignore', 'pipe', 'pipe']
     });
 
@@ -452,7 +453,7 @@ async function runCodexPromptStream(options: {
     const args = ['app-server', '--listen', 'stdio://'];
     const child = spawn(getCodexCommand(), args, {
       cwd: options.cwd,
-      env: process.env,
+      env: agentSpawnEnv(),
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
@@ -753,7 +754,7 @@ export async function getCodexStatus() {
   try {
     const { stdout, stderr } = await execFileAsync(getCodexCommand(), ['login', 'status'], {
       cwd: getRootDir(),
-      env: process.env,
+      env: agentSpawnEnv(),
       timeout: 15000,
       maxBuffer: 1024 * 1024
     });

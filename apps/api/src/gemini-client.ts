@@ -1,4 +1,5 @@
 import { execFile, spawn } from 'node:child_process';
+import { agentSpawnEnv } from './lib/spawn-env.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -50,7 +51,7 @@ function execGeminiCommand(args: string[], cwd: string) {
       args,
       {
         cwd,
-        env: process.env,
+        env: agentSpawnEnv(),
         timeout: 10 * 60 * 1000,
         maxBuffer: 1024 * 1024 * 12
       },
@@ -744,7 +745,7 @@ async function runGeminiPromptStream(options: {
         attachChild(
           spawn(getGeminiCommand(), args, {
             cwd: options.cwd,
-            env: process.env,
+            env: agentSpawnEnv(),
             stdio: ['ignore', 'pipe', 'pipe']
           })
         );

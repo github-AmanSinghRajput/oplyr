@@ -12,6 +12,22 @@ export interface ChatAttachment {
   excerpt: string | null;
 }
 
+/** A memory atom that recall injected into this turn, trimmed for display in the chat chip. */
+export interface ChatMemoryAtom {
+  id: string;
+  type: string;
+  text: string;
+  scope: 'global' | 'project';
+  projectKey: string | null;
+  crossProject: boolean;
+  contributors: AssistantProviderId[];
+}
+
+/** Provenance for the "used N memories" chip: what the brain contributed to an assistant turn. */
+export interface ChatMemoryUsage {
+  atoms: ChatMemoryAtom[];
+}
+
 export interface ChatMessage {
   id: string;
   role: ChatRole;
@@ -19,6 +35,8 @@ export interface ChatMessage {
   createdAt: string;
   source: ChatSource;
   attachments?: ChatAttachment[];
+  /** Present on assistant messages when recall injected memory (live-only; not persisted). */
+  memory?: ChatMemoryUsage;
 }
 
 export interface LogStore {

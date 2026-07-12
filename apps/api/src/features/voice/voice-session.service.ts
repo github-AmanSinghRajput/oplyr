@@ -8,6 +8,7 @@ import type { EventBus } from '../../lib/event-bus.js';
 import { logger } from '../../lib/logger.js';
 import type { VoiceTranscriptionService } from './transcription.service.js';
 import type { VoiceSettingsService } from './voice-settings.service.js';
+import { resolveVoicePlatformSupport } from '../../platform.js';
 
 interface VoiceSessionDependencies {
   eventBus: EventBus;
@@ -21,14 +22,14 @@ export class VoiceSessionService {
   async refreshAudioState() {
     const transcriptionConfig =
       await this.dependencies.voiceSettingsService.getResolvedTranscriptionConfig();
+    const support = resolveVoicePlatformSupport();
     setAudioState({
-      available: process.platform === 'darwin',
+      available: support.supported,
       platform: process.platform,
-      transcriptionEngine: describeSttEngine(transcriptionConfig.provider),
-      error:
-        process.platform === 'darwin'
-          ? null
-          : 'Desktop voice capture currently supports macOS only.'
+      transcriptionEngine: support.supported
+        ? describeSttEngine(transcriptionConfig.provider)
+        : 'Unavailable',
+      error: support.reason
     });
     logger.info('voice.audio_state.refreshed', {
       available: getRuntimeState().audio.available,
@@ -48,6 +49,17 @@ export class VoiceSessionService {
   }
 
   async start() {
+    // Refuse cleanly on machines that can't run the local STT engine (Intel / pre-Sonoma), rather
+    // than attempting to spawn the native worker and surfacing a generic failure.
+    const support = resolveVoicePlatformSupport();
+    if (!support.supported) {
+      logger.info('voice.session.start.unsupported', { reason: support.reason });
+      resetVoiceSessionState('error');
+      setVoiceSessionState({ transport: 'unsupported', error: support.reason });
+      this.emitVoiceState();
+      return getRuntimeState().voiceSession;
+    }
+
     const settings = await this.dependencies.voiceSettingsService.getResolvedSettings();
     const runtime = getRuntimeState();
 
@@ -68,7 +80,7 @@ export class VoiceSessionService {
       liveTranscript: '',
       error: null,
       silenceWindowMs: settings.silenceWindowMs,
-      transport: process.platform === 'darwin' ? 'desktop-media' : 'unsupported'
+      transport: 'desktop-media'
     });
     this.emitVoiceState();
 
@@ -82,7 +94,7 @@ export class VoiceSessionService {
       });
       resetVoiceSessionState('error');
       setVoiceSessionState({
-        transport: process.platform === 'darwin' ? 'desktop-media' : 'unsupported',
+        transport: 'desktop-media',
         error: message
       });
       this.emitVoiceState();
@@ -95,7 +107,7 @@ export class VoiceSessionService {
     this.dependencies.voiceTranscriptionService.beginIdleCooldown();
     resetVoiceSessionState('idle');
     setVoiceSessionState({
-      transport: process.platform === 'darwin' ? 'desktop-media' : 'unsupported'
+      transport: resolveVoicePlatformSupport().supported ? 'desktop-media' : 'unsupported'
     });
     this.emitVoiceState();
     return getRuntimeState().voiceSession;
@@ -156,7 +168,7 @@ export class VoiceSessionService {
 }
 
 function describeSttEngine(provider: 'parakeet-local') {
-  if (process.platform !== 'darwin') {
+  if (!resolveVoicePlatformSupport().supported) {
     return 'Unavailable';
   }
 

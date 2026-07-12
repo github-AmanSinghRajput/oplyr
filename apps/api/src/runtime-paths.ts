@@ -96,6 +96,14 @@ export function getConfiguredRuntimeDatabasePath(configuredPath: string | undefi
   return resolvePortablePath(configuredPath) || null;
 }
 
+export function getDefaultBrainDatabasePath() {
+  return path.join(getUserDataDir(), 'brain.db');
+}
+
+export function getConfiguredBrainDatabasePath(configuredPath: string | undefined | null) {
+  return resolvePortablePath(configuredPath) || null;
+}
+
 function getModelRootCandidates() {
   return uniquePaths([
     resolvePortablePath(readEnv('OPLYR_LOCAL_MODELS_DIR')),

@@ -115,15 +115,16 @@ test('voice stream gateway relays the fake worker JSON lines to a WebSocket clie
 
   try {
     await withSttBinary(binary, async () => {
+      const authToken = 'test-stream-token';
       server = createServer();
-      const wss = attachVoiceStreamGateway(server);
+      const wss = attachVoiceStreamGateway(server, { authToken });
       await new Promise<void>((resolve) => server!.listen(0, '127.0.0.1', resolve));
       const { port } = server!.address() as { port: number };
 
       const received: Array<Record<string, unknown>> = [];
 
       await new Promise<void>((resolve, reject) => {
-        const socket = new WebSocket(`ws://127.0.0.1:${port}/api/voice/stream`);
+        const socket = new WebSocket(`ws://127.0.0.1:${port}/api/voice/stream?token=${authToken}`);
         const timer = setTimeout(() => {
           socket.terminate();
           reject(new Error('timed out waiting for final transcript'));
@@ -168,5 +169,34 @@ test('voice stream gateway relays the fake worker JSON lines to a WebSocket clie
       await new Promise<void>((resolve) => server!.close(() => resolve()));
     }
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('voice stream gateway rejects a connection with a missing/wrong token (no worker spawned)', async () => {
+  const server = createServer();
+  try {
+    attachVoiceStreamGateway(server, { authToken: 'correct-token' });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as { port: number };
+
+    const closeCode = await new Promise<number>((resolve, reject) => {
+      // No ?token — a hostile page opening this socket must be refused before anything spawns.
+      const socket = new WebSocket(`ws://127.0.0.1:${port}/api/voice/stream`);
+      const timer = setTimeout(() => {
+        socket.terminate();
+        reject(new Error('timed out waiting for close'));
+      }, 5_000);
+      socket.on('close', (code) => {
+        clearTimeout(timer);
+        resolve(code);
+      });
+      socket.on('error', () => {
+        /* a rejected upgrade may surface as an error; the close handler resolves the outcome */
+      });
+    });
+
+    assert.equal(closeCode, 1008);
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });

@@ -3,6 +3,7 @@ import {
   clearPendingApproval,
   createPendingApproval,
   getPendingApproval,
+  getRuntimeState,
   getWorkspaceState,
   setLastDiff
 } from '../../runtime.js';
@@ -19,8 +20,10 @@ import {
 } from '../../assistant-client.js';
 import { AppError } from '../../lib/errors.js';
 import type {
+  AssistantProviderId,
   BaselineUntrackedSnapshot,
   ChatAttachment,
+  ChatMemoryUsage,
   ChatMessage,
   ChatSource,
   DiffSummary,
@@ -30,6 +33,7 @@ import { ApprovalRepository } from '../approvals/approval.repository.js';
 import { ChatAttachmentRepository } from './chat-attachment.repository.js';
 import { ChatRepository } from './chat.repository.js';
 import { logger } from '../../lib/logger.js';
+import { BrainService } from '../brain/brain.service.js';
 
 interface ReplyResult {
   type: 'reply';
@@ -48,6 +52,7 @@ export type ChatTurnResult = ReplyResult | ApprovalRequiredResult;
 
 interface ChatRuntimeAdapter {
   getWorkspaceState: typeof getWorkspaceState;
+  getActiveProviderId: () => AssistantProviderId | null;
   getPendingApproval: typeof getPendingApproval;
   createPendingApproval: typeof createPendingApproval;
   clearPendingApproval: typeof clearPendingApproval;
@@ -76,8 +81,14 @@ interface ChatAssistantAdapter {
   streamAssistantReply: typeof streamAssistantReply;
 }
 
+interface ChatBrainAdapter {
+  recall: BrainService['recall'];
+  captureTurn: BrainService['captureTurn'];
+}
+
 const defaultRuntimeAdapter: ChatRuntimeAdapter = {
   getWorkspaceState,
+  getActiveProviderId: () => getRuntimeState().activeProviderId,
   getPendingApproval,
   createPendingApproval,
   clearPendingApproval,
@@ -96,14 +107,21 @@ const defaultAssistantAdapter: ChatAssistantAdapter = {
   streamAssistantReply
 };
 
+const defaultBrainAdapter = new BrainService();
+
 export class ChatService {
   constructor(
     private readonly repository: ChatRepository = new ChatRepository(),
     private readonly approvalRepository: ApprovalRepository = new ApprovalRepository(),
     private readonly runtime: ChatRuntimeAdapter = defaultRuntimeAdapter,
     private readonly assistant: ChatAssistantAdapter = defaultAssistantAdapter,
-    private readonly attachments: ChatAttachmentRepository = new ChatAttachmentRepository()
+    private readonly attachments: ChatAttachmentRepository = new ChatAttachmentRepository(),
+    private readonly brain: ChatBrainAdapter = defaultBrainAdapter
   ) {}
+
+  // Memory capture runs off the response path so the user never waits on a distillation call.
+  // Captures are chained (serialized) so concurrent turns don't race on the same atom upsert.
+  private captureChain: Promise<unknown> = Promise.resolve();
 
   private toChatMessage(
     role: ChatMessage['role'],
@@ -170,15 +188,22 @@ export class ChatService {
         userMessage,
         correlation,
         history,
-        workspace
+        workspace,
+        // The write path is batch (plan → apply), not token-streamed — surface its phases as activity
+        // so the UI shows real progress across the long edit instead of a frozen line.
+        (activity) => callbacks?.onActivity?.({ activity })
       );
     }
 
     const assistantMessage = this.toChatMessage('assistant', '', source);
     callbacks?.onStarted?.({ userMessage, assistantMessage });
+    const providerId = this.runtime.getActiveProviderId();
+    const memoryInput = await this.buildInputWithMemory(assistantInput, workspace, providerId);
+    // Attach recall provenance before streaming so every delta snapshot carries the "used memory" chip.
+    assistantMessage.memory = memoryInput.memory;
 
     const assistantReply = await this.assistant.streamAssistantReply(
-      assistantInput,
+      memoryInput.text,
       history,
       workspace,
       {
@@ -198,6 +223,7 @@ export class ChatService {
 
     assistantMessage.text = assistantReply.text;
     await this.persistMessages([userMessage, assistantMessage]);
+    this.scheduleCapture(providerId, workspace, userMessage, assistantMessage);
 
     return {
       type: 'reply',
@@ -212,20 +238,26 @@ export class ChatService {
     userMessage: ChatMessage,
     correlation?: CodexCorrelationOptions,
     existingHistory?: ChatMessage[],
-    existingWorkspace?: ReturnType<ChatRuntimeAdapter['getWorkspaceState']>
+    existingWorkspace?: ReturnType<ChatRuntimeAdapter['getWorkspaceState']>,
+    onActivity?: (activity: string) => void
   ): Promise<ChatTurnResult> {
     const workspace = existingWorkspace ?? this.runtime.getWorkspaceState();
     const history = existingHistory ?? (await this.readConversationHistory());
+    const providerId = this.runtime.getActiveProviderId();
+    const memoryInput = await this.buildInputWithMemory(text, workspace, providerId);
+    const textWithMemory = memoryInput.text;
 
     if (!workspace.writeAccessEnabled || !workspace.projectRoot) {
       const assistantReply = await this.assistant.generateAssistantReply(
-        text,
+        textWithMemory,
         history,
         workspace,
         correlation
       );
       const assistantMessage = this.toChatMessage('assistant', assistantReply.text, source);
+      assistantMessage.memory = memoryInput.memory;
       await this.persistMessages([userMessage, assistantMessage]);
+      this.scheduleCapture(providerId, workspace, userMessage, assistantMessage);
 
       return {
         type: 'reply',
@@ -234,7 +266,11 @@ export class ChatService {
       };
     }
 
-    const decision = await this.assistant.decideWriteIntent(text, history, workspace, correlation);
+    onActivity?.('Reviewing your request and planning the changes');
+    const decision = await this.assistant.decideWriteIntent(textWithMemory, history, workspace, {
+      ...correlation,
+      onActivity
+    });
     logger.info('chat.write_intent.decided', {
       source,
       intent: decision.intent,
@@ -242,8 +278,18 @@ export class ChatService {
     });
 
     if (decision.intent === 'reply') {
-      const assistantMessage = this.toChatMessage('assistant', decision.assistant_text, source);
+      // A provider occasionally returns an empty reply (e.g. a structured-output miss after heavy
+      // file reading). Never surface a blank bubble — fall back to a clear, actionable message.
+      const replyText = decision.assistant_text?.trim()
+        ? decision.assistant_text
+        : "I looked into that but couldn't put together a response. Could you rephrase it or try again?";
+      if (!decision.assistant_text?.trim()) {
+        logger.warn('chat.reply.empty_text', { source, title: decision.proposal_title ?? null });
+      }
+      const assistantMessage = this.toChatMessage('assistant', replyText, source);
+      assistantMessage.memory = memoryInput.memory;
       await this.persistMessages([userMessage, assistantMessage]);
+      this.scheduleCapture(providerId, workspace, userMessage, assistantMessage);
 
       return {
         type: 'reply',
@@ -275,12 +321,13 @@ export class ChatService {
     // Approve keeps it; reject reverts to the snapshot above. Capture the assistant's own summary of
     // what it did so approve can show it verbatim (its natural "I changed X, Y…" message).
     try {
-      const writeResult = await this.assistant.executeApprovedWrite(
-        approval,
-        history,
-        workspace,
-        correlation
+      onActivity?.(
+        `Making the changes${decision.proposal_title ? `: ${decision.proposal_title}` : ''}`
       );
+      const writeResult = await this.assistant.executeApprovedWrite(approval, history, workspace, {
+        ...correlation,
+        onActivity
+      });
       approval.executionSummary = writeResult.text.trim() || undefined;
     } catch (error) {
       if (baselineRef && this.assistant.revertWorkingTree) {
@@ -302,6 +349,7 @@ export class ChatService {
       throw error;
     }
 
+    onActivity?.('Preparing the diff for your review');
     let diff = await this.collectTurnDiff(
       workspace.projectRoot,
       baselineRef,
@@ -324,8 +372,14 @@ export class ChatService {
       changedFiles: diff.files.length
     });
 
-    const assistantMessage = this.toChatMessage('assistant', decision.assistant_text, source);
+    // Guard against an empty spoken explanation so the review turn always has a visible summary.
+    const proposalText =
+      decision.assistant_text?.trim() ||
+      decision.proposal_summary?.trim() ||
+      `I prepared changes${approval.title ? `: ${approval.title}` : ''}. Review the diff to approve or reject.`;
+    const assistantMessage = this.toChatMessage('assistant', proposalText, source);
     await this.persistMessages([userMessage, assistantMessage]);
+    this.scheduleCapture(providerId, workspace, userMessage, assistantMessage);
 
     return {
       type: 'approval_required',
@@ -511,6 +565,94 @@ export class ChatService {
     for (const message of messages) {
       const attachmentIds = (message.attachments ?? []).map((attachment) => attachment.id);
       await this.attachments.assignToMessage(attachmentIds, message.id);
+    }
+  }
+
+  private async buildInputWithMemory(
+    text: string,
+    workspace: ReturnType<ChatRuntimeAdapter['getWorkspaceState']>,
+    providerId: AssistantProviderId | null
+  ): Promise<{ text: string; memory?: ChatMemoryUsage }> {
+    if (!providerId) {
+      return { text };
+    }
+
+    try {
+      const recall = await this.brain.recall({
+        providerId,
+        workspace,
+        query: text
+      });
+
+      if (!recall.injected || !recall.text) {
+        return { text };
+      }
+
+      return {
+        text: `${recall.text}\n\nCurrent user request:\n${text}`,
+        memory: {
+          atoms: recall.atoms.map((atom) => ({
+            id: atom.id,
+            type: atom.type,
+            text: atom.text,
+            scope: atom.scope,
+            projectKey: atom.projectKey,
+            crossProject: atom.crossProject,
+            contributors: atom.contributors
+          }))
+        }
+      };
+    } catch (error) {
+      logger.warn('brain.recall.failed', {
+        message: error instanceof Error ? error.message : 'Unknown brain recall error.'
+      });
+      return { text };
+    }
+  }
+
+  /** Queue a capture without blocking the turn. Errors are swallowed inside captureMemoryTurn. */
+  private scheduleCapture(
+    providerId: AssistantProviderId | null,
+    workspace: ReturnType<ChatRuntimeAdapter['getWorkspaceState']>,
+    userMessage: ChatMessage,
+    assistantMessage: ChatMessage
+  ) {
+    if (!providerId) {
+      return;
+    }
+    this.captureChain = this.captureChain
+      .catch(() => undefined)
+      .then(() => this.captureMemoryTurn(providerId, workspace, userMessage, assistantMessage));
+  }
+
+  private async captureMemoryTurn(
+    providerId: AssistantProviderId | null,
+    workspace: ReturnType<ChatRuntimeAdapter['getWorkspaceState']>,
+    userMessage: ChatMessage,
+    assistantMessage: ChatMessage
+  ) {
+    if (!providerId) {
+      return;
+    }
+
+    try {
+      const result = await this.brain.captureTurn({
+        providerId,
+        workspace,
+        sessionId: await this.repository.getActiveSessionId(),
+        userMessage,
+        assistantMessage
+      });
+      if (result.captured) {
+        logger.info('brain.capture.completed', {
+          providerId,
+          atomCount: result.atoms.length
+        });
+      }
+    } catch (error) {
+      logger.warn('brain.capture.failed', {
+        message: error instanceof Error ? error.message : 'Unknown brain capture error.'
+      });
     }
   }
 }

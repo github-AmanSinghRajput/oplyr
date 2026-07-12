@@ -11,6 +11,8 @@ interface ChatScreenProps {
   isStreaming: boolean;
   streamingMessageId: string | null;
   typedMessages: Record<string, string>;
+  liveActivity: string | null;
+  activityLog: string[];
   disabled: boolean;
   onTextInputChange: (value: string) => void;
   onSubmit: (e: FormEvent<HTMLFormElement>) => void;
@@ -28,6 +30,8 @@ export function ChatScreen({
   isStreaming,
   streamingMessageId,
   typedMessages,
+  liveActivity,
+  activityLog,
   disabled,
   onTextInputChange,
   onSubmit,
@@ -43,19 +47,23 @@ export function ChatScreen({
         streamingMessageId={streamingMessageId}
         typedMessages={typedMessages}
         apiBaseUrl={apiBaseUrl}
+        liveActivity={liveActivity}
+        activityLog={activityLog}
       />
-      <ChatComposer
-        value={textInput}
-        onChange={onTextInputChange}
-        onSubmit={onSubmit}
-        onAttachFiles={onAttachFiles}
-        onRemoveAttachment={onRemoveAttachment}
-        onStartVoice={onStartVoice}
-        onCancelStreaming={onCancelStreaming}
-        draftAttachments={draftAttachments}
-        disabled={disabled}
-        isStreaming={isStreaming}
-      />
+      <div data-tour="composer">
+        <ChatComposer
+          value={textInput}
+          onChange={onTextInputChange}
+          onSubmit={onSubmit}
+          onAttachFiles={onAttachFiles}
+          onRemoveAttachment={onRemoveAttachment}
+          onStartVoice={onStartVoice}
+          onCancelStreaming={onCancelStreaming}
+          draftAttachments={draftAttachments}
+          disabled={disabled}
+          isStreaming={isStreaming}
+        />
+      </div>
     </div>
   );
 }

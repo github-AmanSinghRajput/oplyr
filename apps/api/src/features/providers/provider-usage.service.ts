@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { getPortableAssistantCwd } from '../../runtime-paths.js';
+import { agentSpawnEnv } from '../../lib/spawn-env.js';
 import type {
   AssistantProviderId,
   ProviderUsageSnapshot,
@@ -118,10 +119,7 @@ async function captureSlashCommand(config: SlashCaptureConfig) {
   return new Promise<string>((resolve, reject) => {
     const child = spawn('script', ['-q', captureFile, config.binary], {
       cwd: config.cwd,
-      env: {
-        ...process.env,
-        TERM: process.env.TERM ?? 'xterm-256color'
-      },
+      env: agentSpawnEnv({ TERM: process.env.TERM ?? 'xterm-256color' }),
       stdio: ['pipe', 'pipe', 'pipe']
     });
 

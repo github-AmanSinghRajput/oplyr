@@ -103,8 +103,9 @@ export function useVoiceSession({
   const appendActivity = useCallback((message: string) => {
     setVoiceActivity(message);
     setRecentVoiceActivities((current) => {
-      const next = [message, ...current.filter((item) => item !== message)];
-      return next.slice(0, 5);
+      // Chronological timeline (oldest→newest); collapse only consecutive repeats; cap the length.
+      if (current[current.length - 1] === message) return current;
+      return [...current, message].slice(-40);
     });
   }, []);
 
@@ -133,6 +134,7 @@ export function useVoiceSession({
 
   const resetVoiceUi = useCallback(() => {
     setVoiceActivity(null);
+    setRecentVoiceActivities([]);
     setSpokenReplyPreview('');
     setStreamedTranscriptOverride('');
     clearPendingCommand();
@@ -166,6 +168,10 @@ export function useVoiceSession({
   const sendTranscript = useCallback(
     (transcript: string) => {
       setStreamedTranscriptOverride(transcript);
+      // Clear the previous turn's answer immediately so a new command never shows the old reply.
+      setSpokenReplyPreview('');
+      setVoiceActivity(null);
+      setRecentVoiceActivities([]);
       processingTurnRef.current = true;
       isFinalizingRef.current = false;
       sessionActiveRef.current = true;
@@ -472,6 +478,10 @@ export function useVoiceSession({
       }
     };
 
+    // A new command is starting — wipe the previous turn's answer/transcript so nothing stale shows.
+    setSpokenReplyPreview('');
+    setStreamedTranscriptOverride('');
+    setRecentVoiceActivities([]);
     updateVoiceSession({ active: true, phase: 'listening', liveTranscript: '', error: null });
     appendActivity('Listening for your request');
     setIsRecording(true);

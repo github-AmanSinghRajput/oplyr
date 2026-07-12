@@ -5,9 +5,14 @@ import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const tokenFilePath = path.join(__dirname, '../../../.local-api-auth-token');
+const defaultTokenFilePath = path.join(__dirname, '../../../.local-api-auth-token');
 
-export async function resolveLocalApiAuthToken(explicitToken?: string | null) {
+// `tokenFilePath` must be writable. The default resolves inside the app dir, which is READ-ONLY in a
+// packaged .app — so the caller passes a userData path when packaged.
+export async function resolveLocalApiAuthToken(
+  explicitToken?: string | null,
+  tokenFilePath: string = defaultTokenFilePath
+) {
   const normalized = explicitToken?.trim();
   if (normalized) {
     return normalized;

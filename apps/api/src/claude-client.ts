@@ -1,4 +1,5 @@
 import { execFile, spawn } from 'node:child_process';
+import { agentSpawnEnv } from './lib/spawn-env.js';
 import path from 'node:path';
 import type { ChatMessage, PendingApproval, WorkspaceState } from './types.js';
 import type { ClaudeSettingsService } from './features/claude/claude-settings.service.js';
@@ -45,7 +46,7 @@ function execClaudeCommand(args: string[], cwd: string) {
       args,
       {
         cwd,
-        env: process.env,
+        env: agentSpawnEnv(),
         timeout: 10 * 60 * 1000,
         maxBuffer: 1024 * 1024 * 12
       },
@@ -94,7 +95,7 @@ function execClaudeCommandWithStdin(args: string[], cwd: string, stdinData: stri
       args,
       {
         cwd,
-        env: process.env,
+        env: agentSpawnEnv(),
         timeout: 10 * 60 * 1000,
         maxBuffer: 1024 * 1024 * 12
       },
@@ -155,6 +156,45 @@ function normalizeStatusText(output: string) {
     .filter(Boolean)
     .join('\n')
     .trim();
+}
+
+export function extractClaudeResultErrorMessage(value: unknown): string | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const apiStatus =
+    typeof record.api_error_status === 'number'
+      ? record.api_error_status
+      : typeof record.api_error_status === 'string'
+        ? Number(record.api_error_status)
+        : null;
+  const isError = record.is_error === true || apiStatus === 429;
+  if (!isError) {
+    return null;
+  }
+
+  const directCandidates = [record.result, record.error, record.message];
+  for (const candidate of directCandidates) {
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+
+  if (record.result && typeof record.result === 'object') {
+    const nested = getObjectText(record.result);
+    if (nested) return nested;
+  }
+
+  return apiStatus === 429
+    ? 'Claude Code session limit reached. Try again after your quota resets.'
+    : 'Claude Code returned an error.';
+}
+
+function extractClaudeJsonErrorMessage(text: string): string | null {
+  const parsed = tryParseJson(text.trim());
+  return parsed ? extractClaudeResultErrorMessage(parsed) : null;
 }
 
 function extractAccountLabelFromObject(value: unknown): string | null {
@@ -221,7 +261,11 @@ function classifyClaudeError(error: unknown) {
   const message = extractClaudeErrorMessage(error);
   const lower = message.toLowerCase();
 
-  if (/you'?ve hit your limit|usage limit|resets\s+\d/i.test(lower)) {
+  if (
+    /you'?ve hit .*limit|session limit|usage limit|api_error_status["']?\s*:\s*429|resets\s+\d/i.test(
+      lower
+    )
+  ) {
     return new ClaudeClientError('rate_limit', message, message);
   }
 
@@ -271,11 +315,23 @@ function extractClaudeErrorMessage(error: unknown) {
     .filter(Boolean);
 
   for (const candidate of detailCandidates) {
+    const structuredCandidate = extractClaudeJsonErrorMessage(candidate);
+    if (structuredCandidate) {
+      return structuredCandidate;
+    }
+
     const lines = candidate
       .split('\n')
       .map((line) => line.trim())
       .filter(Boolean)
       .filter((line) => !line.startsWith('Warning: no stdin data received in 3s'));
+
+    for (const line of lines) {
+      const structuredLine = extractClaudeJsonErrorMessage(line);
+      if (structuredLine) {
+        return structuredLine;
+      }
+    }
 
     const limitLineIndex = lines.findIndex((line) => /you'?ve hit your limit/i.test(line));
     if (limitLineIndex >= 0) {
@@ -560,6 +616,7 @@ async function runClaudePromptStream(options: {
   prompt: string;
   allowedTools: string;
   signal?: AbortSignal;
+  outputSchema?: unknown;
   onTextSnapshot?: (text: string) => void;
   onActivityUpdate?: (activity: string) => void;
   executionContext?: { surface: 'voice' | 'text'; intent: 'discussion' | 'write' };
@@ -574,6 +631,12 @@ async function runClaudePromptStream(options: {
       '--allowedTools',
       options.allowedTools
     ];
+
+    // Structured-output turns (e.g. the write-intent decision) still stream tool activity, but the
+    // final result is the schema-conforming JSON.
+    if (options.outputSchema) {
+      baseArgs.push('--json-schema', JSON.stringify(options.outputSchema));
+    }
 
     let stdoutBuffer = '';
     let stderrBuffer = '';
@@ -660,12 +723,19 @@ async function runClaudePromptStream(options: {
       if (message.type === 'result') {
         if (message.is_error === true) {
           const errorText =
-            typeof message.result === 'string' ? message.result : 'Claude returned an error.';
+            extractClaudeResultErrorMessage(message) ??
+            (typeof message.result === 'string' ? message.result : 'Claude returned an error.');
           rejectOnce(classifyClaudeError(new Error(errorText)));
           child?.kill('SIGTERM');
           return;
         }
-        const resultText = typeof message.result === 'string' ? message.result.trim() : '';
+        // A schema turn may surface the payload as an object rather than a string — normalize both.
+        const resultText =
+          typeof message.result === 'string'
+            ? message.result.trim()
+            : message.result && typeof message.result === 'object'
+              ? JSON.stringify(message.result)
+              : '';
         finalText = resultText || latestText;
         if (finalText && finalText !== latestText) {
           options.onTextSnapshot?.(finalText);
@@ -769,7 +839,7 @@ async function runClaudePromptStream(options: {
         attachChild(
           spawn(getClaudeCommand(), args, {
             cwd: options.cwd,
-            env: process.env,
+            env: agentSpawnEnv(),
             stdio: ['pipe', 'pipe', 'pipe']
           })
         );
@@ -782,7 +852,7 @@ export async function decideClaudeWriteIntent(
   userText: string,
   history: ChatMessage[],
   workspace: WorkspaceState,
-  options?: { voiceTurnId?: string }
+  options?: { voiceTurnId?: string; onActivity?: (activity: string) => void }
 ) {
   await assertClaudeReady();
   const cwd = workspace.projectRoot ?? getRootDir();
@@ -800,11 +870,14 @@ export async function decideClaudeWriteIntent(
     required: ['intent', 'assistant_text', 'proposal_title', 'proposal_summary', 'tasks', 'agents'],
     additionalProperties: false
   };
-  const raw = await runClaudePrompt({
+  // Stream (not the batch runner) so Claude's real reads ("Reading X", "Searching …") surface as
+  // activity during the planning phase; the final result is still the schema-conforming JSON.
+  const raw = await runClaudePromptStream({
     cwd,
     prompt: buildWriteDecisionPrompt(userText, history, workspace),
     allowedTools: 'Read',
     outputSchema: schema,
+    onActivityUpdate: options?.onActivity,
     executionContext: {
       surface: options?.voiceTurnId ? 'voice' : 'text',
       intent: 'write'
@@ -819,7 +892,27 @@ export async function decideClaudeWriteIntent(
     responseLength: raw.length
   });
 
-  const parsed = JSON.parse(raw) as Record<string, unknown>;
+  // Resilient parse: if the streamed payload isn't clean JSON, try to extract the embedded object
+  // rather than throwing (which would fail the whole turn). Fall back to a reply so the user gets one.
+  let parsed = tryParseJson(raw) as Record<string, unknown> | null;
+  if (!parsed || typeof parsed !== 'object') {
+    try {
+      parsed = extractClaudeJsonPayload(raw) as Record<string, unknown>;
+    } catch {
+      parsed = null;
+    }
+  }
+  if (!parsed || typeof parsed !== 'object') {
+    logger.warn('claude.write_intent.unparsable', { projectName: path.basename(cwd) });
+    return {
+      intent: 'reply' as const,
+      assistant_text: '',
+      proposal_title: '',
+      proposal_summary: '',
+      tasks: [],
+      agents: []
+    };
+  }
   return {
     intent: parsed.intent === 'propose_write' ? ('propose_write' as const) : ('reply' as const),
     assistant_text: typeof parsed.assistant_text === 'string' ? parsed.assistant_text : '',
@@ -838,14 +931,16 @@ export async function executeClaudeApprovedWrite(
   approval: PendingApproval,
   history: ChatMessage[],
   workspace: WorkspaceState,
-  options?: { voiceTurnId?: string }
+  options?: { voiceTurnId?: string; onActivity?: (activity: string) => void }
 ) {
   await assertClaudeReady();
   const startedAt = Date.now();
-  const text = await runClaudePrompt({
+  // Stream the real edits ("Reading X", "Editing Y") through the long write phase.
+  const text = await runClaudePromptStream({
     cwd: approval.projectRoot,
     prompt: buildWriteExecutionPrompt(approval, history, workspace),
     allowedTools: 'Read,Edit,Bash',
+    onActivityUpdate: options?.onActivity,
     executionContext: {
       surface: options?.voiceTurnId ? 'voice' : 'text',
       intent: 'write'
@@ -903,6 +998,11 @@ function extractClaudeText(raw: string) {
     return raw.trim();
   }
 
+  const errorMessage = extractClaudeResultErrorMessage(parsed);
+  if (errorMessage) {
+    throw new Error(errorMessage);
+  }
+
   if (typeof parsed === 'string') {
     return parsed.trim();
   }
@@ -918,6 +1018,11 @@ function extractClaudeText(raw: string) {
 function extractClaudeJsonPayload(raw: string) {
   const parsed = tryParseJson(raw);
   if (parsed && typeof parsed === 'object') {
+    const errorMessage = extractClaudeResultErrorMessage(parsed);
+    if (errorMessage) {
+      throw new Error(errorMessage);
+    }
+
     if ('result' in parsed && typeof parsed.result === 'object' && parsed.result) {
       return parsed.result;
     }

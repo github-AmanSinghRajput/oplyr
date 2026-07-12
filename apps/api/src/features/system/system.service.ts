@@ -1,13 +1,16 @@
 import { env } from '../../config/env.js';
 import { checkDatabaseConnection } from '../../db/client.js';
+import { checkBrainDatabaseConnection } from '../../db/brain-client.js';
 
 export class SystemService {
   async getBackendStatus() {
     const database = await checkDatabaseConnection();
+    const brainDatabase = await checkBrainDatabaseConnection();
 
     return {
       environment: env.appEnv,
       database,
+      brainDatabase,
       providers: {
         queue: env.queueProvider,
         email: env.emailProvider,
@@ -27,11 +30,15 @@ export class SystemService {
 
   async getReadiness() {
     const database = await checkDatabaseConnection();
-    const ready = !database.configured || database.reachable;
+    const brainDatabase = await checkBrainDatabaseConnection();
+    const ready =
+      (!database.configured || database.reachable) &&
+      (!brainDatabase.configured || brainDatabase.reachable);
 
     return {
       ready,
-      database
+      database,
+      brainDatabase
     };
   }
 }

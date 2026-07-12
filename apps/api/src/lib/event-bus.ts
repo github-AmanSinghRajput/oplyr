@@ -15,6 +15,10 @@ export type AppEvent =
   | {
       type: 'status_refresh';
       payload: Record<string, never>;
+    }
+  | {
+      type: 'brain_update';
+      payload: { projectKey: string | null; capturedAtoms: number };
     };
 
 export class EventBus {

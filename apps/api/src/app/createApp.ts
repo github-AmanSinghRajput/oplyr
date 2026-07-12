@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import cors from 'cors';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import {
-  AssistantClientError,
+  classifyAssistantError,
   connectAssistantProvider,
   disconnectAssistantProvider,
   getAssistantState,
@@ -46,6 +46,8 @@ import { ProviderUsageService } from '../features/providers/provider-usage.servi
 import { VoiceCommandService } from '../features/voice/voice-command.service.js';
 import { AppSettingsService } from '../features/app/app-settings.service.js';
 import { AppResetService } from '../features/app/app-reset.service.js';
+import { BrainService, setBrainEventEmitter } from '../features/brain/brain.service.js';
+import type { BrainMode } from '../features/brain/brain.types.js';
 import type { AppTheme, AssistantProviderId, ChatSource } from '../types.js';
 import {
   clearPendingApproval,
@@ -63,6 +65,68 @@ function getVoiceTurnId(request: Request) {
 
 function writeNdjson(response: Response, payload: Record<string, unknown>) {
   response.write(`${JSON.stringify(payload)}\n`);
+}
+
+function optionalBooleanField(value: unknown, fieldName: string) {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  throw new AppError(400, `${fieldName} must be a boolean.`, 'INVALID_INPUT');
+}
+
+function optionalNumberField(value: unknown, fieldName: string) {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  if (Number.isFinite(parsed)) {
+    return parsed;
+  }
+
+  throw new AppError(400, `${fieldName} must be a number.`, 'INVALID_INPUT');
+}
+
+function optionalBrainMode(value: unknown) {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === 'standard' || value === 'local_god') {
+    const mode: BrainMode = value;
+    return mode;
+  }
+
+  throw new AppError(400, 'mode must be one of standard, local_god.', 'INVALID_INPUT');
+}
+
+function optionalAgentWritePermissions(value: unknown) {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new AppError(400, 'agentWritePermissions must be an object.', 'INVALID_INPUT');
+  }
+
+  const permissions: Partial<Record<AssistantProviderId, boolean>> = {};
+  const record = value as Record<string, unknown>;
+  for (const providerId of ['codex', 'claude', 'gemini'] as const) {
+    if (record[providerId] === undefined) {
+      continue;
+    }
+    permissions[providerId] = requireBoolean(
+      record[providerId],
+      `agentWritePermissions.${providerId}`
+    );
+  }
+
+  return permissions;
 }
 
 async function sanitizeDiffForResponse(
@@ -119,6 +183,9 @@ export function createApp(options?: { apiAuthToken?: string }) {
   const voiceSettingsService = new VoiceSettingsService();
   const appSettingsService = new AppSettingsService();
   const appResetService = new AppResetService();
+  const brainService = new BrainService();
+  // Let the brain push live updates to the Memory UI over the existing SSE bus (subscribe, not poll).
+  setBrainEventEmitter((event) => eventBus.emit(event));
   const voiceTranscriptionService = new VoiceTranscriptionService();
   const voiceCommandService = new VoiceCommandService(codexSettingsService);
   const voiceSessionService = new VoiceSessionService({
@@ -135,6 +202,19 @@ export function createApp(options?: { apiAuthToken?: string }) {
   if (env.appEnv === 'production') {
     app.set('trust proxy', 1);
   }
+
+  // Defense-in-depth against DNS-rebinding: the local runtime only ever serves the loopback host, so
+  // reject any request whose Host header points elsewhere (e.g. a hostile site rebinding its domain
+  // to 127.0.0.1 to treat the local API as same-origin). Runs before everything, incl. health checks.
+  const loopbackHosts = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
+  app.use((request: Request, _response: Response, next: NextFunction) => {
+    const hostname = (request.headers.host ?? '').split(':')[0].toLowerCase();
+    if (hostname && !loopbackHosts.has(hostname) && hostname !== env.host) {
+      next(new AppError(403, 'Requests must target the local Oplyr runtime.', 'FORBIDDEN'));
+      return;
+    }
+    next();
+  });
 
   app.use(
     cors({
@@ -262,7 +342,8 @@ export function createApp(options?: { apiAuthToken?: string }) {
         audio: runtime.audio,
         voiceSession: runtime.voiceSession,
         system: {
-          database: readiness.database
+          database: readiness.database,
+          brainDatabase: readiness.brainDatabase
         }
       });
     })
@@ -366,6 +447,7 @@ export function createApp(options?: { apiAuthToken?: string }) {
       setVoiceSessionState({
         silenceWindowMs: resetVoiceSettings.silenceWindowMs
       });
+      await brainService.resetAll();
 
       eventBus.emit({
         type: 'status_refresh',
@@ -373,6 +455,101 @@ export function createApp(options?: { apiAuthToken?: string }) {
       });
 
       response.json({ ok: true });
+    })
+  );
+
+  app.get(
+    '/api/brain/status',
+    asyncHandler(async (_request: Request, response: Response) => {
+      response.set('Cache-Control', 'no-store');
+      response.json(await brainService.getStatus(getRuntimeState().workspace));
+    })
+  );
+
+  app.put(
+    '/api/brain/settings',
+    asyncHandler(async (request: Request, response: Response) => {
+      response.json(
+        await brainService.updateSettings({
+          mode: optionalBrainMode(request.body.mode),
+          enabled: optionalBooleanField(request.body.enabled, 'enabled'),
+          recallEnabled: optionalBooleanField(request.body.recallEnabled, 'recallEnabled'),
+          captureEnabled: optionalBooleanField(request.body.captureEnabled, 'captureEnabled'),
+          crossProjectEnabled: optionalBooleanField(
+            request.body.crossProjectEnabled,
+            'crossProjectEnabled'
+          ),
+          rawArchiveEnabled: optionalBooleanField(
+            request.body.rawArchiveEnabled,
+            'rawArchiveEnabled'
+          ),
+          maxRecallAtoms: optionalNumberField(request.body.maxRecallAtoms, 'maxRecallAtoms'),
+          maxRecallCharacters: optionalNumberField(
+            request.body.maxRecallCharacters,
+            'maxRecallCharacters'
+          ),
+          maxGraphHops: optionalNumberField(request.body.maxGraphHops, 'maxGraphHops'),
+          allowSensitiveCapture: optionalBooleanField(
+            request.body.allowSensitiveCapture,
+            'allowSensitiveCapture'
+          ),
+          allowSensitiveInjection: optionalBooleanField(
+            request.body.allowSensitiveInjection,
+            'allowSensitiveInjection'
+          ),
+          agentWritePermissions: optionalAgentWritePermissions(request.body.agentWritePermissions)
+        })
+      );
+    })
+  );
+
+  app.delete(
+    '/api/brain/atoms/:atomId',
+    asyncHandler(async (request: Request, response: Response) => {
+      const atomId = getRouteParam(request.params.atomId, 'atomId');
+      const deleted = await brainService.deleteAtom(atomId);
+      response.json({ ok: deleted });
+    })
+  );
+
+  app.post(
+    '/api/brain/reset',
+    asyncHandler(async (_request: Request, response: Response) => {
+      await brainService.resetAll();
+      response.json({ ok: true });
+    })
+  );
+
+  app.get(
+    '/api/brain/graph',
+    asyncHandler(async (_request: Request, response: Response) => {
+      response.set('Cache-Control', 'no-store');
+      response.json(await brainService.getGraph());
+    })
+  );
+
+  app.post(
+    '/api/brain/search',
+    asyncHandler(async (request: Request, response: Response) => {
+      const query = typeof request.body.query === 'string' ? request.body.query : '';
+      if (!query.trim()) {
+        throw new AppError(400, 'query is required.', 'INVALID_INPUT');
+      }
+      const atoms = await brainService.search(getRuntimeState().workspace, query);
+      response.json({ atoms });
+    })
+  );
+
+  app.put(
+    '/api/brain/projects/:projectKey',
+    asyncHandler(async (request: Request, response: Response) => {
+      const projectKey = getRouteParam(request.params.projectKey, 'projectKey');
+      response.json(
+        await brainService.updateProjectSettings(projectKey, {
+          isolate: optionalBooleanField(request.body.isolate, 'isolate'),
+          captureEnabled: optionalBooleanField(request.body.captureEnabled, 'captureEnabled')
+        })
+      );
     })
   );
 
@@ -946,12 +1123,12 @@ export function createApp(options?: { apiAuthToken?: string }) {
           errorCode: isAppError(error) ? error.code : 'INTERNAL_SERVER_ERROR',
           message: error instanceof Error ? error.message : 'Unhandled API error'
         });
-        const classified = error instanceof AssistantClientError ? error : null;
+        const classified = classifyAssistantError(error);
         writeNdjson(response, {
           type: 'error',
           error:
             classified?.friendlyMessage ??
-            (error instanceof Error ? error.message : 'Unable to stream chat response.'),
+            (isAppError(error) ? error.message : 'Unable to stream chat response.'),
           errorKind: classified?.kind ?? 'unknown'
         });
       }
@@ -1055,21 +1232,33 @@ export function createApp(options?: { apiAuthToken?: string }) {
       typeof response.locals.requestId === 'string' ? response.locals.requestId : 'unknown';
     const details = isAppError(error) ? error.details : undefined;
 
+    const classified = classifyAssistantError(error);
+    const statusCode = isAppError(error)
+      ? error.statusCode
+      : classified?.kind === 'rate_limit'
+        ? 429
+        : 500;
+
     logger.error('http.request.failed', {
       requestId,
       method: request.method,
       path: request.path,
-      statusCode: isAppError(error) ? error.statusCode : 500,
+      statusCode,
       errorCode: isAppError(error) ? error.code : 'INTERNAL_SERVER_ERROR',
       message: error instanceof Error ? error.message : 'Unhandled API error',
       details
     });
 
-    const classified = error instanceof AssistantClientError ? error : null;
-    response.status(isAppError(error) ? error.statusCode : 500).json({
-      error:
-        classified?.friendlyMessage ??
-        (error instanceof Error ? error.message : 'Internal server error.'),
+    // Only surface messages meant for users — AppError (validation/business rules) and the assistant
+    // client's friendly message. An unclassified error is an unexpected 500 whose raw message may
+    // carry filesystem paths / internals, so return a generic string and keep the detail in the log.
+    const clientMessage =
+      classified?.friendlyMessage ??
+      (isAppError(error)
+        ? error.message
+        : 'Something went wrong. Check the Oplyr server logs for details.');
+    response.status(statusCode).json({
+      error: clientMessage,
       code: isAppError(error) ? error.code : 'INTERNAL_SERVER_ERROR',
       errorKind: classified?.kind ?? undefined,
       requestId

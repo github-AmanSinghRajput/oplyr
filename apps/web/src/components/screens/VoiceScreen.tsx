@@ -5,6 +5,7 @@ import { VoiceWaveform } from '@/components/voice/VoiceWaveform';
 import { VoiceListeningStrip } from '@/components/voice/VoiceListeningStrip';
 import { TypingDots } from '@/components/voice/TypingDots';
 import { MessageBubble } from '@/components/chat/MessageBubble';
+import { AgentActivityTimeline } from '@/components/chat/AgentActivityTimeline';
 import { ProviderLogo } from '@/components/providers/ProviderLogo';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
@@ -31,6 +32,10 @@ interface VoiceScreenProps {
   micAnalyserRef: React.RefObject<AnalyserNode | null>;
   userTranscript: string;
   aiReply: MessageEntry | null;
+  voiceActivity: string | null;
+  voiceActivities: string[];
+  /** Shared turn state (chat + voice). True whenever the agent is processing any request. */
+  agentWorking: boolean;
   assistant: VoiceAssistantInfo | null;
   audioAvailable: boolean;
   userName?: string | null;
@@ -59,6 +64,9 @@ export function VoiceScreen({
   micAnalyserRef,
   userTranscript,
   aiReply,
+  voiceActivity,
+  voiceActivities,
+  agentWorking,
   assistant,
   audioAvailable,
   userName,
@@ -81,10 +89,12 @@ export function VoiceScreen({
   const reviewing = pendingTranscript.length > 0;
 
   const mode = isRecording ? 'recording' : voiceState === 'speaking' ? 'speaking' : 'idle';
-  const busy = voiceState === 'thinking';
-  const isWorking = voiceState === 'thinking' || voiceState === 'speaking';
+  // The agent turn (shared with chat) is the real "working" signal — a turn started from chat also
+  // lights up voice. Mic is disabled while a turn runs so only one request is ever in flight.
+  const isWorking = agentWorking;
+  const busy = agentWorking;
   const replyText = aiReply?.text?.trim() ?? '';
-  const showResponseBlock = Boolean(aiReply) || isWorking;
+  const showResponseBlock = Boolean(aiReply && replyText) || isWorking;
 
   return (
     <div className="flex w-full flex-col items-center gap-6 py-8">
@@ -95,11 +105,14 @@ export function VoiceScreen({
         <p className="text-xs font-medium text-text-tertiary uppercase tracking-wider mb-1">
           Voice · {audio?.transcriptionEngine ?? 'On-device speech'}
         </p>
-        <h2 className="text-xl font-semibold text-text-primary">{STATUS[voiceState]}</h2>
+        <h2 className="text-xl font-semibold text-text-primary">
+          {agentWorking && voiceState !== 'listening' ? 'Working…' : STATUS[voiceState]}
+        </h2>
       </div>
 
       <button
         type="button"
+        data-tour="voice-autosend"
         onClick={onToggleAutoSend}
         aria-pressed={autoSend}
         title={
@@ -130,7 +143,7 @@ export function VoiceScreen({
       />
 
       <div className="flex items-center gap-3">
-        <motion.div whileTap={{ scale: 0.95 }}>
+        <motion.div whileTap={{ scale: 0.95 }} data-tour="voice-mic">
           <Button
             size="lg"
             className={cn(
@@ -218,13 +231,22 @@ export function VoiceScreen({
                 Assistant
               </span>
             )}
-            {isWorking && <TypingDots size="sm" className="ml-1" />}
+            {isWorking && !replyText && <TypingDots size="sm" className="ml-1" />}
           </div>
           {aiReply && replyText ? (
-            <MessageBubble message={aiReply} />
+            <MessageBubble
+              message={aiReply}
+              isStreaming={isWorking}
+              liveActivity={voiceActivity}
+              activityLog={voiceActivities}
+            />
           ) : (
-            <div className="rounded-[var(--radius-panel)] border border-border bg-surface-1 px-4 py-5 flex items-center justify-center">
-              <TypingDots />
+            <div className="rounded-[var(--radius-panel)] border border-border bg-surface-1 px-4 py-5">
+              <AgentActivityTimeline
+                activities={voiceActivities}
+                working={isWorking}
+                current={voiceActivity}
+              />
             </div>
           )}
         </div>

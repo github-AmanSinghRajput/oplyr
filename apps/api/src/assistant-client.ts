@@ -59,6 +59,36 @@ export class AssistantClientError extends Error {
 
 export { AssistantClientError as CodexClientError };
 
+const ASSISTANT_ERROR_KINDS: readonly AssistantErrorKind[] = [
+  'auth',
+  'rate_limit',
+  'service',
+  'unknown'
+];
+
+/**
+ * Recognize a classified assistant error by shape, not class. Each provider client throws its own
+ * error type (ClaudeClientError, GeminiClientError, …) that all carry `{ kind, friendlyMessage }`;
+ * an `instanceof AssistantClientError` check misses those and mislabels e.g. a rate limit as unknown.
+ */
+export function classifyAssistantError(
+  error: unknown
+): { kind: AssistantErrorKind; friendlyMessage: string } | null {
+  if (!error || typeof error !== 'object') return null;
+  const candidate = error as { kind?: unknown; friendlyMessage?: unknown };
+  if (
+    typeof candidate.kind === 'string' &&
+    (ASSISTANT_ERROR_KINDS as readonly string[]).includes(candidate.kind) &&
+    typeof candidate.friendlyMessage === 'string'
+  ) {
+    return {
+      kind: candidate.kind as AssistantErrorKind,
+      friendlyMessage: candidate.friendlyMessage
+    };
+  }
+  return null;
+}
+
 interface WriteDecision {
   intent: 'reply' | 'propose_write';
   assistant_text: string;
@@ -97,13 +127,13 @@ interface CodingAssistantProvider {
     userText: string,
     history: ChatMessage[],
     workspace: WorkspaceState,
-    options?: { voiceTurnId?: string }
+    options?: { voiceTurnId?: string; onActivity?: (activity: string) => void }
   ): Promise<WriteDecision>;
   executeApprovedWrite(
     approval: PendingApproval,
     history: ChatMessage[],
     workspace: WorkspaceState,
-    options?: { voiceTurnId?: string }
+    options?: { voiceTurnId?: string; onActivity?: (activity: string) => void }
   ): Promise<{ text: string }>;
 }
 
@@ -324,7 +354,7 @@ export async function decideWriteIntent(
   userText: string,
   history: ChatMessage[],
   workspace: WorkspaceState,
-  options?: { voiceTurnId?: string }
+  options?: { voiceTurnId?: string; onActivity?: (activity: string) => void }
 ) {
   const provider = await getActiveProvider();
   return provider.decideWriteIntent(userText, history, workspace, options);
@@ -334,7 +364,7 @@ export async function executeApprovedWrite(
   approval: PendingApproval,
   history: ChatMessage[],
   workspace: WorkspaceState,
-  options?: { voiceTurnId?: string }
+  options?: { voiceTurnId?: string; onActivity?: (activity: string) => void }
 ) {
   const provider = await getActiveProvider();
   return provider.executeApprovedWrite(approval, history, workspace, options);

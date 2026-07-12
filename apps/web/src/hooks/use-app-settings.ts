@@ -61,7 +61,7 @@ export interface AppSettingsHandle {
   handleProviderDisconnect: (providerId: AssistantProviderId) => Promise<void>;
   handleSaveProject: (projectRoot: string) => Promise<void>;
   handleToggleWriteAccess: (enabled: boolean) => Promise<void>;
-  handleResetApp: () => Promise<void>;
+  handleResetApp: () => Promise<boolean>;
   handleOnboardingDisplayNameSubmit: (displayName: string) => Promise<void>;
   initialize: () => Promise<void>;
   loadCodexSettings: () => Promise<void>;
@@ -493,10 +493,10 @@ export function useAppSettings(): AppSettingsHandle {
     if (
       typeof window !== 'undefined' &&
       !window.confirm(
-        'Reset Oplyr completely?\n\nThis clears workspace data, chat history, approvals, settings, and app-connected providers.'
+        'Reset Oplyr completely?\n\nThis clears workspace data, chat history, approvals, Brain memory, settings, and app-connected providers.'
       )
     ) {
-      return;
+      return false;
     }
 
     setBusyLabel('Resetting Oplyr...');
@@ -507,9 +507,11 @@ export function useAppSettings(): AppSettingsHandle {
       setOnboardingSelectedProviderId(null);
       await initialize();
       pushToast('info', 'Oplyr reset', 'All local app data has been cleared.');
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to reset Oplyr.');
       pushToast('error', 'Reset failed', err instanceof Error ? err.message : 'Unable to reset.');
+      return false;
     } finally {
       setBusyLabel('');
     }

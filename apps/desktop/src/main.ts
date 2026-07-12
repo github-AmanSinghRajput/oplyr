@@ -1,8 +1,8 @@
 import path from 'node:path';
 import process from 'node:process';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { accessSync, constants as fsConstants, realpathSync, statSync } from 'node:fs';
+import { accessSync, appendFileSync, constants as fsConstants, realpathSync, statSync } from 'node:fs';
 import {
   app,
   BrowserWindow,
@@ -21,7 +21,9 @@ const isDevelopment = !app.isPackaged;
 const apiBaseUrl = process.env.ELECTRON_API_BASE_URL ?? 'http://127.0.0.1:8787';
 const rendererUrl = process.env.ELECTRON_RENDERER_URL ?? 'http://localhost:5173';
 const trustedDevOrigin = new URL(rendererUrl).origin;
-const packagedRendererUrl = pathToFileURL(path.join(__dirname, '../../web/dist/index.html')).toString();
+const packagedRendererUrl = pathToFileURL(
+  path.join(__dirname, '../../web/dist/index.html')
+).toString();
 const openDevTools = process.env.ELECTRON_OPEN_DEVTOOLS === 'true';
 
 app.setName('Oplyr');
@@ -105,7 +107,12 @@ function isTrustedRendererUrl(url: string) {
   }
 
   if (isDevelopment) {
-    return url.startsWith(trustedDevOrigin);
+    // Exact origin match — a prefix check would also accept http://localhost:5173.evil.com etc.
+    try {
+      return new URL(url).origin === trustedDevOrigin;
+    } catch {
+      return false;
+    }
   }
 
   return url === packagedRendererUrl;
@@ -127,9 +134,15 @@ function isTrustedMediaOrigin(originOrUrl: string) {
   }
 
   if (isDevelopment) {
-    return originOrUrl.startsWith(trustedDevOrigin);
+    try {
+      return new URL(originOrUrl).origin === trustedDevOrigin;
+    } catch {
+      return false;
+    }
   }
 
+  // The packaged renderer is served from file:// (an opaque origin) and no other file:// content is
+  // ever loaded (navigation is locked to the packaged renderer), so this is the only mic surface.
   return originOrUrl.startsWith('file://');
 }
 
@@ -146,16 +159,34 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true
+      sandbox: true,
+      webviewTag: false
     }
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url);
+    // Only ever hand http(s) links to the OS. Without this, renderer-originated `window.open` of
+    // file:/, custom app schemes (vscode:, x-…:), etc. would be launched via the OS handler — a
+    // classic openExternal-to-local-app abuse if the renderer is ever tricked into opening one.
+    try {
+      const { protocol } = new URL(url);
+      if (protocol === 'https:' || protocol === 'http:') {
+        void shell.openExternal(url);
+      }
+    } catch {
+      /* malformed URL — ignore */
+    }
     return { action: 'deny' };
   });
   mainWindow.webContents.on('will-navigate', (event, url) => {
     if (!isTrustedRendererUrl(url)) {
+      event.preventDefault();
+    }
+  });
+  // Same lock for subframe navigations (top-level `will-navigate` doesn't cover iframes), so injected
+  // or dependency-created frames can't navigate to attacker content.
+  mainWindow.webContents.on('will-frame-navigate', (event) => {
+    if (!isTrustedRendererUrl(event.url)) {
       event.preventDefault();
     }
   });
@@ -233,6 +264,91 @@ function setRuntimeStatus(patch: Partial<DesktopRuntimeStatus>) {
   publishRuntimeStatus();
 }
 
+// Append the forked API's output to a log file in userData (and echo to the main process's stderr,
+// visible when the app is launched from a terminal), so a packaged-API startup failure is diagnosable.
+function appendApiLog(text: string) {
+  try {
+    appendFileSync(path.join(app.getPath('userData'), 'api-child.log'), text);
+  } catch {
+    /* logging must never crash startup */
+  }
+  process.stderr.write(`[api] ${text}`);
+}
+
+function attachApiLogging(child: ChildProcess) {
+  child.stdout?.on('data', (d: Buffer) => appendApiLog(d.toString()));
+  child.stderr?.on('data', (d: Buffer) => appendApiLog(d.toString()));
+  child.on('error', (err) => appendApiLog(`[spawn-error] ${err.stack ?? String(err)}\n`));
+}
+
+function getPackagedApiEntry() {
+  // esbuild bundle of the API (better-sqlite3 kept external), shipped under resources/api by
+  // electron-builder (docs/DISTRIBUTION.md Phase 2).
+  return path.join(process.resourcesPath, 'api', 'server.mjs');
+}
+
+function getPackagedSttBinary() {
+  // Native oplyr-stt binary, shipped under resources/stt by electron-builder.
+  return path.join(process.resourcesPath, 'stt', 'oplyr-stt');
+}
+
+function buildApiEnv(): NodeJS.ProcessEnv {
+  const shared: NodeJS.ProcessEnv = {
+    ...process.env,
+    API_HOST: '127.0.0.1',
+    LOCAL_API_AUTH_TOKEN: process.env.LOCAL_API_AUTH_TOKEN ?? '',
+    OPLYR_APP_ROOT: getRuntimeAppRoot(),
+    OPLYR_USER_DATA_DIR: app.getPath('userData'),
+    OPLYR_LOCAL_MODELS_DIR: getRuntimeModelsDir(),
+    OPLYR_MODEL_SEED_DIR: getBundledModelSeedDir(),
+    OPLYR_SCRIPT_ROOT: getRuntimeScriptDir()
+  };
+
+  if (isDevelopment) {
+    return shared;
+  }
+
+  // Packaged extras: run as production, keep the DB in writable userData, and point at the bundled
+  // STT binary in resources.
+  return {
+    ...shared,
+    NODE_ENV: 'production',
+    APP_ENV: 'production',
+    RUNTIME_DATABASE_PATH:
+      process.env.RUNTIME_DATABASE_PATH ?? path.join(app.getPath('userData'), 'runtime.db'),
+    OPLYR_STT_BINARY: process.env.OPLYR_STT_BINARY ?? getPackagedSttBinary(),
+    // SQL migrations are shipped as files (not bundled into the JS) — point the API at them.
+    OPLYR_MIGRATIONS_DIR: path.join(process.resourcesPath, 'api', 'database', 'sqlite'),
+    // Same for the brain's own migrations, else the packaged brain.db is created with zero tables
+    // and every capture/recall silently no-ops.
+    OPLYR_BRAIN_MIGRATIONS_DIR: path.join(process.resourcesPath, 'api', 'database', 'brain'),
+    // The API bundle keeps better-sqlite3 external; resolve it from the shipped module folder.
+    NODE_PATH: path.join(process.resourcesPath, 'api', 'node_modules')
+  };
+}
+
+function startApiProcess(): ChildProcess {
+  if (isDevelopment) {
+    const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+    return spawn(npmCommand, ['run', 'dev', '--workspace', '@oplyr/runtime'], {
+      cwd: getRuntimeAppRoot(),
+      stdio: 'inherit',
+      env: buildApiEnv()
+    });
+  }
+
+  // Packaged: run the bundled API with Electron's own Node via ELECTRON_RUN_AS_NODE — no external
+  // node/npm needed. We use spawn(execPath, [entry]) rather than fork() to avoid fork's IPC channel
+  // (the API is a plain HTTP server, not an IPC child); this matches how it runs standalone.
+  // Modules (incl. the better-sqlite3 native addon) resolve from resources/api/node_modules via NODE_PATH.
+  const entry = getPackagedApiEntry();
+  return spawn(process.execPath, [entry], {
+    cwd: path.dirname(entry),
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...buildApiEnv(), ELECTRON_RUN_AS_NODE: '1' }
+  });
+}
+
 async function ensureLocalApi() {
   if (await isApiReachable()) {
     setRuntimeStatus({
@@ -245,17 +361,6 @@ async function ensureLocalApi() {
     return;
   }
 
-  if (!isDevelopment) {
-    setRuntimeStatus({
-      apiOwner: 'none',
-      apiPhase: 'failed',
-      apiReachable: false,
-      apiPid: null,
-      apiError: 'Packaged desktop runtime startup is not wired yet.'
-    });
-    return;
-  }
-
   setRuntimeStatus({
     apiOwner: 'electron',
     apiPhase: 'starting',
@@ -264,21 +369,9 @@ async function ensureLocalApi() {
     apiError: null
   });
 
-  const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  apiProcess = spawn(npmCommand, ['run', 'dev', '--workspace', '@oplyr/runtime'], {
-    cwd: getRuntimeAppRoot(),
-    stdio: isDevelopment ? 'inherit' : 'ignore',
-    env: {
-      ...process.env,
-      API_HOST: '127.0.0.1',
-      LOCAL_API_AUTH_TOKEN: process.env.LOCAL_API_AUTH_TOKEN ?? '',
-      OPLYR_APP_ROOT: getRuntimeAppRoot(),
-      OPLYR_USER_DATA_DIR: app.getPath('userData'),
-      OPLYR_LOCAL_MODELS_DIR: getRuntimeModelsDir(),
-      OPLYR_MODEL_SEED_DIR: getBundledModelSeedDir(),
-      OPLYR_SCRIPT_ROOT: getRuntimeScriptDir()
-    }
-  });
+  // Dev: spawn the workspace dev server. Packaged: run the bundled API with Electron's Node.
+  apiProcess = startApiProcess();
+  attachApiLogging(apiProcess);
   apiProcessOwnedByElectron = true;
 
   setRuntimeStatus({
@@ -294,7 +387,9 @@ async function ensureLocalApi() {
       apiPhase: exitedCleanly ? 'stopped' : 'failed',
       apiReachable: false,
       apiPid: null,
-      apiError: exitedCleanly ? null : `Local API exited unexpectedly (${code ?? signal ?? 'unknown'}).`
+      apiError: exitedCleanly
+        ? null
+        : `Local API exited unexpectedly (${code ?? signal ?? 'unknown'}).`
     });
   });
 
@@ -344,9 +439,55 @@ function resolveShellPath(): string {
   return '/bin/sh';
 }
 
+/**
+ * GUI-launched macOS apps (Finder / `open`) inherit a minimal PATH
+ * (`/usr/bin:/bin:/usr/sbin:/sbin`) that omits Homebrew, npm-global and nvm bin dirs — so spawned
+ * agent CLIs (`codex`, `claude`, `gemini`) can't be found even though they run fine from a terminal.
+ * Resolve the user's real login+interactive shell PATH once so the forked API (and everything it
+ * spawns) can locate them. Returns null if the shell can't be probed (we then keep the inherited PATH).
+ */
+function resolveLoginShellPath(): string | null {
+  try {
+    const shell = resolveShellPath();
+    const marker = '__OPLYR_PATH__';
+    // Args passed as an array (no shell string) — nothing user-controlled is interpolated.
+    const out = execFileSync(shell, ['-ilc', `printf '%s:%s' '${marker}' "$PATH"`], {
+      encoding: 'utf8',
+      timeout: 5000,
+      stdio: ['ignore', 'pipe', 'ignore']
+    });
+    const idx = out.lastIndexOf(`${marker}:`);
+    if (idx === -1) return null;
+    const value = out.slice(idx + marker.length + 1).trim();
+    return value || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Merge the login-shell PATH into the current process env (login-shell entries first), de-duped and
+ * order-preserving, so the inherited minimal PATH is a fallback rather than a ceiling.
+ */
+function fixPackagedPath(): void {
+  const loginPath = resolveLoginShellPath();
+  if (!loginPath) return;
+  const seen = new Set<string>();
+  process.env.PATH = [loginPath, process.env.PATH ?? '']
+    .join(':')
+    .split(':')
+    .filter((entry) => entry && !seen.has(entry) && (seen.add(entry), true))
+    .join(':');
+}
+
 function ensurePtySpawnHelper() {
   const nodePtyDir = path.resolve(__dirname, '../../../node_modules/node-pty');
-  const helperPath = path.join(nodePtyDir, 'prebuilds', `${process.platform}-${process.arch}`, 'spawn-helper');
+  const helperPath = path.join(
+    nodePtyDir,
+    'prebuilds',
+    `${process.platform}-${process.arch}`,
+    'spawn-helper'
+  );
   try {
     const { statSync, chmodSync } = require('node:fs');
     const stat = statSync(helperPath);
@@ -456,13 +597,20 @@ function killAllPtySessions() {
 }
 
 app.whenReady().then(async () => {
-  process.env.LOCAL_API_AUTH_TOKEN = await resolveLocalApiAuthToken(process.env.LOCAL_API_AUTH_TOKEN);
+  // Packaged GUI launches inherit a stripped PATH; recover the user's real shell PATH so the forked
+  // API can find the agent CLIs (codex/claude/gemini). Dev is launched from a terminal (full PATH).
+  if (!isDevelopment) {
+    fixPackagedPath();
+  }
+
+  process.env.LOCAL_API_AUTH_TOKEN = await resolveLocalApiAuthToken(
+    process.env.LOCAL_API_AUTH_TOKEN,
+    // Packaged: keep the token file in writable userData, not inside the read-only .app bundle.
+    isDevelopment ? undefined : path.join(app.getPath('userData'), '.local-api-auth-token')
+  );
 
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
-    if (
-      permission === 'media' &&
-      isTrustedMediaOrigin(webContents.getURL())
-    ) {
+    if (permission === 'media' && isTrustedMediaOrigin(webContents.getURL())) {
       callback(true);
       return;
     }
@@ -471,10 +619,7 @@ app.whenReady().then(async () => {
   });
 
   session.defaultSession.setPermissionCheckHandler((_webContents, permission, requestingOrigin) => {
-    if (
-      permission === 'media' &&
-      isTrustedMediaOrigin(requestingOrigin)
-    ) {
+    if (permission === 'media' && isTrustedMediaOrigin(requestingOrigin)) {
       return true;
     }
 
@@ -515,30 +660,24 @@ app.whenReady().then(async () => {
       }
     }
   );
-  ipcMain.on(
-    'desktop:pty-write',
-    (event, payload: { id: string; data: string }) => {
-      assertTrustedSender(getSenderUrl(event));
-      if (typeof payload?.id !== 'string' || typeof payload?.data !== 'string') {
-        return;
-      }
-      writePty(payload.id, payload.data.slice(0, 8192));
+  ipcMain.on('desktop:pty-write', (event, payload: { id: string; data: string }) => {
+    assertTrustedSender(getSenderUrl(event));
+    if (typeof payload?.id !== 'string' || typeof payload?.data !== 'string') {
+      return;
     }
-  );
-  ipcMain.on(
-    'desktop:pty-resize',
-    (event, payload: { id: string; cols: number; rows: number }) => {
-      assertTrustedSender(getSenderUrl(event));
-      if (typeof payload?.id !== 'string') {
-        return;
-      }
-      resizePty(
-        payload.id,
-        normalizePtySize(payload.cols, 120, 48, 220),
-        normalizePtySize(payload.rows, 30, 12, 80)
-      );
+    writePty(payload.id, payload.data.slice(0, 8192));
+  });
+  ipcMain.on('desktop:pty-resize', (event, payload: { id: string; cols: number; rows: number }) => {
+    assertTrustedSender(getSenderUrl(event));
+    if (typeof payload?.id !== 'string') {
+      return;
     }
-  );
+    resizePty(
+      payload.id,
+      normalizePtySize(payload.cols, 120, 48, 220),
+      normalizePtySize(payload.rows, 30, 12, 80)
+    );
+  });
   ipcMain.handle('desktop:pty-kill', (event, id: string) => {
     assertTrustedSender(getSenderUrl(event));
     killPty(id);

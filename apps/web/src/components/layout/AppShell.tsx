@@ -12,6 +12,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 import { ContentFrame } from './ContentFrame';
+import { ProductTourOverlay } from '@/components/tour/ProductTourOverlay';
 import { useNavigation } from '@/providers/NavigationProvider';
 import { useStatus } from '@/providers/StatusProvider';
 import { useToast } from '@/providers/ToastProvider';
@@ -22,7 +23,7 @@ import { useChatStream } from '@/hooks/use-chat-stream';
 import { useVoiceSession } from '@/hooks/use-voice-session';
 import { useAppSettings, type AppSettingsHandle } from '@/hooks/use-app-settings';
 import { usePreferences } from '@/hooks/use-preferences';
-import { BrainCircuit, Music } from 'lucide-react';
+import { Music } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StandbyScreen } from '@/components/screens/StandbyScreen';
 import { OplyrLogoMark } from '@/components/branding/OplyrLogoMark';
@@ -30,7 +31,11 @@ import { cn } from '@/lib/cn';
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
 import { formatReasoningEffort, getVoiceState } from '@/containers/voice-console/lib/helpers';
 import type { VoiceAssistantInfo } from '@/components/screens/VoiceScreen';
-import type { StatusResponse, VoiceBootstrapStatus } from '@/containers/voice-console/lib/types';
+import type {
+  MessageEntry,
+  StatusResponse,
+  VoiceBootstrapStatus
+} from '@/containers/voice-console/lib/types';
 
 const ChatScreen = lazy(() =>
   import('@/components/screens/ChatScreen').then((m) => ({ default: m.ChatScreen }))
@@ -61,6 +66,9 @@ const MarkdownScreen = lazy(() =>
 );
 const CodebaseMapScreen = lazy(() =>
   import('@/components/screens/CodebaseMapScreen').then((m) => ({ default: m.CodebaseMapScreen }))
+);
+const MemoryScreen = lazy(() =>
+  import('@/components/screens/MemoryScreen').then((m) => ({ default: m.MemoryScreen }))
 );
 
 function shouldPollVoiceBootstrap(status: VoiceBootstrapStatus | null) {
@@ -238,6 +246,14 @@ export function AppShell() {
     autoSend: preferences.autoSendVoice
   });
 
+  const handleResetApp = useCallback(async () => {
+    const didReset = await settings.handleResetApp();
+    if (!didReset) return;
+
+    chat.resetChatState();
+    startTransition(() => setActiveScreen('workspace'));
+  }, [chat, settings, setActiveScreen]);
+
   const handleReviewApprove = useCallback(async () => {
     const approved = await handleApprove();
     if (!approved) return;
@@ -289,6 +305,18 @@ export function AppShell() {
   const voiceState = getVoiceState(status);
   const lastAssistant = [...chat.messages].reverse().find((m) => m.role === 'assistant') ?? null;
   const lastUser = [...chat.messages].reverse().find((m) => m.role === 'user') ?? null;
+  // Chat + voice share ONE turn state (the chat hook). The voice view reflects the same turn no
+  // matter where it was started: while a turn is active, show the streaming assistant message (empty
+  // until text arrives → the working timeline shows); otherwise the last completed reply. Hidden
+  // while recording a new command so the previous answer never lingers.
+  const streamingAssistant = chat.activeChatStreamMessageId
+    ? (chat.messages.find((m) => m.id === chat.activeChatStreamMessageId) ?? null)
+    : null;
+  const voiceReply: MessageEntry | null = voice.isRecording
+    ? null
+    : chat.isTurnActive
+      ? streamingAssistant
+      : lastAssistant;
   const [projectInput, setProjectInput] = useState(status?.workspace.projectRoot ?? '');
   const [voiceBootstrap, setVoiceBootstrap] = useState<VoiceBootstrapStatus | null>(null);
   const bootstrapRequestedRef = useRef(false);
@@ -396,7 +424,8 @@ export function AppShell() {
 
   function handleTextSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (chat.isSubmittingTurn) return;
+    // Single-flight: one agent turn at a time (chat OR voice) so history never interleaves.
+    if (chat.isSubmittingTurn || chat.isTurnActive) return;
 
     const nextMessage = chat.textInput.trim();
     if (!nextMessage && chat.draftAttachments.length === 0) return;
@@ -480,7 +509,7 @@ export function AppShell() {
             }}
             onSaveProject={() => void settings.handleSaveProject(projectInput)}
             onToggleWriteAccess={(enabled) => void settings.handleToggleWriteAccess(enabled)}
-            onResetApp={() => void settings.handleResetApp()}
+            onResetApp={() => void handleResetApp()}
           />
         );
       case 'voice':
@@ -497,7 +526,10 @@ export function AppShell() {
               status?.voiceSession?.lastTranscript ||
               ''
             }
-            aiReply={lastAssistant}
+            aiReply={voiceReply}
+            voiceActivity={chat.liveActivity}
+            voiceActivities={chat.activityLog}
+            agentWorking={chat.isTurnActive}
             assistant={getVoiceAssistant(status, settings)}
             audioAvailable={status?.audio.available ?? false}
             userName={displayName}
@@ -517,10 +549,12 @@ export function AppShell() {
             messages={chat.messages}
             textInput={chat.textInput}
             draftAttachments={chat.draftAttachments}
-            isStreaming={chat.isStreaming}
+            isStreaming={chat.isTurnActive}
             streamingMessageId={chat.activeChatStreamMessageId}
             typedMessages={chat.typedMessageText}
-            disabled={chat.isSubmittingTurn}
+            liveActivity={chat.liveActivity}
+            activityLog={chat.activityLog}
+            disabled={chat.isSubmittingTurn || chat.isTurnActive}
             onTextInputChange={chat.setTextInput}
             onSubmit={handleTextSubmit}
             onAttachFiles={(files) => void chat.handleAttachFiles(files)}
@@ -590,14 +624,7 @@ export function AppShell() {
       case 'markdown':
         return <MarkdownScreen projectRoot={status?.workspace.projectRoot ?? null} />;
       case 'memory':
-        return (
-          <StandbyScreen
-            icon={BrainCircuit}
-            title="Memory"
-            description="Oplyr's unified, local-first memory — a shared brain every agent reads from and writes to, so your context, decisions, and codebase history persist across sessions and tools."
-            footnote="In active development"
-          />
-        );
+        return <MemoryScreen />;
       case 'music':
         return (
           <StandbyScreen
@@ -709,6 +736,7 @@ export function AppShell() {
               </motion.div>
             </AnimatePresence>
           </ContentFrame>
+          <ProductTourOverlay />
         </>
       )}
 

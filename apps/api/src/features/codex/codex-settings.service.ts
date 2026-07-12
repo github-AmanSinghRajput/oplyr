@@ -152,7 +152,11 @@ function normalizeCodexSettings(
       : defaultReasoning;
 
   return {
-    model: settings.model,
+    // Persist only a validated, canonical slug — this value is passed to `codex -c model=<value>`,
+    // so an arbitrary string must never survive. When the model list is known and the requested
+    // model isn't in it, drop to null (Codex's own default). If the list is unavailable (CLI not
+    // installed → Codex won't run anyway) we can't validate, so keep the raw value.
+    model: availableModels.length > 0 ? (selectedModel?.slug ?? null) : settings.model,
     reasoningEffort,
     voiceModelMode: settings.voiceModelMode
   };

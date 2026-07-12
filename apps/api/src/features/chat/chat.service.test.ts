@@ -58,6 +58,7 @@ function createChatRuntime(workspace: WorkspaceState) {
 
   return {
     getWorkspaceState: () => workspace,
+    getActiveProviderId: () => null,
     getPendingApproval: () => pendingApproval,
     createPendingApproval: (input: Omit<PendingApproval, 'id' | 'createdAt'>) => {
       pendingApproval = {

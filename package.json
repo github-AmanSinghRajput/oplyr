@@ -7,7 +7,7 @@
     "apps/*"
   ],
   "scripts": {
-    "prepare": "husky",
+    "prepare": "husky || true",
     "dev": "npm run dev:web",
     "dev:runtime": "npm run dev --workspace @oplyr/runtime",
     "build:runtime": "npm run build --workspace @oplyr/runtime",

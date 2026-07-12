@@ -35,11 +35,31 @@ function ensureDatabaseDirectory(filePath: string) {
     return;
   }
 
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  // The runtime DB holds transcripts, chat history, and attachment records — private to this user.
+  // Create the directory owner-only so a co-user on a shared Mac can't read it.
+  fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
+}
+
+// Restrict the DB file (and its WAL/SHM sidecars) to the owner. Best-effort: chmod is a no-op on
+// filesystems/platforms without POSIX modes, and must never block startup.
+function restrictDatabaseFilePermissions(filePath: string) {
+  if (filePath === ':memory:' || process.platform === 'win32') {
+    return;
+  }
+  for (const suffix of ['', '-wal', '-shm']) {
+    try {
+      fs.chmodSync(`${filePath}${suffix}`, 0o600);
+    } catch {
+      /* file may not exist yet or fs has no mode support */
+    }
+  }
 }
 
 function applyMigrations(db: RuntimeDatabase) {
-  const migrationsDir = path.join(getRootDir(), 'apps/api/database/sqlite');
+  // In a packaged app the source tree doesn't exist, so the migrations dir is shipped separately and
+  // pointed at via OPLYR_MIGRATIONS_DIR. Falls back to the in-repo path for dev.
+  const migrationsDir =
+    process.env.OPLYR_MIGRATIONS_DIR?.trim() || path.join(getRootDir(), 'apps/api/database/sqlite');
   const files = fs
     .readdirSync(migrationsDir)
     .filter((file) => file.endsWith('.sql'))
@@ -82,6 +102,8 @@ function createDatabase(filePath: string) {
   db.pragma('foreign_keys = ON');
   db.pragma('busy_timeout = 5000');
   applyMigrations(db);
+  // WAL mode creates the -wal/-shm sidecars; lock them all down to the owner.
+  restrictDatabaseFilePermissions(filePath);
   return db;
 }
 
