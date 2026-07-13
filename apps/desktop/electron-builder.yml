@@ -67,7 +67,7 @@ mac:
   # resulting DMG is TESTING-ONLY — other Macs will warn ("can't verify developer"); the user must
   # right-click → Open. To distribute for real: get the paid account, set `notarize: true`, and
   # export APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID before `npm run dist`.
-  notarize: false
+  notarize: true
 
 dmg:
   # The DMG volume icon also uses the Oplyr logo.

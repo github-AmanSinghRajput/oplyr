@@ -33,6 +33,10 @@ for mod in better-sqlite3 node-pty; do
       npm_config_arch="$ARCH" \
       npm_config_disturl=https://electronjs.org/headers \
       npx node-gyp rebuild
+    # node-gyp leaves a build/node_gyp_bins/ dir with an ABSOLUTE symlink to the Homebrew python it
+    # used. It's build-time-only cruft, but shipped via extraResources it makes `codesign --deep`
+    # fail with "invalid destination for symbolic link in bundle". Strip it so packaging stays clean.
+    rm -rf build/node_gyp_bins
   )
 done
 
