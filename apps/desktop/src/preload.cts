@@ -25,6 +25,21 @@ contextBridge.exposeInMainWorld('desktopShell', {
   resizePty: (id: string, cols: number, rows: number) =>
     ipcRenderer.send('desktop:pty-resize', { id, cols, rows }),
   killPty: (id: string) => ipcRenderer.invoke('desktop:pty-kill', id),
+  getAppVersion: () => ipcRenderer.invoke('desktop:get-app-version'),
+  getUpdateStatus: () => ipcRenderer.invoke('desktop:update-get-status'),
+  checkForUpdate: () => ipcRenderer.invoke('desktop:update-check'),
+  installUpdate: () => ipcRenderer.invoke('desktop:update-install'),
+  subscribeUpdateStatus: (callback: (status: unknown) => void) => {
+    const listener = (_event: unknown, status: unknown) => {
+      callback(status);
+    };
+
+    ipcRenderer.on('desktop:update-status', listener);
+
+    return () => {
+      ipcRenderer.removeListener('desktop:update-status', listener);
+    };
+  },
   subscribePtyData: (callback: (payload: { id: string; data: string }) => void) => {
     const listener = (_event: unknown, payload: { id: string; data: string }) => {
       callback(payload);

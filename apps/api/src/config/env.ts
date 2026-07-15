@@ -75,7 +75,9 @@ export function validateEnv() {
       'low',
       'medium',
       'high',
-      'xhigh'
+      'xhigh',
+      'max',
+      'ultra'
     ]);
   }
 

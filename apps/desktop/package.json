@@ -1,7 +1,7 @@
 {
   "name": "@oplyr/desktop",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Oplyr — a desktop cockpit for AI coding agents. Direct them by voice or text and review every change, on your Mac.",
   "author": "Oplyr <hello@oplyr.com>",
   "type": "module",
@@ -13,7 +13,8 @@
     "icon": "./scripts/make-icon.sh",
     "rebuild:native": "./scripts/rebuild-native-electron.sh",
     "pack:test": "npm run build && electron-builder --mac --dir",
-    "dist": "npm run build && electron-builder --mac dmg"
+    "dist": "npm run build && electron-builder --mac dmg",
+    "dist:publish": "npm run build && electron-builder --mac zip --publish always"
   },
   "devDependencies": {
     "@types/node": "^24.8.1",
@@ -22,6 +23,8 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "electron-log": "^5.2.4",
+    "electron-updater": "^6.3.9",
     "node-pty": "^1.1.0"
   }
 }

@@ -9,6 +9,15 @@ export interface DesktopRuntimeStatus {
   apiError: string | null;
 }
 
+export type DesktopUpdateStatus =
+  | { state: 'idle' }
+  | { state: 'checking' }
+  | { state: 'none' }
+  | { state: 'available'; version: string; notes?: string }
+  | { state: 'downloading'; version: string; percent: number }
+  | { state: 'ready'; version: string; notes?: string }
+  | { state: 'error'; message: string };
+
 declare global {
   interface Window {
     desktopShell?: {
@@ -27,6 +36,11 @@ declare global {
       subscribePtyExit: (
         callback: (payload: { id: string; exitCode: number }) => void
       ) => () => void;
+      getAppVersion: () => Promise<string>;
+      getUpdateStatus: () => Promise<DesktopUpdateStatus>;
+      checkForUpdate: () => Promise<DesktopUpdateStatus>;
+      installUpdate: () => Promise<boolean>;
+      subscribeUpdateStatus: (callback: (status: DesktopUpdateStatus) => void) => () => void;
     };
   }
 }

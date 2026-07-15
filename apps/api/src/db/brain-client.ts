@@ -90,11 +90,63 @@ function applyMigrations(db: BrainDatabase, migrationsDir = resolveMigrationsDir
 
     const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
     const transaction = db.transaction(() => {
-      db.exec(sql);
+      execMigrationIdempotent(db, sql);
       insertMigration.run(file);
     });
     transaction();
   }
+}
+
+/**
+ * Apply a migration that may already be partly (or fully) present. This handles brain.db files from
+ * older builds where the schema was created before this filename-based tracking existed, so the
+ * tracking table is empty even though columns/tables/indexes already exist — replaying the raw SQL
+ * would otherwise crash on `duplicate column name` (SQLite has no `ADD COLUMN IF NOT EXISTS`).
+ *
+ * Fast path: run the whole file. If that throws an "already exists" class error, fall back to
+ * running each statement on its own and tolerating ONLY that class of error — so any genuinely
+ * missing statement still applies while pre-existing ones are skipped. Any other error propagates
+ * (and rolls the migration back, since we're inside a transaction).
+ */
+function execMigrationIdempotent(db: BrainDatabase, sql: string) {
+  try {
+    db.exec(sql);
+    return;
+  } catch (error) {
+    if (!isAlreadyExistsError(error)) {
+      throw error;
+    }
+  }
+
+  for (const statement of splitSqlStatements(sql)) {
+    try {
+      db.exec(statement);
+    } catch (error) {
+      if (!isAlreadyExistsError(error)) {
+        throw error;
+      }
+    }
+  }
+}
+
+function isAlreadyExistsError(error: unknown): boolean {
+  const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
+  return message.includes('duplicate column name') || message.includes('already exists');
+}
+
+/**
+ * Split a migration file into individual statements. The brain migrations are plain DDL — no
+ * triggers/procedural bodies and no semicolons inside string or identifier literals — so splitting
+ * on `;` after stripping line comments is safe here.
+ */
+function splitSqlStatements(sql: string): string[] {
+  return sql
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('--'))
+    .join('\n')
+    .split(';')
+    .map((statement) => statement.trim())
+    .filter(Boolean);
 }
 
 export function createBrainDatabase(filePath: string, options?: { migrationsDir?: string }) {

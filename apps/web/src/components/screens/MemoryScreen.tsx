@@ -21,7 +21,7 @@ import './memory/memory.css';
 
 const emptyGraph: BrainGraphResponse = { nodes: [], edges: [] };
 
-export function MemoryScreen() {
+export function MemoryScreen({ refreshNonce }: { refreshNonce?: number }) {
   const { service } = useApi();
   const [status, setStatus] = useState<BrainStatusResponse | null>(null);
   const [graph, setGraph] = useState<BrainGraphResponse>(emptyGraph);
@@ -88,6 +88,17 @@ export function MemoryScreen() {
     void load();
   }, [load]);
 
+  // Full-app refresh (topbar refresh button bumps refreshNonce): re-fetch the brain. Skip the first
+  // run — the mount effect above already loads.
+  const refreshMountRef = useRef(false);
+  useEffect(() => {
+    if (!refreshMountRef.current) {
+      refreshMountRef.current = true;
+      return;
+    }
+    void load();
+  }, [refreshNonce, load]);
+
   // Live refresh: reuse the existing /api/voice/events SSE stream (no polling, no second stream).
   const handleBrainUpdate = useCallback(() => {
     setLivePulse(true);
@@ -101,6 +112,11 @@ export function MemoryScreen() {
   useBrainEvents(handleBrainUpdate);
 
   useEffect(() => {
+    // Reset on (re)mount, not just at init: under React StrictMode the mount→unmount→remount cycle
+    // runs the cleanup once, setting this false. useRef keeps its value across that remount, so
+    // without re-setting it here the ref stays false forever and every load()'s state writes
+    // (status/graph/loading) are silently skipped — the graph + settings drawer hang on "Loading…".
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
       if (livePulseTimer.current !== null) {

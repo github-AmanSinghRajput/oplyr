@@ -396,6 +396,15 @@ export function useVoiceSession({
             window.clearTimeout(safetyTimerRef.current);
             safetyTimerRef.current = null;
           }
+          // Close THIS turn's socket so the server tears down its STT worker and frees a slot.
+          // Without this the socket leaks open every turn (handleFinal's own close is a no-op once
+          // wsRef is nulled), and the server's MAX_CONCURRENT_STREAMS cap rejects the 3rd/4th
+          // connection → the mic "stops working" with "Voice connection lost" after 2-3 turns.
+          try {
+            ws.close();
+          } catch {
+            /* already closing */
+          }
           wsRef.current = null;
           handleFinal(msg.text);
         } else if (msg.type === 'error') {

@@ -43,12 +43,13 @@ import { ClaudeSettingsService } from '../features/claude/claude-settings.servic
 import { GeminiSettingsService } from '../features/gemini/gemini-settings.service.js';
 import { ProviderSettingsService } from '../features/providers/provider-settings.service.js';
 import { ProviderUsageService } from '../features/providers/provider-usage.service.js';
+import { ProviderModelsService } from '../features/providers/provider-models.service.js';
 import { VoiceCommandService } from '../features/voice/voice-command.service.js';
 import { AppSettingsService } from '../features/app/app-settings.service.js';
 import { AppResetService } from '../features/app/app-reset.service.js';
 import { BrainService, setBrainEventEmitter } from '../features/brain/brain.service.js';
 import type { BrainMode } from '../features/brain/brain.types.js';
-import type { AppTheme, AssistantProviderId, ChatSource } from '../types.js';
+import type { AppTheme, AssistantProviderId, ChatSource, CodexReasoningEffort } from '../types.js';
 import {
   clearPendingApproval,
   getRuntimeState,
@@ -174,6 +175,7 @@ export function createApp(options?: { apiAuthToken?: string }) {
   const geminiSettingsService = new GeminiSettingsService();
   const providerSettingsService = new ProviderSettingsService();
   const providerUsageService = new ProviderUsageService();
+  const providerModelsService = new ProviderModelsService();
   initAssistantClient(
     codexSettingsService,
     claudeSettingsService,
@@ -417,7 +419,9 @@ export function createApp(options?: { apiAuthToken?: string }) {
             : (optionalTrimmedString(displayNameValue) ?? null),
         welcomedAt: request.body.welcomedAt === undefined ? undefined : (welcomedAtValue ?? null),
         theme:
-          themeValue === 'light' || themeValue === 'dark' ? (themeValue as AppTheme) : undefined
+          themeValue === 'light' || themeValue === 'dark' ? (themeValue as AppTheme) : undefined,
+        showDeskPet:
+          typeof request.body.showDeskPet === 'boolean' ? request.body.showDeskPet : undefined
       });
       response.json(nextSettings);
     })
@@ -629,10 +633,7 @@ export function createApp(options?: { apiAuthToken?: string }) {
         await codexSettingsService.updateSettings({
           model: optionalTrimmedString(request.body.model),
           reasoningEffort: optionalTrimmedString(request.body.reasoningEffort) as
-            | 'low'
-            | 'medium'
-            | 'high'
-            | 'xhigh'
+            | CodexReasoningEffort
             | undefined,
           voiceModelMode: optionalTrimmedString(request.body.voiceModelMode) as
             | 'auto'
@@ -664,6 +665,11 @@ export function createApp(options?: { apiAuthToken?: string }) {
       response.json(
         await claudeSettingsService.updateSettings({
           model: optionalTrimmedString(request.body.model),
+          reasoningEffort: optionalTrimmedString(request.body.reasoningEffort) as
+            | 'low'
+            | 'medium'
+            | 'high'
+            | undefined,
           voiceModelMode: optionalTrimmedString(request.body.voiceModelMode) as
             | 'auto'
             | 'fast'
@@ -712,12 +718,9 @@ export function createApp(options?: { apiAuthToken?: string }) {
           ...(await voiceCommandService.applyAction({
             type: 'set_codex_model',
             model: requireTrimmedString(action.model, 'action.model'),
-            reasoningEffort: optionalTrimmedString(action.reasoningEffort) as
-              | 'low'
-              | 'medium'
-              | 'high'
-              | 'xhigh'
-              | null
+            reasoningEffort: optionalTrimmedString(
+              action.reasoningEffort
+            ) as CodexReasoningEffort | null
           }))
         });
         return;
@@ -932,6 +935,33 @@ export function createApp(options?: { apiAuthToken?: string }) {
       response.json({
         usage: await providerUsageService.getUsage(activeProviderId, getRuntimeState().workspace)
       });
+    })
+  );
+
+  // Force the active provider to publish its current models (Codex rewrites its cache; the settings
+  // service then reads it fresh). The client re-fetches settings after this resolves.
+  app.post(
+    '/api/assistant/providers/:providerId/refresh-models',
+    asyncHandler(async (request: Request, response: Response) => {
+      const providerId = getRouteParam(request.params.providerId, 'providerId');
+      if (providerId !== 'codex' && providerId !== 'claude' && providerId !== 'gemini') {
+        throw new AppError(400, 'Unsupported assistant provider.', 'INVALID_INPUT');
+      }
+      response.set('Cache-Control', 'no-store');
+      response.json(await providerModelsService.refreshModels(providerId as AssistantProviderId));
+    })
+  );
+
+  // Run the provider CLI's own self-update (`codex update` / `claude update`).
+  app.post(
+    '/api/assistant/providers/:providerId/update-cli',
+    asyncHandler(async (request: Request, response: Response) => {
+      const providerId = getRouteParam(request.params.providerId, 'providerId');
+      if (providerId !== 'codex' && providerId !== 'claude' && providerId !== 'gemini') {
+        throw new AppError(400, 'Unsupported assistant provider.', 'INVALID_INPUT');
+      }
+      response.set('Cache-Control', 'no-store');
+      response.json(await providerModelsService.updateCli(providerId as AssistantProviderId));
     })
   );
 

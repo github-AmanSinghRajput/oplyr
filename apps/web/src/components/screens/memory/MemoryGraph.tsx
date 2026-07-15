@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useRef, type CSSProperties } from 'react';
 import {
   Background,
   Controls,
   Handle,
+  Panel,
   Position,
   ReactFlow,
   ReactFlowProvider,
@@ -13,16 +14,34 @@ import {
   type Node,
   type NodeProps
 } from '@xyflow/react';
+import type { Simulation } from 'd3-force';
 import '@xyflow/react/dist/style.css';
-import type { BrainGraphEdge, BrainGraphNode } from '@/containers/voice-console/lib/types';
+import type {
+  BrainAtomType,
+  BrainGraphEdge,
+  BrainGraphNode
+} from '@/containers/voice-console/lib/types';
 import { cleanAtomText, colorForType } from './memory-shared';
-import { computeDegrees, createGraphSimulation } from './memory-graph-simulation';
+import {
+  buildClusterAnchors,
+  computeDegrees,
+  createMemorySimulation,
+  TYPE_CLUSTER_ORDER,
+  type GraphSimLink,
+  type GraphSimNode
+} from './memory-graph-simulation';
 
 type Highlight = 'selected' | 'neighbor' | 'dim' | 'none';
 
 // Dot diameter range (px). Hubs (higher degree) read larger, singletons stay small.
 const DOT_MIN = 16;
 const DOT_MAX = 46;
+// Alpha the sim warms to while dragging so neighbours react; it cools back to a full stop after.
+const DRAG_ALPHA = 0.3;
+// Breathing room kept around each node's measured footprint so dots + labels never touch.
+const MIN_GAP = 18;
+// Collision radius before React Flow has measured a node (corrected once measured).
+const FALLBACK_RADIUS = 48;
 
 interface GraphNodeData {
   label: string;
@@ -48,6 +67,13 @@ function sizeForDegree(degree: number, maxDegree: number): number {
   return Math.round(DOT_MIN + (DOT_MAX - DOT_MIN) * ratio);
 }
 
+/** Per-node collision radius from React Flow's measured size (half the bounding diagonal + gap), so
+ *  a node's whole footprint — orb AND label — is kept clear of its neighbours. */
+function collideRadiusFor(size: { w: number; h: number } | undefined): number {
+  if (!size) return FALLBACK_RADIUS;
+  return Math.hypot(size.w, size.h) / 2 + MIN_GAP;
+}
+
 /** Obsidian-style node: a glowing circular dot with a small muted label sitting below it. */
 function BrainDotNode({ data }: NodeProps<FlowNode>) {
   return (
@@ -66,6 +92,71 @@ function BrainDotNode({ data }: NodeProps<FlowNode>) {
 }
 
 const nodeTypes = { brainDot: BrainDotNode };
+
+const CLUSTER_LABELS: Record<BrainAtomType, string> = {
+  decision: 'Decisions',
+  convention: 'Conventions',
+  preference: 'Preferences',
+  fact: 'Facts',
+  entity: 'Entities'
+};
+
+/** Legend for the type-clustered layout — tells the user each colored neighborhood is a memory type. */
+function ClusterLegend() {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 6,
+        padding: '10px 12px',
+        borderRadius: 12,
+        border: '1px solid var(--color-border)',
+        background: 'rgba(15, 17, 23, 0.66)',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)'
+      }}
+    >
+      <span
+        style={{
+          fontSize: 10,
+          fontWeight: 600,
+          letterSpacing: '0.06em',
+          textTransform: 'uppercase',
+          color: 'rgba(255, 255, 255, 0.5)'
+        }}
+      >
+        Clustered by type
+      </span>
+      {TYPE_CLUSTER_ORDER.map((type) => {
+        const color = colorForType(type);
+        return (
+          <span
+            key={type}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              fontSize: 11,
+              color: 'rgba(255, 255, 255, 0.72)'
+            }}
+          >
+            <span
+              style={{
+                width: 9,
+                height: 9,
+                borderRadius: '50%',
+                background: color,
+                boxShadow: `0 0 8px color-mix(in srgb, ${color}, transparent 55%)`
+              }}
+            />
+            {CLUSTER_LABELS[type]}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
 
 function GraphCanvas({
   nodes: graphNodes,
@@ -87,6 +178,11 @@ function GraphCanvas({
   const [nodes, setNodes, onNodesChange] = useNodesState<FlowNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const posRef = useRef<Map<string, { x: number; y: number }>>(new Map());
+  // Live measured node sizes (from React Flow), keyed by id — feeds per-node collision radii.
+  const sizeRef = useRef<Map<string, { w: number; h: number }>>(new Map());
+  const simRef = useRef<Simulation<GraphSimNode, GraphSimLink> | null>(null);
+  const simById = useRef<Map<string, GraphSimNode>>(new Map());
+  const draggingIdRef = useRef<string | null>(null);
   const { fitView } = useReactFlow();
 
   const degrees = useMemo(() => computeDegrees(graphEdges), [graphEdges]);
@@ -98,11 +194,30 @@ function GraphCanvas({
     return max;
   }, [degrees]);
 
+  // Cluster layout inputs: each atom's type → its neighborhood anchor, and a live measured radius.
+  const typeById = useMemo(
+    () => new Map(graphNodes.map((node) => [node.id, node.type])),
+    [graphNodes]
+  );
+  const anchors = useMemo(() => buildClusterAnchors(graphNodes.length), [graphNodes.length]);
+  const anchorOf = useCallback(
+    (id: string) => anchors.anchorFor(typeById.get(id)),
+    [anchors, typeById]
+  );
+  const radiusOf = useCallback((id: string) => collideRadiusFor(sizeRef.current.get(id)), []);
+
   // Build the flow nodes/edges and run the force sim whenever the backend graph changes.
   useEffect(() => {
-    const { simulation, simNodes } = createGraphSimulation(graphNodes, graphEdges);
+    const { simulation, simNodes } = createMemorySimulation(graphNodes, graphEdges, {
+      radiusOf,
+      anchorOf,
+      seed: posRef.current
+    });
     const byId = new Map(simNodes.map((simNode) => [simNode.id, simNode]));
-    posRef.current = new Map();
+    simById.current = byId;
+    // Drop cached positions/sizes for atoms that no longer exist so the map stays bounded.
+    for (const id of posRef.current.keys()) if (!byId.has(id)) posRef.current.delete(id);
+    for (const id of sizeRef.current.keys()) if (!byId.has(id)) sizeRef.current.delete(id);
 
     setNodes(
       graphNodes.map((node) => {
@@ -126,7 +241,7 @@ function GraphCanvas({
         id: edge.id,
         source: edge.source,
         target: edge.target,
-        // Edges are now first-class, clickable objects (the rail shows the shared-entity link).
+        // Edges are first-class, clickable objects (the rail shows the shared-entity link).
         selectable: true,
         style: {
           stroke: 'var(--color-border-strong)',
@@ -137,23 +252,23 @@ function GraphCanvas({
     );
 
     simulation.on('tick', () => {
+      // Positions only — keep each node's `data` reference identical so React Flow just transforms
+      // the node (no re-render of the node component) → smooth, no jitter. Skip the dragged node.
       setNodes((previous) =>
         previous.map((node) => {
+          if (node.id === draggingIdRef.current) return node;
           const sim = byId.get(node.id);
-          if (!sim) {
-            return node;
-          }
+          if (!sim) return node;
           const x = sim.x ?? 0;
           const y = sim.y ?? 0;
           posRef.current.set(node.id, { x, y });
-          if (node.position.x === x && node.position.y === y) {
-            return node;
-          }
+          if (node.position.x === x && node.position.y === y) return node;
           return { ...node, position: { x, y } };
         })
       );
     });
 
+    simRef.current = simulation;
     const fitTimer = window.setTimeout(
       () => fitView({ padding: 0.22, duration: 480, maxZoom: 1.3 }),
       520
@@ -166,7 +281,7 @@ function GraphCanvas({
       simulation.stop();
       window.clearTimeout(fitTimer);
     };
-  }, [degrees, fitView, graphEdges, graphNodes, maxDegree, setEdges, setNodes]);
+  }, [anchorOf, degrees, fitView, graphEdges, graphNodes, maxDegree, radiusOf, setEdges, setNodes]);
 
   // Selection highlighting: highlight the selected node + direct neighbors, dim the rest. A selected
   // edge highlights its two endpoints (and the edge itself) the same way.
@@ -228,15 +343,68 @@ function GraphCanvas({
     );
   }, [graphEdges, selectedEdgeId, selectedId, setEdges, setNodes]);
 
+  // ── Drag: pin the node, warm the sim so neighbours make room, cool to a stop on release ──
+  const pin = useCallback((node: Node) => {
+    const sim = simById.current.get(node.id);
+    if (sim) {
+      sim.fx = node.position.x;
+      sim.fy = node.position.y;
+    }
+  }, []);
+  const onNodeDragStart = useCallback(
+    (_event: MouseEvent | TouchEvent, node: Node) => {
+      draggingIdRef.current = node.id;
+      pin(node);
+      simRef.current?.alphaTarget(DRAG_ALPHA).restart();
+    },
+    [pin]
+  );
+  const onNodeDrag = useCallback((_event: MouseEvent | TouchEvent, node: Node) => pin(node), [pin]);
+  const onNodeDragStop = useCallback((_event: MouseEvent | TouchEvent, node: Node) => {
+    const sim = simById.current.get(node.id);
+    if (sim) {
+      sim.fx = null;
+      sim.fy = null;
+    }
+    draggingIdRef.current = null;
+    simRef.current?.alphaTarget(0);
+  }, []);
+
+  // Capture React Flow's measured node sizes so collision sizes each dot's bubble to its real
+  // footprint (orb + label). New measurements nudge the sim so spacing re-resolves.
+  const handleNodesChange = useCallback<typeof onNodesChange>(
+    (changes) => {
+      let measured = false;
+      for (const change of changes) {
+        if (change.type === 'dimensions' && change.dimensions) {
+          sizeRef.current.set(change.id, {
+            w: change.dimensions.width,
+            h: change.dimensions.height
+          });
+          measured = true;
+        }
+      }
+      onNodesChange(changes);
+      if (measured) {
+        const sim = simRef.current;
+        if (sim) sim.alpha(Math.max(sim.alpha(), 0.3)).restart();
+      }
+    },
+    [onNodesChange]
+  );
+
   return (
     <ReactFlow
       className="memory-flow"
       nodes={nodes}
       edges={edges}
-      onNodesChange={onNodesChange}
+      onNodesChange={handleNodesChange}
       onEdgesChange={onEdgesChange}
       nodeTypes={nodeTypes}
       onNodeClick={(_event, node) => onSelectNode(node.id)}
+      onNodeDragStart={onNodeDragStart}
+      onNodeDrag={onNodeDrag}
+      onNodeDragStop={onNodeDragStop}
       onEdgeClick={(_event, edge) => onSelectEdge(edge.id)}
       onPaneClick={onClear}
       minZoom={0.1}
@@ -247,6 +415,11 @@ function GraphCanvas({
     >
       <Background gap={28} size={1} color="var(--color-border)" />
       <Controls showInteractive={false} />
+      {/* Offset down so the legend clears the floating status pill ("Brain on / N total") that sits
+          at the canvas top-left; without this the pill covers the legend's header + first row. */}
+      <Panel position="top-left" style={{ marginTop: '3.6rem' }}>
+        <ClusterLegend />
+      </Panel>
     </ReactFlow>
   );
 }

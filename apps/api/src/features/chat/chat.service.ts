@@ -678,8 +678,20 @@ function looksLikeWriteRequest(text: string) {
   // Any edit/imperative verb anywhere in the message → treat as a possible write.
   const actionPattern =
     /\b(fix|implement|change|edit|modif(y|ies)|update|adjust|add|insert|append|prepend|remove|removing|delete|deleting|drop|strip|get\s+rid\s+of|replace|swap|rename|move|relocate|center|centre|centrali[sz]e|align|refactor|rewrite|restyle|style|format|create|build|scaffold|generate|patch|set\s*up|install|wire|hook\s+up|tweak|clean\s+up|make\s+(it|this|that|the|them|sure)|turn\s+(it|this|that|the)|set\s+(it|this|that|the))\b/;
+  if (actionPattern.test(normalized)) {
+    return true;
+  }
 
-  return actionPattern.test(normalized);
+  // Declarative / suggestion / problem phrasings that ask for a change WITHOUT an imperative verb —
+  // how people actually request edits in conversation ("this should be blue", "the header's too
+  // small", "the button is broken", "use X instead of Y"). These previously slipped to the plain
+  // reply path, so the agent just talked and told the user to "approve" with no diff, forcing a
+  // second "go ahead" message. Routing them to decideWriteIntent (which still returns reply for a
+  // true non-edit) lets the agent make the change in the first turn.
+  const suggestionPattern =
+    /\b(should(n'?t)?|shouldnt|needs?\s+to|need\s+to|has\s+to|have\s+to|ought\s+to|must|instead\s+of|rather\s+than|in\s+place\s+of|too\s+(big|small|large|wide|narrow|tall|short|long|dark|light|bright|dim|bold|thin|thick|slow|fast|much|many|few|close|far|high|low|loud|faint)|is\s+broken|are\s+broken|is\s+wrong|looks?\s+wrong|not\s+working|isn'?t\s+working|does\s?n'?t\s+work|do\s?n'?t\s+work|off[\s-]?cent(er|re)|misaligned|would\s+be\s+(better|nicer|cleaner)|better\s+if|could\s+be)\b/;
+
+  return suggestionPattern.test(normalized);
 }
 
 function toPublicAttachments(

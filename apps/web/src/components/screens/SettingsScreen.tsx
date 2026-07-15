@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
 import { useTour } from '@/providers/TourProvider';
+import { useTheme } from '@/providers/ThemeProvider';
 import { formatReasoningEffort } from '@/containers/voice-console/lib/helpers';
 import type {
   AppSettings,
@@ -15,7 +16,6 @@ import type {
   GeminiSettingsResponse,
   ProviderUsageSnapshot,
   StatusResponse,
-  SystemResponse,
   VoiceSettingsResponse
 } from '@/containers/voice-console/lib/types';
 
@@ -28,7 +28,6 @@ interface SettingsScreenProps {
   providerUsage: ProviderUsageSnapshot | null;
   providerUsageLoading: boolean;
   status: StatusResponse | null;
-  system: SystemResponse | null;
   voiceSettings: VoiceSettingsResponse | null;
   onPreferenceChange: <Key extends keyof ConsolePreferences>(
     key: Key,
@@ -54,6 +53,7 @@ interface SettingsScreenProps {
   onProviderConnect: (providerId: AssistantProviderId) => void;
   onProviderDisconnect: (providerId: AssistantProviderId) => void;
   onProviderSwitch: (providerId: AssistantProviderId) => void;
+  onUpdateCli: (providerId: AssistantProviderId) => void;
   onRefreshProviderUsage: () => void;
   onSaveCodexSettings: () => void;
   onSaveClaudeSettings: () => void;
@@ -61,16 +61,19 @@ interface SettingsScreenProps {
   codexSettingsDirty: boolean;
   claudeSettingsDirty: boolean;
   geminiSettingsDirty: boolean;
+  agentBusy: boolean;
 }
 
 function ActiveStateControl({
   providerId,
   activeProviderId,
-  onProviderSwitch
+  onProviderSwitch,
+  disabled
 }: {
   providerId: AssistantProviderId;
   activeProviderId: AssistantProviderId | null;
   onProviderSwitch: (providerId: AssistantProviderId) => void;
+  disabled?: boolean;
 }) {
   if (providerId === activeProviderId) {
     return (
@@ -85,6 +88,8 @@ function ActiveStateControl({
       variant="outline"
       size="sm"
       className="h-6 text-xs"
+      disabled={disabled}
+      title={disabled ? 'Finish the current turn before switching agent' : undefined}
       onClick={() => onProviderSwitch(providerId)}
     >
       Make active
@@ -187,6 +192,16 @@ function ProviderUsageSection({
   loading: boolean;
   onRefresh: () => void;
 }) {
+  // Usage is captured live from the CLI. Always render the section (so it never looks "missing"):
+  // it shows a loading state while the scrape runs, the meters when they land, or a hint/error
+  // otherwise. Codex's scrape can take ~15–25s cold.
+  const hasUsage = Boolean(
+    providerUsage?.available &&
+    (providerUsage.meters.length > 0 ||
+      providerUsage.contextWindow ||
+      providerUsage.details.length > 0)
+  );
+
   return (
     <SectionCard title="Provider usage" subtitle="Live CLI usage and limits">
       <div className="flex items-center justify-between gap-4 py-3">
@@ -217,7 +232,13 @@ function ProviderUsageSection({
         <div className="py-3 text-sm text-danger">{providerUsage.error}</div>
       )}
 
-      {!loading && providerUsage?.available && (
+      {!loading && !hasUsage && !providerUsage?.error && (
+        <div className="py-3 text-sm text-text-tertiary">
+          No usage to show yet — tap Refresh to read it from the CLI.
+        </div>
+      )}
+
+      {!loading && hasUsage && providerUsage && (
         <>
           {(providerUsage.model || providerUsage.accountLabel || providerUsage.sessionId) && (
             <div className="py-3 space-y-2">
@@ -309,7 +330,6 @@ export function SettingsScreen({
   providerUsage,
   providerUsageLoading,
   status,
-  system,
   voiceSettings,
   onAppSettingChange,
   onPreferenceChange,
@@ -320,17 +340,24 @@ export function SettingsScreen({
   onProviderConnect,
   onProviderDisconnect,
   onProviderSwitch,
+  onUpdateCli,
   onRefreshProviderUsage,
   onSaveCodexSettings,
   onSaveClaudeSettings,
   onSaveGeminiSettings,
   codexSettingsDirty,
   claudeSettingsDirty,
-  geminiSettingsDirty
+  geminiSettingsDirty,
+  agentBusy
 }: SettingsScreenProps) {
   const { resetTours } = useTour();
+  const { theme, setTheme } = useTheme();
   const activeProvider = status?.assistantProviders.activeProvider ?? null;
   const activeProviderId = activeProvider?.id ?? null;
+  // While a turn is in flight, block switching the active agent (any provider) and block changing
+  // the ACTIVE provider's model/effort. Editing an inactive provider's prefs stays allowed (it
+  // doesn't touch the running turn). Mirrors the Topbar guard.
+  const busyFor = (id: AssistantProviderId) => agentBusy && activeProviderId === id;
   const allProviders = status?.assistantProviders.providers ?? [];
   const connectedProviders = allProviders.filter((p) => p.appConnected);
   // Providers the user can connect right now without leaving Settings: CLI-installed and
@@ -349,7 +376,8 @@ export function SettingsScreen({
 
   const selectClass = cn(
     'h-8 rounded-[var(--radius-control)] bg-surface-2 border border-border px-2 text-sm text-text-primary',
-    'focus:outline-none focus:border-accent-border focus:ring-1 focus:ring-accent-border'
+    'focus:outline-none focus:border-accent-border focus:ring-1 focus:ring-accent-border',
+    'disabled:cursor-not-allowed disabled:opacity-50'
   );
   const [displayNameDraft, setDisplayNameDraft] = useState(appSettings?.displayName ?? '');
   // Reset the editable draft when the persisted display name changes, the render-phase way
@@ -395,12 +423,12 @@ export function SettingsScreen({
               />
             </SettingRow>
             <SettingRow label="Theme">
+              {/* Drive the real theme (ThemeProvider) so it actually applies AND stays in sync with
+                  the topbar sun/moon toggle — the old app-settings path didn't apply the theme. */}
               <select
                 className={selectClass}
-                value={appSettings?.theme ?? 'dark'}
-                onChange={(e) =>
-                  onAppSettingChange('theme', e.target.value as AppSettings['theme'])
-                }
+                value={theme}
+                onChange={(e) => setTheme(e.target.value as AppSettings['theme'])}
               >
                 <option value="dark">Dark</option>
                 <option value="light">Light</option>
@@ -435,6 +463,17 @@ export function SettingsScreen({
                 Replay tour
               </Button>
             </SettingRow>
+            <SettingRow
+              label="Desk pet"
+              hint="A tiny duck that waddles along the top bar. Purely cosmetic — turn it off if you'd rather not have it."
+            >
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-accent"
+                checked={appSettings?.showDeskPet ?? true}
+                onChange={(e) => onAppSettingChange('showDeskPet', e.target.checked)}
+              />
+            </SettingRow>
           </SectionCard>
 
           <SectionCard
@@ -454,7 +493,17 @@ export function SettingsScreen({
                       providerId={provider.id}
                       activeProviderId={activeProviderId}
                       onProviderSwitch={onProviderSwitch}
+                      disabled={agentBusy}
                     />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 text-xs"
+                      onClick={() => onUpdateCli(provider.id)}
+                      title={`Run \`${provider.id} update\` to install the latest CLI`}
+                    >
+                      Update CLI
+                    </Button>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -480,16 +529,30 @@ export function SettingsScreen({
                 >
                   <span className="flex min-w-0 flex-col">
                     <span className="text-sm text-text-secondary">{provider.name}</span>
-                    <span className="text-xs text-text-tertiary">Signed in to CLI · ready</span>
+                    <span className="text-xs text-text-tertiary">
+                      {provider.id === 'gemini' ? 'Coming soon' : 'Signed in to CLI · ready'}
+                    </span>
                   </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-6 text-xs"
-                    onClick={() => onProviderConnect(provider.id)}
-                  >
-                    Connect
-                  </Button>
+                  {provider.id === 'gemini' ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6 text-xs"
+                      disabled
+                      title="Gemini support is still in testing"
+                    >
+                      Coming soon
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6 text-xs"
+                      onClick={() => onProviderConnect(provider.id)}
+                    >
+                      Connect
+                    </Button>
+                  )}
                 </div>
               ))}
 
@@ -499,47 +562,10 @@ export function SettingsScreen({
               </div>
             )}
           </SectionCard>
-
-          <SectionCard
-            title="Operator"
-            subtitle={system?.auth.operator?.displayName ?? 'Local operator'}
-          >
-            <SettingInfo
-              label="Connected assistants"
-              value={
-                connectedProviders.length > 0
-                  ? connectedProviders.map((p) => p.name).join(', ')
-                  : 'No provider connected'
-              }
-            />
-            <SettingInfo
-              label="Tracked CLI sessions"
-              value={String(system?.auth.trackedSessions.length ?? 0)}
-            />
-          </SectionCard>
         </TabsContent>
 
         {/* Voice Tab */}
         <TabsContent value="voice" className="flex flex-col gap-4">
-          <SectionCard title="Audio path" subtitle="Current native routing">
-            <SettingInfo
-              label="Input device"
-              value={status?.audio.inputDeviceLabel ?? 'System default input'}
-            />
-            <SettingInfo
-              label="Transcription engine"
-              value={status?.audio.transcriptionEngine ?? 'Unavailable'}
-            />
-            <SettingInfo
-              label="Speech engine"
-              value="Parakeet (parakeet-tdt-0.6b-v3) — on-device via CoreML (Apple Neural Engine)"
-            />
-            <SettingInfo
-              label="Silence window"
-              value={`${status?.voiceSession.silenceWindowMs ?? 800}ms`}
-            />
-          </SectionCard>
-
           <SectionCard title="Voice controls" subtitle="Native session preferences">
             <SettingRow
               label="Auto-send transcripts"
@@ -552,24 +578,13 @@ export function SettingsScreen({
                 onChange={(e) => onPreferenceChange('autoSendVoice', e.target.checked)}
               />
             </SettingRow>
-            <SettingRow label="Transcription engine">
-              <select
-                className={selectClass}
-                value={voiceSettings?.settings.transcriptionModel ?? 'parakeet'}
-                onChange={(e) =>
-                  onVoiceSettingChange(
-                    'transcriptionModel',
-                    e.target.value as VoiceSettingsResponse['settings']['transcriptionModel']
-                  )
-                }
-              >
-                {(voiceSettings?.options.transcriptionModels ?? []).map((m) => (
-                  <option disabled={!m.available} key={m.id} value={m.id}>
-                    {m.label}
-                    {m.available ? '' : ' (configure path)'}
-                  </option>
-                ))}
-              </select>
+            {/* Read-only: there's exactly one on-device engine (no cloud fallback), so this is
+                informational, not a choice. Keeps the privacy reassurance in a sensible spot. */}
+            <SettingRow
+              label="Speech-to-text"
+              hint="Runs locally on your Mac — your audio never leaves the device, nothing is uploaded."
+            >
+              <span className="text-sm font-medium text-text-primary">On-device (private)</span>
             </SettingRow>
             <SettingRow
               label="Silence window"
@@ -589,17 +604,6 @@ export function SettingsScreen({
                 <option value="3000">3.0s</option>
               </select>
             </SettingRow>
-            <SettingRow
-              label="Auto-resume after reply"
-              hint="Reopen the mic automatically once the agent finishes speaking."
-            >
-              <input
-                type="checkbox"
-                className="h-4 w-4 accent-accent"
-                checked={voiceSettings?.settings.autoResumeAfterReply ?? true}
-                onChange={(e) => onVoiceSettingChange('autoResumeAfterReply', e.target.checked)}
-              />
-            </SettingRow>
           </SectionCard>
         </TabsContent>
 
@@ -611,6 +615,7 @@ export function SettingsScreen({
                 <SettingRow label="Model">
                   <select
                     className={selectClass}
+                    disabled={busyFor('codex')}
                     value={codexSettings?.settings.model ?? ''}
                     onChange={(e) => onCodexSettingChange('model', e.target.value || null)}
                   >
@@ -625,6 +630,7 @@ export function SettingsScreen({
                 <SettingRow label="Reasoning effort">
                   <select
                     className={selectClass}
+                    disabled={busyFor('codex')}
                     value={codexSettings?.settings.reasoningEffort ?? ''}
                     onChange={(e) =>
                       onCodexSettingChange(
@@ -668,6 +674,7 @@ export function SettingsScreen({
                     providerId="codex"
                     activeProviderId={activeProviderId}
                     onProviderSwitch={onProviderSwitch}
+                    disabled={agentBusy}
                   />
                 </div>
                 <SettingInfo
@@ -698,6 +705,7 @@ export function SettingsScreen({
                 <SettingRow label="Model">
                   <select
                     className={selectClass}
+                    disabled={busyFor('claude')}
                     value={claudeSettings?.settings.model ?? ''}
                     onChange={(e) => onClaudeSettingChange('model', e.target.value || null)}
                   >
@@ -706,6 +714,27 @@ export function SettingsScreen({
                       <option key={m.slug} value={m.slug}>
                         {m.displayName}
                         {m.suggestedForDiscussion ? ' \u00B7 suggested' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </SettingRow>
+                <SettingRow label="Reasoning effort">
+                  <select
+                    className={selectClass}
+                    disabled={busyFor('claude')}
+                    value={claudeSettings?.settings.reasoningEffort ?? ''}
+                    onChange={(e) =>
+                      onClaudeSettingChange(
+                        'reasoningEffort',
+                        (e.target.value ||
+                          null) as ClaudeSettingsResponse['settings']['reasoningEffort']
+                      )
+                    }
+                  >
+                    <option value="">Use Claude default</option>
+                    {(claudeSettings?.options.reasoningEfforts ?? []).map((r) => (
+                      <option key={r.effort} value={r.effort}>
+                        {formatReasoningEffort(r.effort)}
                       </option>
                     ))}
                   </select>
@@ -732,6 +761,7 @@ export function SettingsScreen({
                     providerId="claude"
                     activeProviderId={activeProviderId}
                     onProviderSwitch={onProviderSwitch}
+                    disabled={agentBusy}
                   />
                 </div>
                 <SettingInfo
@@ -762,6 +792,7 @@ export function SettingsScreen({
                 <SettingRow label="Model">
                   <select
                     className={selectClass}
+                    disabled={busyFor('gemini')}
                     value={geminiSettings?.settings.model ?? ''}
                     onChange={(e) => onGeminiSettingChange('model', e.target.value || null)}
                   >
@@ -796,6 +827,7 @@ export function SettingsScreen({
                     providerId="gemini"
                     activeProviderId={activeProviderId}
                     onProviderSwitch={onProviderSwitch}
+                    disabled={agentBusy}
                   />
                 </div>
                 <SettingInfo

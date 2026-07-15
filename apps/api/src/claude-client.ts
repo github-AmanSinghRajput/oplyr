@@ -145,7 +145,7 @@ async function getExecutionOverrides(context?: {
 }) {
   return (
     claudeSettingsService?.getExecutionOverrides(context) ??
-    Promise.resolve({ model: null, voiceModelMode: 'auto' })
+    Promise.resolve({ model: null, reasoningEffort: null, voiceModelMode: 'auto' })
   );
 }
 
@@ -381,10 +381,9 @@ const systemPrompt = [
   'Be concise, practical, and technically strong.',
   'Prefer short explanations, direct recommendations, and code-minded reasoning.',
   'When the user asks for implementation advice, answer like a senior engineer.',
-  'When you are about to propose code changes, first explain clearly what you plan to change and why.',
-  'Describe the changes in plain spoken English — which files, what modifications, and the reasoning.',
-  'Your explanation will be spoken aloud to the developer, so keep it natural and conversational.',
-  'After proposing changes that require approval, tell the developer to review the diff and approve or reject.'
+  'When the user asks for a change, make it directly and immediately in the same turn — every edit is shown to the developer as a diff they approve or reject, so NEVER ask for permission first, and never wait for a second "go ahead" message before making the change.',
+  'Describe changes in plain spoken English — which files, what you changed, and why.',
+  'Your explanation will be spoken aloud to the developer, so keep it natural and conversational.'
 ].join(' ');
 
 function buildReadOnlyPrompt(userText: string, history: ChatMessage[], workspace: WorkspaceState) {
@@ -400,7 +399,7 @@ function buildReadOnlyPrompt(userText: string, history: ChatMessage[], workspace
       ? 'No workspace is mounted. Answer from general knowledge and the conversation only. Do not scan files, inspect folders, or infer anything from the current directory.'
       : null,
     workspace.writeAccessEnabled
-      ? 'This workspace is approval-gated: file changes are ENABLED, and every edit is applied only after the user approves it. Respond to this message conversationally without editing files right now; when the user asks for a change, it will be routed through the approval flow and applied once they approve. Do NOT tell the user you are read-only or that you cannot edit files — you can, through the approval flow.'
+      ? 'This workspace is approval-gated: file changes are ENABLED, and every edit is shown to the developer as a diff they approve or reject before it is kept. This particular message is a question or discussion, so answer it directly. If the developer is asking for a change, you make it right away and it appears as a diff — you never ask for permission first or wait for a second confirmation. Do NOT tell the user you are read-only or that you cannot edit files — you can.'
       : 'File changes are turned OFF for this workspace. Operate in advisory mode: inspect, explain, and propose, but do not edit files.',
     '',
     conversation ? `Conversation so far:\n${conversation}\n` : '',
@@ -428,9 +427,9 @@ function buildWriteDecisionPrompt(
     'You are deciding whether the latest user request should remain a normal reply or become a write proposal requiring approval.',
     'Return reply only if the request can be satisfied without changing files or running project-changing commands.',
     'Return propose_write if the request asks for code changes, file edits, tests that may modify state, scaffolding, setup changes, or any action that should be approved first.',
-    'When returning propose_write, your assistant_text MUST be a clear spoken explanation of what you plan to change.',
-    'Describe which files will be modified, what the changes are, and why — as if you are explaining to a colleague in person.',
-    'End your explanation by asking the developer to review the diff and approve it before you proceed.',
+    'When returning propose_write, your assistant_text MUST be a clear spoken explanation of the change you are making right now.',
+    'Describe which files you are modifying, what the changes are, and why — as if you are explaining to a colleague in person.',
+    'The change is applied and shown to the developer as a diff in this same turn, so end by telling them the changes are ready to review and approve or reject — do NOT ask for permission or wait for a second confirmation.',
     '',
     conversation ? `Conversation so far:\n${conversation}\n` : '',
     `Latest user message:\n${userText}`
@@ -750,6 +749,10 @@ async function runClaudePromptStream(options: {
       }
     };
 
+    // The prompt actually written to stdin. Defaults to the built prompt; the effort injection below
+    // may prepend a `/effort <level>` line once the resolved settings are known.
+    let promptToSend = options.prompt;
+
     const attachChild = (nextChild: ReturnType<typeof spawn>) => {
       child = nextChild;
 
@@ -825,7 +828,7 @@ async function runClaudePromptStream(options: {
         options.signal.addEventListener('abort', abortListener, { once: true });
       }
 
-      nextChild.stdin?.write(options.prompt);
+      nextChild.stdin?.write(promptToSend);
       nextChild.stdin?.end();
     };
 
@@ -834,6 +837,11 @@ async function runClaudePromptStream(options: {
         const args = [...baseArgs];
         if (executionSettings?.model) {
           args.push('--model', executionSettings.model);
+        }
+        if (executionSettings?.reasoningEffort) {
+          // Claude Code has no reasoning-effort CLI flag — it's set via the `/effort` slash command.
+          // Prepend it to the stdin prompt so this non-interactive turn runs at the chosen effort.
+          promptToSend = `/effort ${executionSettings.reasoningEffort}\n\n${options.prompt}`;
         }
 
         attachChild(

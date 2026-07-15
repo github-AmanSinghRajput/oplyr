@@ -92,7 +92,7 @@ export function MemorySearch({
         )
       ) : (
         <p className="memory-inline-empty">
-          Search runs on-device embeddings and ranks by meaning, not keywords.
+          Search by meaning, not just keywords — results are ranked by relevance to your work.
         </p>
       )}
     </section>

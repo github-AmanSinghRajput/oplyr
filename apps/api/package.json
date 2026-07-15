@@ -1,12 +1,12 @@
 {
   "name": "@oplyr/runtime",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
-    "build:pack": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist-pack/server.mjs --external:better-sqlite3 --external:@xenova/transformers --banner:js=\"import { createRequire } from 'module'; const require = createRequire(import.meta.url);\"",
+    "build:pack": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist-pack/server.mjs --external:better-sqlite3 --external:@xenova/transformers --external:node-pty --banner:js=\"import { createRequire } from 'module'; const require = createRequire(import.meta.url);\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "node dist/index.js",
     "db:migrate": "node --import tsx src/scripts/db-migrate.ts",
@@ -18,6 +18,7 @@
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
     "express": "^4.21.2",
+    "node-pty": "^1.1.0",
     "ws": "^8.21.0"
   },
   "optionalDependencies": {

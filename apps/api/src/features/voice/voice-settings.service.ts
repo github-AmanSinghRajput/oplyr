@@ -113,12 +113,14 @@ function sanitizeTranscriptionModel(_value: unknown): VoiceSettings['transcripti
 }
 
 function getTranscriptionModelOptions(): TranscriptionModelOption[] {
+  // User-facing label/description: describe the BENEFIT (private, on-device), not the internal engine
+  // (`id` stays the internal identifier; it isn't shown to the user).
   return [
     {
       id: 'parakeet',
-      label: 'Parakeet (local)',
+      label: 'On-device (private)',
       description:
-        'NVIDIA Parakeet multilingual speech recognition running locally on the Apple Neural Engine via CoreML.',
+        'Speech-to-text runs locally on your Mac. Your audio never leaves the device — nothing is uploaded.',
       available: true
     }
   ];

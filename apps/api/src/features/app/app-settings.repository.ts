@@ -51,7 +51,8 @@ function getDefaultSettings(): AppSettings {
   return {
     displayName: null,
     theme: 'dark',
-    welcomedAt: null
+    welcomedAt: null,
+    showDeskPet: true
   };
 }
 
@@ -77,7 +78,9 @@ function normalizeAppSettings(value: unknown): AppSettings {
   return {
     displayName: normalizeDisplayName(record.displayName),
     theme: normalizeTheme(record.theme),
-    welcomedAt: typeof record.welcomedAt === 'string' ? record.welcomedAt : null
+    welcomedAt: typeof record.welcomedAt === 'string' ? record.welcomedAt : null,
+    // Absent (pre-existing settings) → on; only a stored `false` disables the pet.
+    showDeskPet: record.showDeskPet !== false
   };
 }
 

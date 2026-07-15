@@ -23,7 +23,7 @@ function readInitialScreen(): ScreenId {
   } catch {
     /* localStorage unavailable or malformed — fall through to default */
   }
-  return 'workspace';
+  return 'voice'; // matches the "Default screen" preference default (use-preferences)
 }
 
 interface NavigationContextValue {

@@ -675,7 +675,10 @@
 
 .memory-feed-item__text {
   display: -webkit-box;
-  min-height: 2.6rem;
+  /* Exactly two lines (0.8rem × 1.45 line-height × 2). min == max so cards are uniform AND a hard
+     cap prevents a clipped 3rd line bleeding through below the ellipsis. */
+  min-height: 2.32rem;
+  max-height: 2.32rem;
   overflow: hidden;
   margin: 0.5rem 0;
   -webkit-box-orient: vertical;

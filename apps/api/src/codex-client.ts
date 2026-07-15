@@ -140,10 +140,9 @@ const systemPrompt = [
   'Be concise, practical, and technically strong.',
   'Prefer short explanations, direct recommendations, and code-minded reasoning.',
   'When the user asks for implementation advice, answer like a senior engineer.',
-  'When you are about to propose code changes, first explain clearly what you plan to change and why.',
-  'Describe the changes in plain spoken English — which files, what modifications, and the reasoning.',
-  'Your explanation will be spoken aloud to the developer, so keep it natural and conversational.',
-  'After proposing changes that require approval, tell the developer to review the diff and approve or reject.'
+  'When the user asks for a change, make it directly and immediately in the same turn — every edit is shown to the developer as a diff they approve or reject, so NEVER ask for permission first, and never wait for a second "go ahead" message before making the change.',
+  'Describe changes in plain spoken English — which files, what you changed, and why.',
+  'Your explanation will be spoken aloud to the developer, so keep it natural and conversational.'
 ].join(' ');
 
 function getCodexCommand() {
@@ -218,7 +217,7 @@ function buildReadOnlyPrompt(userText: string, history: ChatMessage[], workspace
       ? 'No workspace is mounted. Answer from general knowledge and the conversation only. Do not scan files, inspect folders, or infer anything from the current directory.'
       : null,
     workspace.writeAccessEnabled
-      ? 'This workspace is approval-gated: file changes are ENABLED, and every edit is applied only after the user approves it. Respond to this message conversationally without editing files right now; when the user asks for a change, it will be routed through the approval flow and applied once they approve. Do NOT tell the user you are read-only or that you cannot edit files — you can, through the approval flow.'
+      ? 'This workspace is approval-gated: file changes are ENABLED, and every edit is shown to the developer as a diff they approve or reject before it is kept. This particular message is a question or discussion, so answer it directly. If the developer is asking for a change, you make it right away and it appears as a diff — you never ask for permission first or wait for a second confirmation. Do NOT tell the user you are read-only or that you cannot edit files — you can.'
       : 'File changes are turned OFF for this workspace. Operate in advisory mode: inspect, explain, and propose, but do not edit files.',
     '',
     conversation ? `Conversation so far:\n${conversation}\n` : '',
@@ -247,9 +246,9 @@ function buildWriteDecisionPrompt(
     'Return reply ONLY for questions, explanations, or read-only investigations that change nothing.',
     'Return propose_write whenever the user asks to add, remove, delete, change, edit, update, fix, refactor, rename, move, create, or implement anything in the code or files — even a single line or word. When in doubt, choose propose_write.',
     'CRITICAL: the intent field MUST agree with your assistant_text. If your explanation describes modifying, removing, or adding to any file, then intent MUST be "propose_write" — never "reply". Do not say you will change something and then return reply.',
-    'When returning propose_write, your assistant_text MUST be a clear spoken explanation of what you plan to change.',
-    'Describe which files will be modified, what the changes are, and why — as if you are explaining to a colleague in person.',
-    'End your explanation by asking the developer to review the diff and approve it before you proceed.',
+    'When returning propose_write, your assistant_text MUST be a clear spoken explanation of the change you are making right now.',
+    'Describe which files you are modifying, what the changes are, and why — as if you are explaining to a colleague in person.',
+    'The change is applied and shown to the developer as a diff in this same turn, so end by telling them the changes are ready to review and approve or reject — do NOT ask for permission or wait for a second confirmation.',
     '',
     conversation ? `Conversation so far:\n${conversation}\n` : '',
     `Latest user message:\n${userText}`
@@ -721,7 +720,7 @@ async function runCodexPromptStream(options: {
         clientInfo: {
           name: 'oplyr-api',
           title: 'Oplyr API',
-          version: '0.1.0'
+          version: '0.2.0'
         },
         capabilities: {
           experimentalApi: true

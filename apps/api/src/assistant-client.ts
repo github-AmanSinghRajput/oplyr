@@ -309,7 +309,11 @@ export async function connectAssistantProvider(providerId: AssistantProviderId) 
   }
 
   await providerSettingsService?.connectProvider(providerId);
-  setActiveProviderId(providerId);
+  // Only auto-activate on the FIRST connect (nothing active yet). Connecting an additional agent
+  // must NOT hijack the currently active one — the user switches explicitly from the topbar.
+  if (!getRuntimeState().activeProviderId) {
+    setActiveProviderId(providerId);
+  }
   return getAssistantState();
 }
 

@@ -191,6 +191,7 @@ export interface AppSettings {
   displayName: string | null;
   theme: AppTheme;
   welcomedAt: string | null;
+  showDeskPet: boolean;
 }
 
 export interface VoiceSettings {
@@ -210,7 +211,7 @@ export interface VoiceSettingsResponse {
   };
 }
 
-export type CodexReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh';
+export type CodexReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
 export type AssistantVoiceModelMode = 'auto' | 'fast' | 'inherit';
 
 export interface CodexReasoningOption {
@@ -239,8 +240,16 @@ export interface ClaudeModelOption {
   suggestedForDiscussion: boolean;
 }
 
+export type ClaudeReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh';
+
+export interface ClaudeReasoningOption {
+  effort: ClaudeReasoningEffort;
+  description: string;
+}
+
 export interface ClaudeSettings {
   model: string | null;
+  reasoningEffort: ClaudeReasoningEffort | null;
   voiceModelMode: AssistantVoiceModelMode;
 }
 
@@ -269,6 +278,7 @@ export interface ClaudeSettingsResponse {
   source: 'app' | 'default';
   options: {
     models: ClaudeModelOption[];
+    reasoningEfforts: ClaudeReasoningOption[];
   };
 }
 

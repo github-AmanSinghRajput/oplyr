@@ -10,13 +10,14 @@ interface MemoryStatusPillProps {
 
 /**
  * Compact translucent status pill that floats over the top-left of the canvas: atom counts (total /
- * this-project / global), the embeddings model, and the master on/off. Replaces the old full-width
+ * this-project / global), whether recall is semantic, and the master on/off. Replaces the old full-width
  * header band while keeping the same at-a-glance signals.
  */
 export function MemoryStatusPill({ status, busy, onToggleEnabled }: MemoryStatusPillProps) {
   const stats = status?.stats;
   const enabled = status?.settings.enabled ?? false;
-  const model = status?.embeddingsModel ?? '—';
+  // Show WHETHER recall works by meaning (benefit), never the internal embedding model name.
+  const semanticOn = Boolean(status?.embeddingsModel);
   const hasProject = Boolean(status?.project.key);
 
   return (
@@ -46,12 +47,18 @@ export function MemoryStatusPill({ status, busy, onToggleEnabled }: MemoryStatus
         <PillStat icon={<Globe size={13} />} label="Global" value={stats?.globalAtoms} />
       </div>
 
-      <span className="memory-status-pill__divider" aria-hidden />
-
-      <span className="memory-status-pill__model" title={`Embeddings model: ${model}`}>
-        <Cpu size={12} />
-        <code>{model}</code>
-      </span>
+      {semanticOn ? (
+        <>
+          <span className="memory-status-pill__divider" aria-hidden />
+          <span
+            className="memory-status-pill__model"
+            title="Recall searches your memory by meaning, not just keywords"
+          >
+            <Cpu size={12} />
+            Semantic
+          </span>
+        </>
+      ) : null}
     </div>
   );
 }

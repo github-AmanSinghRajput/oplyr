@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import type {
   BrainProjectSettings,
@@ -48,7 +49,11 @@ export function MemorySettingsOverlay({
     return null;
   }
 
-  return (
+  // Portal to <body>: the Memory screen renders inside a framer-motion `transform`ed container,
+  // which makes `position: fixed` anchor to that ancestor (not the viewport) and traps the drawer's
+  // z-index beneath the fixed topbar. Rendering at the document root fixes both — full-viewport
+  // overlay, above the topbar.
+  return createPortal(
     <div className="memory-overlay" role="dialog" aria-modal="true" aria-label="Memory settings">
       <button
         type="button"
@@ -81,6 +86,7 @@ export function MemorySettingsOverlay({
           />
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

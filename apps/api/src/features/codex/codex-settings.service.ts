@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { env } from '../../config/env.js';
+import { logger } from '../../lib/logger.js';
 import type {
   AssistantVoiceModelMode,
   CodexModelOption,
@@ -87,7 +88,9 @@ function buildPayload(
   const envSettings = sanitizeCodexSettings({
     model: env.codexModel || null,
     reasoningEffort: normalizeReasoningEffort(env.codexReasoningEffort),
-    voiceModelMode: 'auto'
+    // Default to 'inherit' so the model + effort the user PICKS in the UI is exactly what runs on
+    // the next turn. 'auto'/'fast' (which silently upgrade edits / downgrade voice) are opt-in.
+    voiceModelMode: 'inherit'
   });
   const resolved = normalizeCodexSettings(
     {
@@ -111,7 +114,7 @@ function buildPayload(
   const source =
     appSettings?.model || appSettings?.reasoningEffort || appSettings?.voiceModelMode
       ? 'app'
-      : envSettings.model || envSettings.reasoningEffort || envSettings.voiceModelMode !== 'auto'
+      : envSettings.model || envSettings.reasoningEffort || envSettings.voiceModelMode !== 'inherit'
         ? 'environment'
         : globalSettings?.model || globalSettings?.reasoningEffort
           ? 'global'
@@ -130,7 +133,7 @@ function sanitizeCodexSettings(settings: Partial<CodexSettings>): CodexSettings 
   return {
     model: sanitizeOptionalString(settings.model),
     reasoningEffort: normalizeReasoningEffort(settings.reasoningEffort),
-    voiceModelMode: sanitizeVoiceModelMode(settings.voiceModelMode) ?? 'auto'
+    voiceModelMode: sanitizeVoiceModelMode(settings.voiceModelMode) ?? 'inherit'
   };
 }
 
@@ -253,38 +256,77 @@ async function readGlobalCodexSettings(): Promise<GlobalCodexSettings | null> {
 }
 
 async function readAvailableCodexModels(): Promise<CodexModelOption[]> {
-  try {
-    const raw = await fs.readFile(codexModelsCachePath, 'utf8');
-    const body = JSON.parse(raw) as CodexModelsCacheFile;
-    const models = Array.isArray(body.models) ? body.models : [];
+  const body = await readCodexModelsCache();
+  if (!body) {
+    return [];
+  }
+  const models = Array.isArray(body.models) ? body.models : [];
 
-    return (
-      models
-        .filter((entry) => entry.slug && entry.display_name && entry.visibility !== 'hidden')
-        // Match the Codex CLI `/model` ordering: most-capable/featured first (higher priority),
-        // then alphabetical as a stable tiebreak.
-        .sort(
-          (left, right) =>
-            (right.priority ?? 0) - (left.priority ?? 0) ||
-            (left.display_name ?? '').localeCompare(right.display_name ?? '')
-        )
-        .map((entry) => ({
-          slug: entry.slug ?? '',
-          displayName: entry.display_name ?? entry.slug ?? '',
-          description: entry.description?.trim() || 'Available in the current Codex installation.',
-          defaultReasoningEffort: normalizeReasoningEffort(entry.default_reasoning_level),
-          supportedReasoningEfforts: (entry.supported_reasoning_levels ?? [])
-            .map((option) => mapReasoningOption(option))
-            .filter((option): option is CodexReasoningOption => Boolean(option))
-        }))
-    );
-  } catch (error) {
-    if (isFileMissing(error)) {
-      return [];
+  return (
+    models
+      // Keep only what the CLI's own `/model` list shows. Codex hides internal models (e.g.
+      // `codex-auto-review`) with visibility 'hidden' OR 'hide' — we must exclude both, or the
+      // review model leaks in and (pre-fix) sorted to the top as the accidental default.
+      .filter(
+        (entry) =>
+          entry.slug &&
+          entry.display_name &&
+          entry.visibility !== 'hidden' &&
+          entry.visibility !== 'hide'
+      )
+      // Match the Codex CLI `/model` ordering: LOWER `priority` = more featured (gpt-5.6-sol is
+      // priority 1 and listed first), so sort ASCENDING; alphabetical as a stable tiebreak.
+      .sort(
+        (left, right) =>
+          (left.priority ?? Number.MAX_SAFE_INTEGER) -
+            (right.priority ?? Number.MAX_SAFE_INTEGER) ||
+          (left.display_name ?? '').localeCompare(right.display_name ?? '')
+      )
+      .map((entry) => ({
+        slug: entry.slug ?? '',
+        displayName: entry.display_name ?? entry.slug ?? '',
+        description: entry.description?.trim() || 'Available in the current Codex installation.',
+        defaultReasoningEffort: normalizeReasoningEffort(entry.default_reasoning_level),
+        supportedReasoningEfforts: (entry.supported_reasoning_levels ?? [])
+          .map((option) => mapReasoningOption(option))
+          .filter((option): option is CodexReasoningOption => Boolean(option))
+      }))
+  );
+}
+
+/**
+ * Read + parse `~/.codex/models_cache.json` defensively. Codex rewrites this file IN PLACE while it
+ * refreshes models, so a concurrent read can land mid-write and yield truncated (invalid) JSON. If
+ * we let that `SyntaxError` propagate it takes down the whole Codex settings load (→ no models at
+ * all). Instead: retry a few times (the write completes in well under a frame), and if it still
+ * won't parse, degrade to `null` (caller yields no models) rather than throw. Missing file → null.
+ */
+async function readCodexModelsCache(): Promise<CodexModelsCacheFile | null> {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    let raw: string;
+    try {
+      raw = await fs.readFile(codexModelsCachePath, 'utf8');
+    } catch (error) {
+      if (isFileMissing(error)) {
+        return null;
+      }
+      throw error; // genuine IO error (permissions, etc.) — not something a retry fixes
     }
 
-    throw error;
+    try {
+      return JSON.parse(raw) as CodexModelsCacheFile;
+    } catch {
+      // Almost certainly a mid-write truncated read — back off briefly and try again.
+      await delay(40);
+    }
   }
+
+  logger.warn('codex.models.cache.unparseable', { path: codexModelsCachePath });
+  return null;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function mapReasoningOption(entry: { effort?: string; description?: string } | undefined) {
@@ -308,6 +350,12 @@ function describeReasoningEffort(effort: CodexReasoningEffort) {
   }
   if (effort === 'high') {
     return 'Greater reasoning depth for complex work';
+  }
+  if (effort === 'max') {
+    return 'Maximum reasoning depth for the hardest problems';
+  }
+  if (effort === 'ultra') {
+    return 'Maximum reasoning with automatic task delegation';
   }
 
   return 'Extra high reasoning depth for the toughest problems';
@@ -345,7 +393,9 @@ function normalizeReasoningEffort(value: unknown): CodexReasoningEffort | null {
     value === 'low' ||
     value === 'medium' ||
     value === 'high' ||
-    value === 'xhigh'
+    value === 'xhigh' ||
+    value === 'max' ||
+    value === 'ultra'
   ) {
     return value;
   }

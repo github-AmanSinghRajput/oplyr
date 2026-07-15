@@ -27,6 +27,7 @@ import { Music } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StandbyScreen } from '@/components/screens/StandbyScreen';
 import { OplyrLogoMark } from '@/components/branding/OplyrLogoMark';
+import { UpdateBanner } from '@/components/layout/UpdateBanner';
 import { cn } from '@/lib/cn';
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
 import { formatReasoningEffort, getVoiceState } from '@/containers/voice-console/lib/helpers';
@@ -231,7 +232,13 @@ function getVoiceAssistant(
 
 export function AppShell() {
   const { activeScreen, setActiveScreen } = useNavigation();
-  const { status, system, refreshStatus, assistantReady } = useStatus();
+  // The integrated shell is mounted once (on first open) and then kept alive — hidden, not
+  // unmounted — when you navigate away, so its pty/process survives page switches.
+  const [shellEverOpened, setShellEverOpened] = useState(false);
+  useEffect(() => {
+    if (activeScreen === 'shell') setShellEverOpened(true);
+  }, [activeScreen]);
+  const { status, refreshStatus, assistantReady } = useStatus();
   const { theme } = useTheme();
   const { toasts, pushToast } = useToast();
   const { baseUrl, service } = useApi();
@@ -245,6 +252,42 @@ export function AppShell() {
     voiceSettings: settings.voiceSettings,
     autoSend: preferences.autoSendVoice
   });
+
+  // Full app refresh (topbar refresh button): re-pull everything live in parallel — status,
+  // workspace, chat history, the active agent's model/effort settings, usage, voice settings — and
+  // bump a nonce the Memory screen watches to re-fetch the brain graph. Best-effort (allSettled) so
+  // one slow/failing fetch (e.g. the ~15s Codex usage scrape) never blocks the rest.
+  const [fullRefreshing, setFullRefreshing] = useState(false);
+  const [brainRefreshNonce, setBrainRefreshNonce] = useState(0);
+  const handleFullRefresh = useCallback(async () => {
+    if (fullRefreshing) return;
+    setFullRefreshing(true);
+    const activeId = status?.assistantProviders.activeProviderId ?? null;
+    try {
+      await Promise.allSettled([
+        refreshStatus(),
+        loadLogs(),
+        settings.loadVoiceSettings(),
+        settings.loadProviderUsage(),
+        activeId === 'codex'
+          ? settings.loadCodexSettings()
+          : activeId === 'claude'
+            ? settings.loadClaudeSettings()
+            : activeId === 'gemini'
+              ? settings.loadGeminiSettings()
+              : Promise.resolve()
+      ]);
+      setBrainRefreshNonce((nonce) => nonce + 1);
+    } finally {
+      setFullRefreshing(false);
+    }
+  }, [
+    fullRefreshing,
+    status?.assistantProviders.activeProviderId,
+    refreshStatus,
+    loadLogs,
+    settings
+  ]);
 
   const handleResetApp = useCallback(async () => {
     const didReset = await settings.handleResetApp();
@@ -303,8 +346,37 @@ export function AppShell() {
 
   const displayName = status?.appSettings.displayName ?? null;
   const voiceState = getVoiceState(status);
+  // "Agent busy" = a turn is in flight: a chat reply is streaming, or the voice session is
+  // thinking/responding. While busy we block switching the active agent, model, or reasoning effort
+  // — changing any of those mid-turn would apply to a request already running and corrupt it.
+  const agentBusy = chat.isStreaming || voiceState === 'thinking' || voiceState === 'speaking';
+  const guardWhileBusy = useCallback(
+    (what: 'agent' | 'model' | 'reasoning effort', run: () => void) => {
+      if (agentBusy) {
+        pushToast(
+          'info',
+          'Agent is working',
+          `Wait for the current turn to finish before changing the ${what}.`
+        );
+        return;
+      }
+      run();
+    },
+    [agentBusy, pushToast]
+  );
   const lastAssistant = [...chat.messages].reverse().find((m) => m.role === 'assistant') ?? null;
   const lastUser = [...chat.messages].reverse().find((m) => m.role === 'user') ?? null;
+  // Transcript shown on the voice screen. While a voice turn is live (recording, or the voice session
+  // is mid-flight), show the streaming/just-spoken transcript. Otherwise fall back to the latest user
+  // message from the shared chat history, so the voice view stays in sync with the chat — including
+  // typed messages — instead of lingering on a stale earlier voice transcript.
+  const voiceTurnLive = voice.isRecording || status?.voiceSession?.active === true;
+  const voiceUserTranscript =
+    (voiceTurnLive ? voice.streamedTranscriptOverride : '') ||
+    lastUser?.text ||
+    voice.streamedTranscriptOverride ||
+    status?.voiceSession?.lastTranscript ||
+    '';
   // Chat + voice share ONE turn state (the chat hook). The voice view reflects the same turn no
   // matter where it was started: while a turn is active, show the streaming assistant message (empty
   // until text arrives → the working timeline shows); otherwise the last completed reply. Hidden
@@ -520,12 +592,7 @@ export function AppShell() {
             voiceState={voiceState}
             isRecording={voice.isRecording}
             micAnalyserRef={voice.micAnalyserRef}
-            userTranscript={
-              voice.streamedTranscriptOverride ||
-              lastUser?.text ||
-              status?.voiceSession?.lastTranscript ||
-              ''
-            }
+            userTranscript={voiceUserTranscript}
             aiReply={voiceReply}
             voiceActivity={chat.liveActivity}
             voiceActivities={chat.activityLog}
@@ -564,7 +631,10 @@ export function AppShell() {
           />
         );
       case 'shell':
-        return <ShellScreen cwd={status?.workspace.projectRoot ?? null} theme={theme} />;
+        // The shell is NOT rendered here — it's kept mounted (hidden) below so switching pages never
+        // unmounts it and kills the pty. Its running processes + scrollback survive navigation; only
+        // app shutdown (before-quit → killAllPtySessions) stops them.
+        return null;
       case 'codebase-map':
         return <CodebaseMapScreen projectRoot={status?.workspace.projectRoot ?? null} />;
       case 'review':
@@ -591,7 +661,6 @@ export function AppShell() {
             providerUsage={settings.providerUsage}
             providerUsageLoading={settings.providerUsageLoading}
             status={status}
-            system={system}
             voiceSettings={settings.voiceSettings}
             onAppSettingChange={(key, value) => void settings.handleAppSettingChange(key, value)}
             onPreferenceChange={setPreference}
@@ -609,7 +678,10 @@ export function AppShell() {
             }
             onProviderConnect={(id) => void settings.handleProviderConnect(id)}
             onProviderDisconnect={(id) => void settings.handleProviderDisconnect(id)}
-            onProviderSwitch={(id) => void settings.handleProviderSwitch(id)}
+            onProviderSwitch={(id) =>
+              guardWhileBusy('agent', () => void settings.handleProviderSwitch(id))
+            }
+            onUpdateCli={(id) => void settings.handleUpdateCli(id)}
             onRefreshProviderUsage={() => void settings.loadProviderUsage()}
             onSaveCodexSettings={() => void settings.handleSaveCodexSettings()}
             onSaveClaudeSettings={() => void settings.handleSaveClaudeSettings()}
@@ -617,6 +689,7 @@ export function AppShell() {
             codexSettingsDirty={settings.codexSettingsDirty}
             claudeSettingsDirty={settings.claudeSettingsDirty}
             geminiSettingsDirty={settings.geminiSettingsDirty}
+            agentBusy={agentBusy}
           />
         );
       case 'meetings':
@@ -624,7 +697,7 @@ export function AppShell() {
       case 'markdown':
         return <MarkdownScreen projectRoot={status?.workspace.projectRoot ?? null} />;
       case 'memory':
-        return <MemoryScreen />;
+        return <MemoryScreen refreshNonce={brainRefreshNonce} />;
       case 'music':
         return (
           <StandbyScreen
@@ -708,18 +781,34 @@ export function AppShell() {
           <Sidebar />
           <Topbar
             displayName={displayName}
-            onRefresh={() => void refreshStatus()}
+            onRefresh={() => void handleFullRefresh()}
+            refreshing={fullRefreshing}
             onDisconnect={() => {
               const providerId = status?.assistantProviders.activeProviderId;
               if (providerId) {
                 void settings.handleProviderDisconnect(providerId);
               }
             }}
-            onProviderSwitch={(id) => void settings.handleProviderSwitch(id)}
+            onProviderSwitch={(id) =>
+              guardWhileBusy('agent', () => void settings.handleProviderSwitch(id))
+            }
             codexSettings={settings.codexSettings}
             claudeSettings={settings.claudeSettings}
             geminiSettings={settings.geminiSettings}
-            onSelectModel={(id, slug) => void settings.handleSelectModel(id, slug)}
+            onSelectModel={(id, slug) =>
+              guardWhileBusy('model', () => void settings.handleSelectModel(id, slug))
+            }
+            onSelectReasoningEffort={(id, effort) =>
+              guardWhileBusy(
+                'reasoning effort',
+                () => void settings.handleSelectReasoningEffort(id, effort)
+              )
+            }
+            onRefreshModels={(id) => void settings.handleRefreshModels(id)}
+            refreshingModels={settings.refreshingModels}
+            providerUsage={settings.providerUsage}
+            providerUsageLoading={settings.providerUsageLoading}
+            agentBusy={agentBusy}
             busyLabel={settings.busyLabel}
             error={settings.error}
           />
@@ -735,10 +824,22 @@ export function AppShell() {
                 <Suspense fallback={<ScreenFallback />}>{renderScreen()}</Suspense>
               </motion.div>
             </AnimatePresence>
+            {/* Kept-alive integrated shell: mounted once on first open, then shown/hidden by display
+                so navigating away never unmounts it (which would kill the pty and its processes). */}
+            {shellEverOpened && (
+              <div style={{ display: activeScreen === 'shell' ? undefined : 'none' }}>
+                <Suspense fallback={<ScreenFallback />}>
+                  <ShellScreen cwd={status?.workspace.projectRoot ?? null} theme={theme} />
+                </Suspense>
+              </div>
+            )}
           </ContentFrame>
           <ProductTourOverlay />
         </>
       )}
+
+      {/* Floating auto-update banner (desktop only; renders nothing in the browser) */}
+      <UpdateBanner />
 
       {/* Toast viewport */}
       <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm">

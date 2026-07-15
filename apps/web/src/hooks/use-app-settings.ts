@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useApi } from '@/providers/ApiProvider';
 import { useStatus } from '@/providers/StatusProvider';
 import { useToast } from '@/providers/ToastProvider';
@@ -56,6 +56,13 @@ export interface AppSettingsHandle {
   claudeSettingsDirty: boolean;
   geminiSettingsDirty: boolean;
   handleSelectModel: (providerId: AssistantProviderId, slug: string) => Promise<void>;
+  handleSelectReasoningEffort: (
+    providerId: AssistantProviderId,
+    effort: string | null
+  ) => Promise<void>;
+  refreshingModels: boolean;
+  handleRefreshModels: (providerId: AssistantProviderId) => Promise<void>;
+  handleUpdateCli: (providerId: AssistantProviderId) => Promise<void>;
   handleProviderSwitch: (providerId: AssistantProviderId) => Promise<void>;
   handleProviderConnect: (providerId: AssistantProviderId) => Promise<void>;
   handleProviderDisconnect: (providerId: AssistantProviderId) => Promise<void>;
@@ -101,6 +108,9 @@ export function useAppSettings(): AppSettingsHandle {
   const [onboardingSelectedProviderId, setOnboardingSelectedProviderId] =
     useState<AssistantProviderId | null>(null);
   const activeProviderId = status?.assistantProviders.activeProviderId ?? null;
+  const [refreshingModels, setRefreshingModels] = useState(false);
+  // Monotonic tag for provider-usage reads so a stale in-flight fetch can't overwrite a newer one.
+  const usageRequestSeq = useRef(0);
 
   // Clear error after 6s
   useEffect(() => {
@@ -155,14 +165,20 @@ export function useAppSettings(): AppSettingsHandle {
       return;
     }
 
+    // Each usage read runs a live CLI capture (seconds). If the user switches A→B→A mid-flight, a
+    // slow earlier response must not clobber the latest one — tag every request and only the newest
+    // (seq === latest) is allowed to commit state ("latest wins").
+    const seq = ++usageRequestSeq.current;
     setProviderUsageLoading(true);
     try {
       const next = await service.getAssistantUsage();
+      if (seq !== usageRequestSeq.current) return;
       setProviderUsage(next.usage);
     } catch {
+      if (seq !== usageRequestSeq.current) return;
       setProviderUsage(null);
     } finally {
-      setProviderUsageLoading(false);
+      if (seq === usageRequestSeq.current) setProviderUsageLoading(false);
     }
   }, [activeProviderId, service]);
 
@@ -180,6 +196,12 @@ export function useAppSettings(): AppSettingsHandle {
     if (!hasDisplayName) {
       setOnboardingStep(1);
       setOnboardingSelectedProviderId(null);
+      // Fresh onboarding (no name yet): clear any stale "skipped the project step" flag left over
+      // from a prior run so the connect-workspace step reliably reappears instead of staying hidden.
+      if (onboardingProjectDismissed) {
+        localStorage.removeItem('oplyr.onboarding.projectDismissed');
+        setOnboardingProjectDismissed(false);
+      }
       return;
     }
 
@@ -206,12 +228,15 @@ export function useAppSettings(): AppSettingsHandle {
   ]);
 
   useEffect(() => {
+    // On provider switch: drop the other providers' settings, load the active one's, and refresh its
+    // usage. Usage is captured live from the CLI (node-pty) and TTL-cached server-side, so this is
+    // cheap on a cache hit; the first fetch per provider spawns the CLI (~a few seconds) and the
+    // meters appear when it lands. Providers without live usage return "unavailable" (UI hides them).
     if (activeProviderId === 'codex') {
       setClaudeSettings(null);
       setGeminiSettings(null);
       void loadCodexSettings();
-      setProviderUsage(null);
-      setProviderUsageLoading(false);
+      void loadProviderUsage();
       return;
     }
 
@@ -219,8 +244,7 @@ export function useAppSettings(): AppSettingsHandle {
       setCodexSettings(null);
       setGeminiSettings(null);
       void loadClaudeSettings();
-      setProviderUsage(null);
-      setProviderUsageLoading(false);
+      void loadProviderUsage();
       return;
     }
 
@@ -228,8 +252,7 @@ export function useAppSettings(): AppSettingsHandle {
       setCodexSettings(null);
       setClaudeSettings(null);
       void loadGeminiSettings();
-      setProviderUsage(null);
-      setProviderUsageLoading(false);
+      void loadProviderUsage();
       return;
     }
 
@@ -238,7 +261,13 @@ export function useAppSettings(): AppSettingsHandle {
     setGeminiSettings(null);
     setProviderUsage(null);
     setProviderUsageLoading(false);
-  }, [activeProviderId, loadClaudeSettings, loadCodexSettings, loadGeminiSettings]);
+  }, [
+    activeProviderId,
+    loadClaudeSettings,
+    loadCodexSettings,
+    loadGeminiSettings,
+    loadProviderUsage
+  ]);
 
   const handleAppSettingChange = useCallback(
     async <Key extends keyof AppSettings>(key: Key, value: AppSettings[Key]) => {
@@ -378,6 +407,76 @@ export function useAppSettings(): AppSettingsHandle {
     [service, pushToast]
   );
 
+  // Set the reasoning effort for the active provider. Codex uses `-c model_reasoning_effort`; Claude
+  // uses its `/effort` command (injected server-side). Gemini has no effort control → no-op.
+  const handleSelectReasoningEffort = useCallback(
+    async (providerId: AssistantProviderId, effort: string | null) => {
+      try {
+        if (providerId === 'codex') {
+          const next = await service.updateCodexSettings({
+            reasoningEffort: (effort ??
+              undefined) as CodexSettingsResponse['settings']['reasoningEffort']
+          });
+          setCodexSettings(next);
+        } else if (providerId === 'claude') {
+          const next = await service.updateClaudeSettings({
+            reasoningEffort: (effort ??
+              undefined) as ClaudeSettingsResponse['settings']['reasoningEffort']
+          });
+          setClaudeSettings(next);
+        } else {
+          return;
+        }
+        pushToast('success', 'Effort updated', 'Reasoning effort is now in effect.');
+      } catch {
+        pushToast('error', 'Not saved', 'The reasoning effort could not be updated.');
+      }
+    },
+    [service, pushToast]
+  );
+
+  // Refresh the live model list from the provider's own CLI (nothing is hardcoded on the server —
+  // Codex republishes its cache; Claude/Gemini report that their aliases already track the latest),
+  // then re-read the provider's settings so the picker updates.
+  const handleRefreshModels = useCallback(
+    async (providerId: AssistantProviderId) => {
+      setRefreshingModels(true);
+      try {
+        const result = await service.refreshProviderModels(providerId);
+        if (providerId === 'codex') await loadCodexSettings();
+        else if (providerId === 'claude') await loadClaudeSettings();
+        else await loadGeminiSettings();
+        pushToast(result.refreshed ? 'success' : 'error', 'Models refreshed', result.detail);
+      } catch {
+        pushToast('error', 'Refresh failed', 'Could not refresh the model list.');
+      } finally {
+        setRefreshingModels(false);
+      }
+    },
+    [service, loadCodexSettings, loadClaudeSettings, loadGeminiSettings, pushToast]
+  );
+
+  // Run the provider CLI's own self-update, then refresh its models (a newer CLI may add models).
+  const handleUpdateCli = useCallback(
+    async (providerId: AssistantProviderId) => {
+      setBusyLabel(`Updating ${getProviderLabel(providerId)} CLI...`);
+      try {
+        const result = await service.updateProviderCli(providerId);
+        pushToast(
+          result.ok ? 'success' : 'error',
+          result.ok ? 'CLI updated' : 'Update finished',
+          result.message
+        );
+        await handleRefreshModels(providerId);
+      } catch {
+        pushToast('error', 'Update failed', 'Could not run the CLI update.');
+      } finally {
+        setBusyLabel('');
+      }
+    },
+    [service, pushToast, handleRefreshModels]
+  );
+
   const handleProviderSwitch = useCallback(
     async (providerId: AssistantProviderId) => {
       setBusyLabel(`Switching to ${getProviderLabel(providerId)}...`);
@@ -412,7 +511,7 @@ export function useAppSettings(): AppSettingsHandle {
         pushToast(
           'success',
           'Provider connected',
-          `${getProviderLabel(providerId)} is now active in Oplyr.`
+          `${getProviderLabel(providerId)} is connected. Switch to it from the top bar when you want to use it.`
         );
       } catch (err) {
         pushToast(
@@ -493,7 +592,13 @@ export function useAppSettings(): AppSettingsHandle {
     if (
       typeof window !== 'undefined' &&
       !window.confirm(
-        'Reset Oplyr completely?\n\nThis clears workspace data, chat history, approvals, Brain memory, settings, and app-connected providers.'
+        'Reset Oplyr completely?\n\n' +
+          'This permanently erases EVERYTHING on this machine:\n' +
+          '• Your Brain — every learned memory and preference\n' +
+          '• All chats, voice sessions, approvals, and diffs\n' +
+          '• The connected workspace/project and all settings\n' +
+          "• Onboarding progress — you'll start over from setup\n\n" +
+          'This cannot be undone. Continue?'
       )
     ) {
       return false;
@@ -503,6 +608,26 @@ export function useAppSettings(): AppSettingsHandle {
     setError('');
     try {
       await service.resetApp();
+
+      // The server reset clears runtime.db + brain.db, but local UI state (onboarding flags,
+      // preferences, tours, theme, nav) lives in localStorage — leaving it behind meant the app
+      // never truly started fresh. Wipe every oplyr-* key, then hard-reload so every provider
+      // re-reads cleared state and the app boots into onboarding as if freshly installed.
+      if (typeof window !== 'undefined') {
+        try {
+          const staleKeys: string[] = [];
+          for (let i = 0; i < window.localStorage.length; i += 1) {
+            const key = window.localStorage.key(i);
+            if (key && key.toLowerCase().startsWith('oplyr')) staleKeys.push(key);
+          }
+          staleKeys.forEach((key) => window.localStorage.removeItem(key));
+        } catch {
+          /* localStorage may be unavailable; the server-side reset still stands */
+        }
+        window.location.reload();
+        return true;
+      }
+
       setOnboardingStep(1);
       setOnboardingSelectedProviderId(null);
       await initialize();
@@ -570,6 +695,10 @@ export function useAppSettings(): AppSettingsHandle {
     handleClaudeSettingChange,
     handleGeminiSettingChange,
     handleSelectModel,
+    handleSelectReasoningEffort,
+    refreshingModels,
+    handleRefreshModels,
+    handleUpdateCli,
     handleSaveCodexSettings,
     handleSaveClaudeSettings,
     handleSaveGeminiSettings,

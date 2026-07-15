@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Sun, Moon, RefreshCw, Unplug, ChevronDown, Plus, Check } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { useTheme } from '@/providers/ThemeProvider';
@@ -8,23 +8,33 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ProviderLogo } from '@/components/providers/ProviderLogo';
-import { ModelPicker } from '@/components/providers/ModelPicker';
+import { ModelPicker, EffortPicker } from '@/components/providers/ModelPicker';
+import { TopbarUsageMeters } from '@/components/providers/TopbarUsageMeters';
+import { TopbarPet } from '@/components/layout/TopbarPet';
 import type {
   AssistantProviderId,
   ClaudeSettingsResponse,
   CodexSettingsResponse,
-  GeminiSettingsResponse
+  GeminiSettingsResponse,
+  ProviderUsageSnapshot
 } from '@/containers/voice-console/lib/types';
 
 interface TopbarProps {
   displayName: string | null;
   onRefresh: () => void;
+  refreshing?: boolean;
   onDisconnect: () => void;
   onProviderSwitch: (providerId: AssistantProviderId) => void;
   codexSettings: CodexSettingsResponse | null;
   claudeSettings: ClaudeSettingsResponse | null;
   geminiSettings: GeminiSettingsResponse | null;
   onSelectModel: (providerId: AssistantProviderId, slug: string) => void;
+  onSelectReasoningEffort: (providerId: AssistantProviderId, effort: string | null) => void;
+  onRefreshModels: (providerId: AssistantProviderId) => void;
+  refreshingModels: boolean;
+  providerUsage: ProviderUsageSnapshot | null;
+  providerUsageLoading: boolean;
+  agentBusy: boolean;
   busyLabel?: string;
   error?: string;
 }
@@ -32,12 +42,19 @@ interface TopbarProps {
 export function Topbar({
   displayName,
   onRefresh,
+  refreshing,
   onDisconnect,
   onProviderSwitch,
   codexSettings,
   claudeSettings,
   geminiSettings,
   onSelectModel,
+  onSelectReasoningEffort,
+  onRefreshModels,
+  refreshingModels,
+  providerUsage,
+  providerUsageLoading,
+  agentBusy,
   busyLabel,
   error
 }: TopbarProps) {
@@ -52,6 +69,8 @@ export function Topbar({
   const authLabel = activeProvider?.accountLabel ?? activeProvider?.name ?? 'Not connected';
   const connectedProviders =
     status?.assistantProviders.providers.filter((provider) => provider.appConnected) ?? [];
+  const sidebarLeft = sidebarPinned ? 240 : 56;
+  const showDeskPet = status?.appSettings?.showDeskPet ?? true;
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -62,8 +81,11 @@ export function Topbar({
           'bg-background/80 backdrop-blur-xl border-b border-border',
           'transition-[left] duration-300 ease-out'
         )}
-        style={{ left: sidebarPinned ? 240 : 56 }}
+        style={{ left: sidebarLeft, '--sidebar-left': `${sidebarLeft}px` } as CSSProperties}
       >
+        {/* Desk pet waddling on the bottom border (behind everything, click-through). */}
+        {showDeskPet && <TopbarPet />}
+
         {/* Left: workspace info */}
         <div className="flex items-center gap-3 min-w-0">
           <div className="min-w-0">
@@ -77,6 +99,16 @@ export function Topbar({
             </Badge>
           )}
         </div>
+
+        {/* Center: live provider usage limits (hidden on narrow windows to avoid crowding the
+            workspace label / action cluster; the full breakdown lives in Settings → Agents). */}
+        {assistantReady && (
+          <div className="pointer-events-none absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 xl:block">
+            <div className="pointer-events-auto">
+              <TopbarUsageMeters usage={providerUsage} loading={providerUsageLoading} />
+            </div>
+          </div>
+        )}
 
         {/* Right: status + actions */}
         <div className="flex items-center gap-2">
@@ -100,6 +132,7 @@ export function Topbar({
                 reachable={desktopRuntime ? desktopRuntime.apiReachable : true}
                 onSwitch={onProviderSwitch}
                 onConnectNew={() => setActiveScreen('settings')}
+                disabled={agentBusy}
               />
             </span>
           )}
@@ -111,6 +144,19 @@ export function Topbar({
               claudeSettings={claudeSettings}
               geminiSettings={geminiSettings}
               onSelectModel={onSelectModel}
+              onRefreshModels={onRefreshModels}
+              refreshing={refreshingModels}
+              disabled={agentBusy}
+            />
+          )}
+
+          {assistantReady && (
+            <EffortPicker
+              activeProviderId={activeProviderId}
+              codexSettings={codexSettings}
+              claudeSettings={claudeSettings}
+              onSelectReasoningEffort={onSelectReasoningEffort}
+              disabled={agentBusy}
             />
           )}
 
@@ -127,11 +173,21 @@ export function Topbar({
             <>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onRefresh}>
-                    <RefreshCw size={14} />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={onRefresh}
+                    disabled={refreshing}
+                  >
+                    <RefreshCw size={14} className={cn(refreshing && 'animate-spin')} />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Refresh</TooltipContent>
+                <TooltipContent>
+                  {refreshing
+                    ? 'Refreshing everything…'
+                    : 'Refresh everything (status, chat, memory, usage)'}
+                </TooltipContent>
               </Tooltip>
 
               <Tooltip>
@@ -170,7 +226,8 @@ function ProviderSwitcher({
   authLabel,
   reachable,
   onSwitch,
-  onConnectNew
+  onConnectNew,
+  disabled
 }: {
   providers: SwitchProvider[];
   activeProviderId: AssistantProviderId | null;
@@ -178,6 +235,7 @@ function ProviderSwitcher({
   reachable: boolean;
   onSwitch: (id: AssistantProviderId) => void;
   onConnectNew: () => void;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -206,8 +264,10 @@ function ProviderSwitcher({
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
+        disabled={disabled}
+        title={disabled ? 'Finish the current turn before switching agent' : undefined}
         onClick={() => setOpen((value) => !value)}
-        className="flex h-7 items-center gap-1.5 rounded-[var(--radius-control)] border border-border bg-surface-2 pl-1.5 pr-2 text-xs text-text-secondary transition-colors hover:text-text-primary"
+        className="flex h-7 items-center gap-1.5 rounded-[var(--radius-control)] border border-border bg-surface-2 pl-1.5 pr-2 text-xs text-text-secondary transition-colors hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-text-secondary"
       >
         {active ? (
           <ProviderLogo

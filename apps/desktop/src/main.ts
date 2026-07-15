@@ -14,6 +14,12 @@ import {
 } from 'electron';
 import * as pty from 'node-pty';
 import { resolveLocalApiAuthToken } from './local-api-auth.js';
+import {
+  setupAutoUpdater,
+  checkForUpdatesNow,
+  quitAndInstallUpdate,
+  getUpdateStatus
+} from './auto-update.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -322,7 +328,13 @@ function buildApiEnv(): NodeJS.ProcessEnv {
     // Same for the brain's own migrations, else the packaged brain.db is created with zero tables
     // and every capture/recall silently no-ops.
     OPLYR_BRAIN_MIGRATIONS_DIR: path.join(process.resourcesPath, 'api', 'database', 'brain'),
-    // The API bundle keeps better-sqlite3 external; resolve it from the shipped module folder.
+    // On-device embedding model (MiniLM) is shipped in resources; point the brain at it so semantic
+    // recall works fully OFFLINE (no download). BRAIN_EMBEDDINGS_ALLOW_DOWNLOAD stays unset, so the
+    // packaged app never reaches the network for the model.
+    BRAIN_EMBEDDINGS_MODEL_DIR: path.join(process.resourcesPath, 'api', 'models'),
+    BRAIN_EMBEDDINGS_CACHE_DIR: path.join(app.getPath('userData'), 'models'),
+    // The API bundle keeps better-sqlite3 + @xenova/transformers external; resolve them from the
+    // shipped module folder.
     NODE_PATH: path.join(process.resourcesPath, 'api', 'node_modules')
   };
 }
@@ -683,6 +695,25 @@ app.whenReady().then(async () => {
     killPty(id);
     return true;
   });
+
+  // ── Auto-update ────────────────────────────────────────────────────────────
+  ipcMain.handle('desktop:get-app-version', (event) => {
+    assertTrustedSender(getSenderUrl(event));
+    return app.getVersion();
+  });
+  ipcMain.handle('desktop:update-get-status', (event) => {
+    assertTrustedSender(getSenderUrl(event));
+    return getUpdateStatus();
+  });
+  ipcMain.handle('desktop:update-check', (event) => {
+    assertTrustedSender(getSenderUrl(event));
+    return checkForUpdatesNow();
+  });
+  ipcMain.handle('desktop:update-install', (event) => {
+    assertTrustedSender(getSenderUrl(event));
+    return quitAndInstallUpdate();
+  });
+  setupAutoUpdater(() => mainWindow);
 
   void ensureLocalApi().finally(() => {
     createWindow();

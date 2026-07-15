@@ -48,10 +48,35 @@ extraResources:
   # Native STT binary (build first: cd ../stt && swift build -c release).
   - from: ../stt/.build/release/oplyr-stt
     to: stt/oplyr-stt
+  # Brain semantic-recall embeddings, shipped so they run fully OFFLINE. @xenova/transformers is kept
+  # external in the API bundle, so it + its ONNX runtime + the MiniLM model must ship next to
+  # server.mjs. WASM runtime (onnxruntime-web) → no native ABI rebuild; transformers auto-falls-back
+  # to it when onnxruntime-node isn't present.
+  - from: ../api/models/Xenova
+    to: api/models/Xenova
+  - from: ../../node_modules/@xenova/transformers
+    to: api/node_modules/@xenova/transformers
+  - from: ../../node_modules/onnxruntime-web
+    to: api/node_modules/onnxruntime-web
+  - from: ../../node_modules/onnxruntime-common
+    to: api/node_modules/onnxruntime-common
+  - from: ../../node_modules/@huggingface/jinja
+    to: api/node_modules/@huggingface/jinja
 
 # Native addons (*.node) can't run from inside the asar archive — keep them unpacked.
 asarUnpack:
   - "**/*.node"
+
+# Auto-update feed → the existing public `oplyr-releases` repo. The INITIAL download stays gated
+# (polished DMG in private R2 + emailed /get link); this repo hosts only the update artifacts
+# (mac .zip + latest-mac.yml) so already-installed apps pull patches. `npm run dist:publish` uploads
+# them here (needs GH_TOKEN); the app reads the feed anonymously. `npm run dist` builds the gated DMG
+# WITHOUT publishing, so the DMG never lands in the public repo.
+publish:
+  provider: github
+  owner: github-AmanSinghRajput
+  repo: oplyr-releases
+  releaseType: release
 
 mac:
   category: public.app-category.developer-tools
@@ -61,7 +86,11 @@ mac:
   entitlementsInherit: assets/entitlements.mac.plist
   gatekeeperAssess: false
   target:
+    # dmg = manual/gated first install. zip = what electron-updater downloads to apply mac updates
+    # (it swaps the .app from the zip); latest-mac.yml references the zip, so this is required for
+    # auto-update to work at all.
     - dmg
+    - zip
   # FREE BUILD (no paid Apple account): notarization OFF. electron-builder signs with whatever cert
   # is in your keychain (the free "Apple Development" cert works for running on YOUR OWN Mac). The
   # resulting DMG is TESTING-ONLY — other Macs will warn ("can't verify developer"); the user must

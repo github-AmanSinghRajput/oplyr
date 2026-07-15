@@ -273,9 +273,21 @@ export function mergeUniqueMessages(
     merged.set(message.id, message);
   }
 
-  return [...merged.values()].sort(
-    (left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime()
-  );
+  return [...merged.values()].sort((left, right) => {
+    const delta = new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime();
+    if (delta !== 0) {
+      return delta;
+    }
+    // Voice turns can persist the user message and the assistant reply in the SAME millisecond, so
+    // createdAt ties. Break the tie by natural turn order — the user's message always precedes the
+    // assistant's reply — instead of leaving it to unstable/source-dependent ordering (which showed
+    // replies above the message they answered).
+    return roleOrder(left.role) - roleOrder(right.role);
+  });
+}
+
+function roleOrder(role: MessageEntry['role']): number {
+  return role === 'user' ? 0 : 1;
 }
 
 const reasoningEffortLabels: Record<string, string> = {
@@ -283,7 +295,9 @@ const reasoningEffortLabels: Record<string, string> = {
   low: 'Low',
   medium: 'Medium',
   high: 'High',
-  xhigh: 'Extra High'
+  xhigh: 'Extra High',
+  max: 'Max',
+  ultra: 'Ultra'
 };
 
 export function formatReasoningEffort(value: string | null | undefined) {

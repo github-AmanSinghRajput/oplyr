@@ -3,6 +3,7 @@ import type {
   AppSettings,
   AppSseEvent,
   AssistantErrorKind,
+  AssistantProviderId,
   BrainGraphResponse,
   BrainProjectSettings,
   BrainSearchResponse,
@@ -204,6 +205,23 @@ export class OperatorConsoleApiService extends BaseApiService {
     return this.request<ProviderUsageResponse>('/api/assistant/usage', {
       cache: 'no-store'
     });
+  }
+
+  /** Ask the provider's CLI to publish its current models (Codex refreshes its cache). Re-fetch the
+   *  provider's settings afterwards to pick up the new list. */
+  refreshProviderModels(providerId: AssistantProviderId) {
+    return this.request<{ providerId: AssistantProviderId; refreshed: boolean; detail: string }>(
+      `/api/assistant/providers/${providerId}/refresh-models`,
+      { method: 'POST', cache: 'no-store' }
+    );
+  }
+
+  /** Run the provider CLI's own self-update (`codex update` / `claude update`). */
+  updateProviderCli(providerId: AssistantProviderId) {
+    return this.request<{ providerId: AssistantProviderId; ok: boolean; message: string }>(
+      `/api/assistant/providers/${providerId}/update-cli`,
+      { method: 'POST', cache: 'no-store' }
+    );
   }
 
   getVoiceBootstrapStatus() {

@@ -2,8 +2,8 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { getPortableAssistantCwd } from '../../runtime-paths.js';
 import { agentSpawnEnv } from '../../lib/spawn-env.js';
+import { scrapeClaudeUsage, scrapeCodexStatus } from './provider-cli-source.service.js';
 import type {
   AssistantProviderId,
   ProviderUsageSnapshot,
@@ -38,68 +38,123 @@ const codexFieldLabels = [
   'Weekly limit'
 ];
 
+// Live usage is captured by spawning the CLI (seconds), so cache each provider's snapshot briefly
+// so repeated GETs (topbar + settings, provider switches) don't re-spawn on every read.
+const USAGE_TTL_MS = 2 * 60 * 1000;
+const usageCache = new Map<AssistantProviderId, { snapshot: ProviderUsageSnapshot; at: number }>();
+// A single in-flight capture per provider. Spawning two CLI scrapes for the same provider at once
+// (React StrictMode double-invoking the fetch, or rapid provider switches) makes them corrupt each
+// other's pty session — so concurrent callers share one scrape.
+const inFlight = new Map<AssistantProviderId, Promise<ProviderUsageSnapshot>>();
+
 export class ProviderUsageService {
-  async getUsage(providerId: AssistantProviderId, workspace: WorkspaceState) {
-    const cwd = workspace.projectRoot ?? getPortableAssistantCwd();
+  async getUsage(
+    providerId: AssistantProviderId,
+    workspace: WorkspaceState,
+    options?: { force?: boolean }
+  ): Promise<ProviderUsageSnapshot> {
+    void workspace;
+
+    const cached = usageCache.get(providerId);
+    if (!options?.force && cached && Date.now() - cached.at < USAGE_TTL_MS) {
+      return cached.snapshot;
+    }
+
+    const existing = inFlight.get(providerId);
+    if (existing) {
+      return existing;
+    }
+
+    const promise = this.captureUsage(providerId)
+      .then((snapshot) => {
+        usageCache.set(providerId, { snapshot, at: Date.now() });
+        return snapshot;
+      })
+      .finally(() => {
+        inFlight.delete(providerId);
+      });
+    inFlight.set(providerId, promise);
+    return promise;
+  }
+
+  private async captureUsage(providerId: AssistantProviderId): Promise<ProviderUsageSnapshot> {
     const capturedAt = new Date().toISOString();
 
+    let snapshot: ProviderUsageSnapshot;
     try {
-      if (providerId === 'codex') {
-        const raw = await captureSlashCommand({
-          providerId,
-          providerName: 'OpenAI Codex',
-          command: '/status',
-          binary: process.env.CODEX_COMMAND ?? 'codex',
-          cwd,
-          readyPatterns: [/OpenAI Codex/i, /\/status\b/i, /gpt-[0-9.]+\b/i],
-          answerTrustPrompt: true
-        });
-        return {
-          ...parseCodexUsage(raw),
-          capturedAt
-        } satisfies ProviderUsageSnapshot;
-      }
-
       if (providerId === 'claude') {
-        const usageRaw = await captureSlashCommand({
+        const usage = await scrapeClaudeUsage();
+        snapshot = usage
+          ? {
+              providerId,
+              providerName: 'Anthropic Claude Code',
+              command: '/usage',
+              capturedAt,
+              available: true,
+              error: null,
+              model: null,
+              accountLabel: null,
+              sessionId: null,
+              contextWindow: null,
+              meters: usage.meters.map((meter) => ({
+                id: meter.id,
+                label: meter.label,
+                percentUsed: meter.percentUsed,
+                percentLeft: meter.percentLeft,
+                detail: meter.detail,
+                resetAt: meter.resetAt
+              })),
+              details: []
+            }
+          : unavailableUsage(providerId, capturedAt, 'Could not read Claude Code usage.');
+      } else if (providerId === 'codex') {
+        // Codex exposes usage only via its `/status` TUI. We wait out its MCP boot, then scrape it
+        // (see scrapeCodexStatus). Slower (~15–20s cold) — the TTL cache above keeps it snappy.
+        const usage = await scrapeCodexStatus();
+        snapshot = usage
+          ? {
+              providerId,
+              providerName: 'OpenAI Codex',
+              command: '/status',
+              capturedAt,
+              available: true,
+              error: null,
+              model: null,
+              accountLabel: null,
+              sessionId: null,
+              contextWindow: null,
+              meters: usage.meters.map((meter) => ({
+                id: meter.id,
+                label: meter.label,
+                percentUsed: meter.percentUsed,
+                percentLeft: meter.percentLeft,
+                detail: meter.detail,
+                resetAt: meter.resetAt
+              })),
+              details: []
+            }
+          : unavailableUsage(providerId, capturedAt, 'Could not read Codex usage.');
+      } else {
+        // Gemini: live usage capture not implemented yet.
+        snapshot = unavailableUsage(
           providerId,
-          providerName: 'Anthropic Claude Code',
-          command: '/usage',
-          binary: process.env.CLAUDE_COMMAND ?? 'claude',
-          cwd,
-          readyPatterns: [/Claude/i, /\/help\b/i, /\/usage\b/i]
-        });
-        return {
-          ...parseClaudeUsage(usageRaw),
-          capturedAt
-        } satisfies ProviderUsageSnapshot;
+          capturedAt,
+          'Live usage metering isn’t available for this agent yet.'
+        );
       }
-
-      const raw = await captureSlashCommand({
-        providerId,
-        providerName: 'Google Gemini CLI',
-        command: '/stats',
-        binary: process.env.GEMINI_COMMAND ?? 'gemini',
-        cwd,
-        readyPatterns: [/Gemini/i, /\/stats\b/i, /\/help\b/i]
-      });
-      return {
-        ...parseGeminiUsage(raw),
-        capturedAt
-      } satisfies ProviderUsageSnapshot;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      logger.error('provider.usage.capture.failed', {
-        providerId,
-        cwd,
-        error: message
-      });
-      return unavailableUsage(providerId, capturedAt, message);
+      logger.error('provider.usage.capture.failed', { providerId, error: message });
+      snapshot = unavailableUsage(providerId, capturedAt, message);
     }
+
+    return snapshot;
   }
 }
 
-async function captureSlashCommand(config: SlashCaptureConfig) {
+export type { SlashCaptureConfig };
+
+export async function captureSlashCommand(config: SlashCaptureConfig) {
   if (process.platform !== 'darwin') {
     throw new Error('Interactive provider usage capture is currently supported only on macOS.');
   }

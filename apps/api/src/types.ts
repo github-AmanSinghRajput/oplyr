@@ -208,6 +208,8 @@ export interface AppSettings {
   displayName: string | null;
   theme: AppTheme;
   welcomedAt: string | null;
+  // Whether the little desk-pet (walking duck) shows on the topbar. On by default; devs can opt out.
+  showDeskPet: boolean;
 }
 
 export interface VoiceSettings {
@@ -216,7 +218,14 @@ export interface VoiceSettings {
   transcriptionModel: TranscriptionModelProfile;
 }
 
-export type CodexReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+export type CodexReasoningEffort =
+  | 'minimal'
+  | 'low'
+  | 'medium'
+  | 'high'
+  | 'xhigh'
+  | 'max'
+  | 'ultra';
 export type AssistantVoiceModelMode = 'auto' | 'fast' | 'inherit';
 
 export interface CodexReasoningOption {
@@ -245,8 +254,18 @@ export interface ClaudeModelOption {
   suggestedForDiscussion: boolean;
 }
 
+// Claude Code sets reasoning effort via its `/effort` slash command (not a CLI flag), so we inject
+// it into the prompt. Kept to the levels Claude accepts.
+export type ClaudeReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh';
+
+export interface ClaudeReasoningOption {
+  effort: ClaudeReasoningEffort;
+  description: string;
+}
+
 export interface ClaudeSettings {
   model: string | null;
+  reasoningEffort: ClaudeReasoningEffort | null;
   voiceModelMode: AssistantVoiceModelMode;
 }
 
