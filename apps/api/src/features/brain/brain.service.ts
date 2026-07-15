@@ -154,13 +154,16 @@ export class BrainService {
       return skipped('agent_write_disabled');
     }
 
+    // A project is NOT required: with no project connected we still capture GLOBAL memories
+    // (preferences/conventions about how the user works). Project-scoped atoms are dropped by the
+    // distiller when there's no project. Only enforce the per-project capture toggle when a
+    // project is actually connected.
     const projectKey = resolveProjectKey(input.workspace);
-    if (!input.workspace.projectRoot || !projectKey) {
-      return skipped('missing_project');
-    }
-    const projectSettings = await this.settingsService.getProjectSettings(projectKey);
-    if (!projectSettings.captureEnabled) {
-      return skipped('project_capture_disabled');
+    if (projectKey) {
+      const projectSettings = await this.settingsService.getProjectSettings(projectKey);
+      if (!projectSettings.captureEnabled) {
+        return skipped('project_capture_disabled');
+      }
     }
 
     const prepared = await distillTurn(input, settings, this.complete);

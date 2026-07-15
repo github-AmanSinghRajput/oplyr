@@ -88,7 +88,13 @@ export function ModelPicker({
 
   if (!activeProviderId || options.length === 0) return null;
 
-  const currentOption = options.find((option) => option.slug === current) ?? null;
+  // When no model is explicitly selected (settings.model === null), the agent runs its own default.
+  // Highlight that in the list so the picker never looks like "nothing is selected" — Claude exposes
+  // an explicit "Default" entry (slug 'default'); otherwise fall back to the first option.
+  const defaultSlug =
+    options.find((option) => option.slug === 'default')?.slug ?? options[0]?.slug ?? null;
+  const effectiveCurrent = current ?? defaultSlug;
+  const currentOption = options.find((option) => option.slug === effectiveCurrent) ?? null;
   const label = currentOption?.displayName ?? current ?? 'Default model';
 
   return (
@@ -116,7 +122,7 @@ export function ModelPicker({
           className="absolute right-0 top-[calc(100%+6px)] z-30 max-h-96 min-w-[300px] max-w-[360px] overflow-y-auto rounded-[var(--radius-control)] border border-border bg-surface-1 p-1 shadow-lg"
         >
           {options.map((option) => {
-            const isActive = option.slug === current;
+            const isActive = option.slug === effectiveCurrent;
             return (
               <button
                 key={option.slug}
@@ -124,7 +130,8 @@ export function ModelPicker({
                 role="menuitemradio"
                 aria-checked={isActive}
                 onClick={() => {
-                  if (!isActive) onSelectModel(activeProviderId, option.slug);
+                  if (option.slug !== effectiveCurrent)
+                    onSelectModel(activeProviderId, option.slug);
                   setOpen(false);
                 }}
                 className={cn(

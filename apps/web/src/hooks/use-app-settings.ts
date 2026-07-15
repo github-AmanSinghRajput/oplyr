@@ -61,7 +61,10 @@ export interface AppSettingsHandle {
     effort: string | null
   ) => Promise<void>;
   refreshingModels: boolean;
-  handleRefreshModels: (providerId: AssistantProviderId) => Promise<void>;
+  handleRefreshModels: (
+    providerId: AssistantProviderId,
+    options?: { silent?: boolean }
+  ) => Promise<void>;
   handleUpdateCli: (providerId: AssistantProviderId) => Promise<void>;
   handleProviderSwitch: (providerId: AssistantProviderId) => Promise<void>;
   handleProviderConnect: (providerId: AssistantProviderId) => Promise<void>;
@@ -111,6 +114,11 @@ export function useAppSettings(): AppSettingsHandle {
   const [refreshingModels, setRefreshingModels] = useState(false);
   // Monotonic tag for provider-usage reads so a stale in-flight fetch can't overwrite a newer one.
   const usageRequestSeq = useRef(0);
+  // Providers whose model list we've already auto-refreshed this session. Landing on / switching to
+  // a provider triggers one live CLI model scrape so the picker shows the latest models without the
+  // user having to click "Refresh models" — but only once per provider per session (the scrape is a
+  // real CLI spawn worth seconds), after which the freshly-scraped cache serves subsequent switches.
+  const autoRefreshedModelsRef = useRef<Set<AssistantProviderId>>(new Set());
 
   // Clear error after 6s
   useEffect(() => {
@@ -439,22 +447,44 @@ export function useAppSettings(): AppSettingsHandle {
   // Codex republishes its cache; Claude/Gemini report that their aliases already track the latest),
   // then re-read the provider's settings so the picker updates.
   const handleRefreshModels = useCallback(
-    async (providerId: AssistantProviderId) => {
+    async (providerId: AssistantProviderId, options?: { silent?: boolean }) => {
+      const silent = options?.silent === true;
       setRefreshingModels(true);
       try {
         const result = await service.refreshProviderModels(providerId);
         if (providerId === 'codex') await loadCodexSettings();
         else if (providerId === 'claude') await loadClaudeSettings();
         else await loadGeminiSettings();
-        pushToast(result.refreshed ? 'success' : 'error', 'Models refreshed', result.detail);
+        if (!silent) {
+          pushToast(result.refreshed ? 'success' : 'error', 'Models refreshed', result.detail);
+        }
       } catch {
-        pushToast('error', 'Refresh failed', 'Could not refresh the model list.');
+        // Auto-refresh failures stay quiet — the cached list is still shown; the manual button
+        // (which surfaces errors) remains available.
+        if (!silent) {
+          pushToast('error', 'Refresh failed', 'Could not refresh the model list.');
+        }
       } finally {
         setRefreshingModels(false);
       }
     },
     [service, loadCodexSettings, loadClaudeSettings, loadGeminiSettings, pushToast]
   );
+
+  // Auto-refresh the active provider's model list from its CLI on first activation this session, so
+  // landing on / switching to an agent shows its latest models without a manual "Refresh models".
+  // Guarded to once per provider per session (see autoRefreshedModelsRef) to avoid re-spawning the
+  // CLI on every switch. Gemini is excluded (connect is disabled; its aliases already track latest).
+  useEffect(() => {
+    if (activeProviderId !== 'codex' && activeProviderId !== 'claude') {
+      return;
+    }
+    if (autoRefreshedModelsRef.current.has(activeProviderId)) {
+      return;
+    }
+    autoRefreshedModelsRef.current.add(activeProviderId);
+    void handleRefreshModels(activeProviderId, { silent: true });
+  }, [activeProviderId, handleRefreshModels]);
 
   // Run the provider CLI's own self-update, then refresh its models (a newer CLI may add models).
   const handleUpdateCli = useCallback(

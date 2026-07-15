@@ -149,8 +149,11 @@ export async function distillTurn(
   settings: BrainSettings,
   complete: BrainCompletionFn
 ): Promise<PreparedAtom[]> {
+  // A project is NOT required. With no project connected we can still distill GLOBAL memories
+  // (how the user works — preferences, conventions, stable facts about them). prepareAtoms drops
+  // project-scoped atoms when projectKey is null, so only global memory survives in that case.
   const projectKey = resolveProjectKey(input.workspace);
-  if (!projectKey || !shouldDistillTurn(input)) {
+  if (!shouldDistillTurn(input)) {
     return [];
   }
 
@@ -175,7 +178,7 @@ function prepareAtoms(
   distilled: DistilledTurn,
   input: BrainCaptureTurnInput,
   settings: BrainSettings,
-  projectKey: string
+  projectKey: string | null
 ): PreparedAtom[] {
   const provenance = {
     source: 'chat_turn' as const,
@@ -207,6 +210,11 @@ function prepareAtoms(
     }
 
     const scope = atom.scope;
+    // A project-scoped memory needs a project to attribute it to. With none connected, drop it
+    // (we keep only global memory). Global-scoped atoms always store projectKey null.
+    if (scope === 'project' && !projectKey) {
+      continue;
+    }
     const normalizedText = normalizeAtomKey(text);
     const sourceHash = hashAtom({
       type: atom.type,

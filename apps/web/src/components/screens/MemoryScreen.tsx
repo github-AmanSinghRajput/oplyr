@@ -318,8 +318,8 @@ export function MemoryScreen({ refreshNonce }: { refreshNonce?: number }) {
               <BrainCircuit size={30} />
               <strong>{loading ? 'Loading the graph…' : 'No memories yet'}</strong>
               <p>
-                Enable an agent writer and make explicit decisions in chat — Oplyr will start
-                drawing the brain.
+                Just talk to your agent — share how you like to work or a decision for this project,
+                and Oplyr distills a durable memory from each turn and draws it here.
               </p>
             </div>
           )}

@@ -95,6 +95,29 @@ test('distillTurn builds storable atoms from a mocked completion', async () => {
   assert.deepEqual(prepared[0]!.entities, ['auth', 'jwt']);
 });
 
+test('distillTurn captures global atoms without a project, dropping project-scoped ones', async () => {
+  const noProject: BrainCaptureTurnInput = {
+    ...turn(
+      'I always prefer tabs over spaces everywhere I code.',
+      'Understood — I will use tabs for indentation in everything.'
+    ),
+    workspace: {
+      id: null,
+      projectRoot: null,
+      projectName: null,
+      isGitRepo: false,
+      writeAccessEnabled: false,
+      secretPolicy: []
+    }
+  };
+  const complete = async () =>
+    '{"atoms":[{"type":"preference","text":"The user prefers tabs over spaces for indentation.","scope":"global","confidence":0.9,"sensitivity":"normal","entities":["formatting"]},{"type":"decision","text":"This repo uses JWT auth.","scope":"project","confidence":0.8,"sensitivity":"normal","entities":["auth"]}]}';
+  const prepared = await distillTurn(noProject, settings, complete);
+  assert.equal(prepared.length, 1, 'only the global atom survives without a project');
+  assert.equal(prepared[0]!.input.scope, 'global');
+  assert.equal(prepared[0]!.input.projectKey, null);
+});
+
 test('distillTurn drops secret-bearing atoms unless sensitive capture is enabled', async () => {
   const complete = async () =>
     '{"atoms":[{"type":"fact","text":"The api_key = sk-abcdefghijklmnopqrstuvwxyz123456","scope":"project","confidence":0.9,"sensitivity":"normal","entities":[]}]}';

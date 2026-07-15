@@ -648,6 +648,10 @@ export class ChatService {
           providerId,
           atomCount: result.atoms.length
         });
+      } else {
+        // Skips were previously silent, which made the brain look broken when it was simply
+        // gated (no durable content, capture disabled, sensitive-only, etc.). Log the reason.
+        logger.info('brain.capture.skipped', { providerId, reason: result.reason });
       }
     } catch (error) {
       logger.warn('brain.capture.failed', {
