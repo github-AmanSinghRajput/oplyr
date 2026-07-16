@@ -313,34 +313,52 @@ export function OnboardingScreen({
                       </div>
                     )}
 
-                    {(!selectedProvider.loggedIn || showSwitchAccountGuide) && (
-                      <div className="mb-4 flex flex-col gap-3">
-                        {showSwitchAccountGuide && selectedProvider.logoutCommand && (
+                    {!selectedProvider.installed && (
+                      <div className="mb-4 rounded-[var(--radius-control)] bg-surface-2 p-4">
+                        <span className="text-[10px] text-text-tertiary uppercase tracking-wider">
+                          Install command
+                        </span>
+                        <div className="mt-2 flex items-center gap-2">
+                          <span className="text-accent">$</span>
+                          <code className="text-sm font-mono text-text-primary">
+                            {selectedProvider.installCommand}
+                          </code>
+                        </div>
+                        <p className="mt-2 text-[11px] text-text-tertiary">
+                          Needs Node.js / npm. After it installs, press “Check again”.
+                        </p>
+                      </div>
+                    )}
+
+                    {selectedProvider.installed &&
+                      (!selectedProvider.loggedIn || showSwitchAccountGuide) && (
+                        <div className="mb-4 flex flex-col gap-3">
+                          {showSwitchAccountGuide && selectedProvider.logoutCommand && (
+                            <div className="rounded-[var(--radius-control)] bg-surface-2 p-4">
+                              <span className="text-[10px] text-text-tertiary uppercase tracking-wider">
+                                Switch account first
+                              </span>
+                              <div className="mt-2 flex items-center gap-2">
+                                <span className="text-accent">$</span>
+                                <code className="text-sm font-mono text-text-primary">
+                                  {selectedProvider.logoutCommand}
+                                </code>
+                              </div>
+                            </div>
+                          )}
                           <div className="rounded-[var(--radius-control)] bg-surface-2 p-4">
                             <span className="text-[10px] text-text-tertiary uppercase tracking-wider">
-                              Switch account first
+                              {showSwitchAccountGuide ? 'Sign in again' : 'Login command'}
                             </span>
                             <div className="mt-2 flex items-center gap-2">
                               <span className="text-accent">$</span>
                               <code className="text-sm font-mono text-text-primary">
-                                {selectedProvider.logoutCommand}
+                                {selectedProvider.loginCommand}
                               </code>
                             </div>
                           </div>
-                        )}
-                        <div className="rounded-[var(--radius-control)] bg-surface-2 p-4">
-                          <span className="text-[10px] text-text-tertiary uppercase tracking-wider">
-                            {showSwitchAccountGuide ? 'Sign in again' : 'Login command'}
-                          </span>
-                          <div className="mt-2 flex items-center gap-2">
-                            <span className="text-accent">$</span>
-                            <code className="text-sm font-mono text-text-primary">
-                              {selectedProvider.loginCommand}
-                            </code>
-                          </div>
                         </div>
-                      </div>
-                    )}
+                      )}
 
                     <div className="flex flex-wrap gap-2">
                       <Button variant="ghost" onClick={onBackToProviderChoice}>

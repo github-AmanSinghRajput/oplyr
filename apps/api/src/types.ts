@@ -120,6 +120,8 @@ export interface AssistantProviderStatus {
   statusText: string;
   loginCommand: string;
   logoutCommand: string | null;
+  // How to install this CLI if it isn't on the machine — shown in onboarding when installed=false.
+  installCommand: string;
   canSwitchAccount: boolean;
 }
 

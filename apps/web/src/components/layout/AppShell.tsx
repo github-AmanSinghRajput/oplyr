@@ -370,13 +370,17 @@ export function AppShell() {
   // is mid-flight), show the streaming/just-spoken transcript. Otherwise fall back to the latest user
   // message from the shared chat history, so the voice view stays in sync with the chat — including
   // typed messages — instead of lingering on a stale earlier voice transcript.
-  const voiceTurnLive = voice.isRecording || status?.voiceSession?.active === true;
-  const voiceUserTranscript =
-    (voiceTurnLive ? voice.streamedTranscriptOverride : '') ||
-    lastUser?.text ||
-    voice.streamedTranscriptOverride ||
-    status?.voiceSession?.lastTranscript ||
-    '';
+  // While actively recording, show the live partial transcript. Otherwise ALWAYS prefer the latest
+  // user message from the shared chat history (voice OR typed) so switching to the voice screen after
+  // a chat turn reflects THAT turn instead of lingering on the last spoken transcript. Keyed off
+  // voice.isRecording (reliable client flag), NOT status.voiceSession.active, which can remain true
+  // after a voice turn ends and would otherwise pin the stale transcript.
+  const voiceUserTranscript = voice.isRecording
+    ? voice.streamedTranscriptOverride
+    : lastUser?.text ||
+      voice.streamedTranscriptOverride ||
+      status?.voiceSession?.lastTranscript ||
+      '';
   // Chat + voice share ONE turn state (the chat hook). The voice view reflects the same turn no
   // matter where it was started: while a turn is active, show the streaming assistant message (empty
   // until text arrives → the working timeline shows); otherwise the last completed reply. Hidden

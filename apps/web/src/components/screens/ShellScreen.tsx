@@ -119,6 +119,14 @@ export function ShellScreen({ cwd, theme }: ShellScreenProps) {
 
       fitTimerRef.current = window.setTimeout(() => {
         fitTimerRef.current = null;
+        // Don't fit while the screen is hidden (kept-alive with display:none → wrapper is 0×0).
+        // fitAddon.fit() on a 0-size container computes a tiny cols/rows and resizes the PTY to it;
+        // the shell then reflows its prompt/output to ~10 columns, which shows up garbled the next
+        // time the terminal is revealed. Only fit when the wrapper actually has a size.
+        const wrapper = wrapperRef.current;
+        if (!wrapper || wrapper.offsetWidth === 0 || wrapper.offsetHeight === 0) {
+          return;
+        }
         const fit = fitAddonRef.current as { fit?: () => void } | null;
         if (fit?.fit) {
           try {

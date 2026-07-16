@@ -311,6 +311,7 @@ export interface AssistantProviderStatus {
   statusText: string;
   loginCommand: string;
   logoutCommand: string | null;
+  installCommand: string;
   canSwitchAccount: boolean;
 }
 

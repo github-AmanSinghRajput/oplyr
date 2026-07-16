@@ -2,6 +2,7 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import { cn } from '@/lib/cn';
+import '../markdown.css';
 import { CodeBlock } from './CodeBlock';
 import { AgentActivityTimeline } from './AgentActivityTimeline';
 import { MemoryChip } from './MemoryChip';
@@ -44,7 +45,7 @@ export function MessageBubble({
           <p className="text-sm leading-relaxed whitespace-pre-wrap">{displayText}</p>
         ) : (
           <>
-            <div className="text-sm leading-relaxed prose-sm">
+            <div className="md-body text-sm leading-relaxed">
               {isStreaming && !hasText ? (
                 // No text yet — surface what the agent is actually doing instead of a blank bubble.
                 <AgentActivityTimeline

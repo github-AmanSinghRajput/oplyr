@@ -398,6 +398,12 @@ function GraphCanvas({
       className="memory-flow"
       nodes={nodes}
       edges={edges}
+      // Declaratively fit once React Flow has measured the viewport + placed the nodes. The manual
+      // fitView timer below reframes after the force sim settles, but on a cold mount (e.g. right
+      // after the brain loads) it could run before the pane was measured, leaving the graph blank
+      // until a manual refresh. This prop makes the initial fit fire as soon as the pane is ready.
+      fitView
+      fitViewOptions={{ padding: 0.22, maxZoom: 1.3 }}
       onNodesChange={handleNodesChange}
       onEdgesChange={onEdgesChange}
       nodeTypes={nodeTypes}

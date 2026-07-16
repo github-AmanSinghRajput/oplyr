@@ -110,6 +110,7 @@ interface CodingAssistantProvider {
   name: string;
   loginCommand: string;
   logoutCommand: string | null;
+  installCommand: string;
   checkStatus(): Promise<AssistantProviderStatus>;
   generateReply(
     userText: string,
@@ -145,6 +146,7 @@ const providers: Record<AssistantProviderId, CodingAssistantProvider> = {
     name: 'OpenAI Codex',
     loginCommand: 'codex login --device-auth',
     logoutCommand: 'codex logout',
+    installCommand: 'npm install -g @openai/codex',
     async checkStatus() {
       const status = await getCodexStatus();
       return {
@@ -152,6 +154,7 @@ const providers: Record<AssistantProviderId, CodingAssistantProvider> = {
         name: 'OpenAI Codex',
         loginCommand: 'codex login --device-auth',
         logoutCommand: 'codex logout',
+        installCommand: 'npm install -g @openai/codex',
         canSwitchAccount: true,
         appConnected: false,
         connectedAt: null,
@@ -168,6 +171,7 @@ const providers: Record<AssistantProviderId, CodingAssistantProvider> = {
     name: 'Anthropic Claude Code',
     loginCommand: 'claude auth login',
     logoutCommand: 'claude auth logout',
+    installCommand: 'npm install -g @anthropic-ai/claude-code',
     async checkStatus() {
       const status = await getClaudeStatus();
       return {
@@ -175,6 +179,7 @@ const providers: Record<AssistantProviderId, CodingAssistantProvider> = {
         name: 'Anthropic Claude Code',
         loginCommand: 'claude auth login',
         logoutCommand: 'claude auth logout',
+        installCommand: 'npm install -g @anthropic-ai/claude-code',
         canSwitchAccount: true,
         appConnected: false,
         connectedAt: null,
@@ -191,6 +196,7 @@ const providers: Record<AssistantProviderId, CodingAssistantProvider> = {
     name: 'Google Gemini CLI',
     loginCommand: 'gemini',
     logoutCommand: null,
+    installCommand: 'npm install -g @google/gemini-cli',
     async checkStatus() {
       const status = await getGeminiStatus();
       return {
@@ -198,6 +204,7 @@ const providers: Record<AssistantProviderId, CodingAssistantProvider> = {
         name: 'Google Gemini CLI',
         loginCommand: 'gemini',
         logoutCommand: null,
+        installCommand: 'npm install -g @google/gemini-cli',
         canSwitchAccount: true,
         appConnected: false,
         connectedAt: null,

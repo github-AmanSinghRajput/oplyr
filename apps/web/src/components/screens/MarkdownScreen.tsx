@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight, FileText, Loader2, Search, FolderTree } from
 import { cn } from '@/lib/cn';
 import { useApi } from '@/providers/ApiProvider';
 import { CodeBlock } from '@/components/chat/CodeBlock';
+import '@/components/markdown.css';
 import type { MarkdownFileEntry } from '@/containers/voice-console/lib/types';
 
 interface MarkdownScreenProps {
@@ -215,7 +216,7 @@ export function MarkdownScreen({ projectRoot }: MarkdownScreenProps) {
                 ) : contentError ? (
                   <p className="text-sm text-rose-400">{contentError}</p>
                 ) : (
-                  <div className="text-sm leading-relaxed text-text-primary prose-sm">
+                  <div className="md-body text-sm leading-relaxed text-text-primary">
                     <Markdown
                       remarkPlugins={[remarkGfm]}
                       rehypePlugins={[rehypeHighlight]}
