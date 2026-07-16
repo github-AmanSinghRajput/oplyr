@@ -45,6 +45,13 @@ extraResources:
   # bindings' runtime dependency (better-sqlite3 → bindings → file-uri-to-path).
   - from: ../../node_modules/file-uri-to-path
     to: api/node_modules/file-uri-to-path
+  # Native node-pty — the API forks it for the integrated terminal, the shell, and live CLI
+  # model/usage scraping. esbuild marks it external (--external:node-pty), so it MUST ship here or
+  # the packaged server crashes at startup with ERR_MODULE_NOT_FOUND (node-pty) and no port opens.
+  # Rebuilt for Electron's ABI by scripts/rebuild-native-electron.sh (ships build/Release/pty.node +
+  # spawn-helper). No runtime npm deps on macOS (node-addon-api = build headers; ps-list = Win test).
+  - from: ../../node_modules/node-pty
+    to: api/node_modules/node-pty
   # Native STT binary (build first: cd ../stt && swift build -c release).
   - from: ../stt/.build/release/oplyr-stt
     to: stt/oplyr-stt
