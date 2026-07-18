@@ -6,17 +6,28 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/cn';
 import { ProviderLogo } from '@/components/providers/ProviderLogo';
 import { OplyrLogoMark } from '@/components/branding/OplyrLogoMark';
-import type {
-  AppSettings,
-  AssistantProviderId,
-  AssistantProviderStatus
+import { PetPreview } from '@/components/layout/TopbarPet';
+import {
+  DESK_PETS,
+  type AppSettings,
+  type AssistantProviderId,
+  type AssistantProviderStatus,
+  type DeskPet
 } from '@/containers/voice-console/lib/types';
+
+const PET_LABELS: Record<DeskPet, string> = {
+  duck: 'Duck',
+  bird: 'Bird',
+  frog: 'Frog',
+  cat: 'Cat',
+  dog: 'Dog'
+};
 
 interface OnboardingScreenProps {
   appSettings: AppSettings | null;
   error: string;
   isSavingDisplayName: boolean;
-  step: 1 | 2 | 3 | 4;
+  step: 1 | 2 | 3 | 4 | 5;
   selectedProviderId: AssistantProviderId | null;
   providers: AssistantProviderStatus[];
   onConnectProvider: (providerId: AssistantProviderId) => void;
@@ -30,6 +41,9 @@ interface OnboardingScreenProps {
   onBrowseProjectFolder: () => Promise<string | null>;
   onConnectProject: (path: string) => void;
   onSkipProject: () => void;
+  currentPet: DeskPet;
+  onChoosePet: (pet: DeskPet) => void;
+  onSkipPet: () => void;
 }
 
 export function OnboardingScreen({
@@ -49,10 +63,14 @@ export function OnboardingScreen({
   canBrowseProjectFolder,
   onBrowseProjectFolder,
   onConnectProject,
-  onSkipProject
+  onSkipProject,
+  currentPet,
+  onChoosePet,
+  onSkipPet
 }: OnboardingScreenProps) {
   const [displayNameInput, setDisplayNameInput] = useState(appSettings?.displayName ?? '');
   const [projectInput, setProjectInput] = useState('');
+  const [petChoice, setPetChoice] = useState<DeskPet>(currentPet);
   const [typedWelcome, setTypedWelcome] = useState('');
   const [showSwitchAccountGuide, setShowSwitchAccountGuide] = useState(false);
   const [syncedDisplayName, setSyncedDisplayName] = useState(appSettings?.displayName ?? null);
@@ -116,7 +134,7 @@ export function OnboardingScreen({
       <div className="w-full max-w-2xl">
         {/* Progress */}
         <div className="flex items-center justify-center gap-2 mb-8">
-          {[1, 2, 3, 4].map((s) => (
+          {[1, 2, 3, 4, 5].map((s) => (
             <div
               key={s}
               className={cn(
@@ -466,6 +484,51 @@ export function OnboardingScreen({
                     onClick={() => onConnectProject(projectInput)}
                   >
                     Connect project
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {step === 5 && (
+              <div className="min-h-[28rem] rounded-[calc(var(--radius-panel)+6px)] border border-border bg-surface-1 px-10 py-10 text-center">
+                <p className="text-xs text-text-tertiary uppercase tracking-wider mb-2">Step 5</p>
+                <h1 className="text-2xl font-semibold text-text-primary mb-3">
+                  Pick your desk pet
+                </h1>
+                <p className="mx-auto mb-8 max-w-xl text-sm text-text-secondary">
+                  A tiny companion that waddles along your top bar while you work. Purely for fun —
+                  you can change it or turn it off anytime in Settings.
+                </p>
+
+                <div className="mx-auto mb-8 grid max-w-xl grid-cols-5 gap-3">
+                  {DESK_PETS.map((pet) => (
+                    <button
+                      key={pet}
+                      type="button"
+                      onClick={() => setPetChoice(pet)}
+                      className={cn(
+                        'flex flex-col items-center gap-2 rounded-[var(--radius-panel)] border px-2 py-4 transition-all',
+                        petChoice === pet
+                          ? 'border-accent bg-accent-muted/60 shadow-[0_0_0_1px_rgba(0,212,245,0.22)]'
+                          : 'border-border bg-surface-2 hover:border-accent-border hover:bg-surface-1'
+                      )}
+                    >
+                      <span className="flex h-12 items-end justify-center">
+                        <PetPreview pet={pet} />
+                      </span>
+                      <span className="text-xs font-medium text-text-primary">
+                        {PET_LABELS[pet]}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center justify-center gap-3">
+                  <Button variant="ghost" onClick={onSkipPet}>
+                    Skip — I&apos;ll pick later
+                  </Button>
+                  <Button onClick={() => onChoosePet(petChoice)}>
+                    Choose {PET_LABELS[petChoice]}
                   </Button>
                 </div>
               </div>

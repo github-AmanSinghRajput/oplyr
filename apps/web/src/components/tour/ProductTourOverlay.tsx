@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigation } from '@/providers/NavigationProvider';
 import { useTour } from '@/providers/TourProvider';
 import { Button } from '@/components/ui/button';
 
@@ -10,15 +9,13 @@ const CARD_WIDTH = 320;
 // "hole") plus a tooltip card. Falls back to a centered card when a step has no target or the target
 // isn't on screen. Mounted only after onboarding, so tours never fire during first-run setup.
 export function ProductTourOverlay() {
-  const { activeScreen } = useNavigation();
-  const { active, next, skip, startIfUnseen } = useTour();
+  const { active, next, skip } = useTour();
   const [rect, setRect] = useState<DOMRect | null>(null);
 
-  // Offer the current screen's tour shortly after it mounts (lets animated screens settle first).
-  useEffect(() => {
-    const timer = window.setTimeout(() => startIfUnseen(activeScreen), 550);
-    return () => window.clearTimeout(timer);
-  }, [activeScreen, startIfUnseen]);
+  // Auto-start is intentionally DISABLED. It previously fired per-screen on every navigation
+  // (felt random) and re-appeared after app updates for users who'd already taken it. The tour is
+  // also being rewritten for v1.0 (single cross-page walkthrough), so until then the tour only runs
+  // on demand — via Settings → "Replay tour" (resetTours). Re-enable auto-start with the rewrite.
 
   // Resolve + track the spotlight target for the current step.
   useEffect(() => {

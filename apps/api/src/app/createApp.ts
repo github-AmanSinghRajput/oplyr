@@ -31,7 +31,9 @@ import {
 } from '../lib/http.js';
 import { logger } from '../lib/logger.js';
 import { localApiAuthHeader, matchesLocalApiAuthToken } from '../lib/local-api-auth.js';
+import path from 'node:path';
 import { isProtectedWorkspacePath } from '../lib/path-security.js';
+import { detectRepos } from '../features/workspaces/repo-detector.js';
 import { createRateLimitMiddleware } from '../lib/rate-limit.js';
 import { VoiceSessionService } from '../features/voice/voice-session.service.js';
 import { VoiceSettingsService } from '../features/voice/voice-settings.service.js';
@@ -49,7 +51,14 @@ import { AppSettingsService } from '../features/app/app-settings.service.js';
 import { AppResetService } from '../features/app/app-reset.service.js';
 import { BrainService, setBrainEventEmitter } from '../features/brain/brain.service.js';
 import type { BrainMode } from '../features/brain/brain.types.js';
-import type { AppTheme, AssistantProviderId, ChatSource, CodexReasoningEffort } from '../types.js';
+import {
+  DESK_PETS,
+  type AppTheme,
+  type AssistantProviderId,
+  type ChatSource,
+  type CodexReasoningEffort,
+  type DeskPet
+} from '../types.js';
 import {
   clearPendingApproval,
   getRuntimeState,
@@ -421,7 +430,10 @@ export function createApp(options?: { apiAuthToken?: string }) {
         theme:
           themeValue === 'light' || themeValue === 'dark' ? (themeValue as AppTheme) : undefined,
         showDeskPet:
-          typeof request.body.showDeskPet === 'boolean' ? request.body.showDeskPet : undefined
+          typeof request.body.showDeskPet === 'boolean' ? request.body.showDeskPet : undefined,
+        deskPet: DESK_PETS.includes(request.body.deskPet as DeskPet)
+          ? (request.body.deskPet as DeskPet)
+          : undefined
       });
       response.json(nextSettings);
     })
@@ -758,33 +770,65 @@ export function createApp(options?: { apiAuthToken?: string }) {
     })
   );
 
+  // Resolve which folder the codebase map should scan: the connected workspace root by default, or a
+  // nested repo the user picked (its path relative to the workspace). Validates the target stays
+  // inside the workspace (a `..` / absolute escape → null) so scanning is always boundary-safe.
+  const resolveScanRoot = (repoRelPath: unknown): { root: string; name: string } | null => {
+    const workspace = getRuntimeState().workspace;
+    if (!workspace.projectRoot) {
+      return null;
+    }
+    const rel = typeof repoRelPath === 'string' ? repoRelPath.trim() : '';
+    if (!rel || rel === '.') {
+      return { root: workspace.projectRoot, name: workspace.projectName ?? 'Workspace' };
+    }
+    const absolute = path.resolve(workspace.projectRoot, rel);
+    const within = path.relative(workspace.projectRoot, absolute);
+    if (within === '') {
+      return { root: workspace.projectRoot, name: workspace.projectName ?? 'Workspace' };
+    }
+    if (within.startsWith('..') || path.isAbsolute(within)) {
+      return null;
+    }
+    return { root: absolute, name: path.basename(absolute) };
+  };
+
+  // List git repos inside the connected folder so the map can offer a repo picker when a workspace
+  // holds several (e.g. a parent with a backend repo + a frontend repo).
   app.get(
-    '/api/workspace/codebase-map',
+    '/api/workspace/repos',
     asyncHandler(async (_request: Request, response: Response) => {
       const workspace = getRuntimeState().workspace;
       if (!workspace.projectRoot) {
+        response.json({ repos: [] });
+        return;
+      }
+      const repos = await detectRepos(workspace.projectRoot);
+      response.json({ repos });
+    })
+  );
+
+  app.get(
+    '/api/workspace/codebase-map',
+    asyncHandler(async (request: Request, response: Response) => {
+      const scan = resolveScanRoot(request.query.repo);
+      if (!scan) {
         response.json({ map: null });
         return;
       }
-      const map = await codebaseMapService.getMap(
-        workspace.projectRoot,
-        workspace.projectName ?? 'Workspace'
-      );
+      const map = await codebaseMapService.getMap(scan.root, scan.name);
       response.json({ map });
     })
   );
 
   app.post(
     '/api/workspace/codebase-map/rescan',
-    asyncHandler(async (_request: Request, response: Response) => {
-      const workspace = getRuntimeState().workspace;
-      if (!workspace.projectRoot) {
+    asyncHandler(async (request: Request, response: Response) => {
+      const scan = resolveScanRoot(request.body.repo);
+      if (!scan) {
         throw new AppError(400, 'Connect a workspace before scanning.', 'INVALID_INPUT');
       }
-      const map = await codebaseMapService.rescan(
-        workspace.projectRoot,
-        workspace.projectName ?? 'Workspace'
-      );
+      const map = await codebaseMapService.rescan(scan.root, scan.name);
       response.json({ map });
     })
   );
@@ -794,19 +838,15 @@ export function createApp(options?: { apiAuthToken?: string }) {
     asyncHandler(async (request: Request, response: Response) => {
       const filePath = requireTrimmedString(request.body.path, 'path');
       const symbol = optionalTrimmedString(request.body.symbol);
-      const workspace = getRuntimeState().workspace;
-      if (!workspace.projectRoot) {
+      const scan = resolveScanRoot(request.body.repo);
+      if (!scan) {
         throw new AppError(
           400,
           'Connect a workspace before requesting summaries.',
           'INVALID_INPUT'
         );
       }
-      const result = await codebaseMapService.summarizeFile(
-        workspace.projectRoot,
-        filePath,
-        symbol
-      );
+      const result = await codebaseMapService.summarizeFile(scan.root, filePath, symbol);
       response.json(result);
     })
   );
@@ -815,11 +855,11 @@ export function createApp(options?: { apiAuthToken?: string }) {
     '/api/workspace/codebase-map/file-symbols',
     asyncHandler(async (request: Request, response: Response) => {
       const filePath = requireTrimmedString(request.body.path, 'path');
-      const workspace = getRuntimeState().workspace;
-      if (!workspace.projectRoot) {
+      const scan = resolveScanRoot(request.body.repo);
+      if (!scan) {
         throw new AppError(400, 'Connect a workspace before requesting symbols.', 'INVALID_INPUT');
       }
-      const result = await codebaseMapService.getFileSymbols(workspace.projectRoot, filePath);
+      const result = await codebaseMapService.getFileSymbols(scan.root, filePath);
       response.json(result);
     })
   );

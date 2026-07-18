@@ -71,6 +71,7 @@ export function Topbar({
     status?.assistantProviders.providers.filter((provider) => provider.appConnected) ?? [];
   const sidebarLeft = sidebarPinned ? 240 : 56;
   const showDeskPet = status?.appSettings?.showDeskPet ?? true;
+  const deskPet = status?.appSettings?.deskPet ?? 'duck';
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -84,7 +85,7 @@ export function Topbar({
         style={{ left: sidebarLeft, '--sidebar-left': `${sidebarLeft}px` } as CSSProperties}
       >
         {/* Desk pet waddling on the bottom border (behind everything, click-through). */}
-        {showDeskPet && <TopbarPet />}
+        {showDeskPet && <TopbarPet pet={deskPet} />}
 
         {/* Left: workspace info */}
         <div className="flex items-center gap-3 min-w-0">

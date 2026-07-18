@@ -23,11 +23,13 @@ export interface AppSettingsHandle {
   busyLabel: string;
   error: string;
   onboardingSavingDisplayName: boolean;
-  onboardingStep: 1 | 2 | 3 | 4;
+  onboardingStep: 1 | 2 | 3 | 4 | 5;
   onboardingSelectedProviderId: AssistantProviderId | null;
   onboardingProjectDismissed: boolean;
   dismissOnboardingProject: () => void;
-  setOnboardingStep: (step: 1 | 2 | 3 | 4) => void;
+  onboardingPetChosen: boolean;
+  dismissOnboardingPet: () => void;
+  setOnboardingStep: (step: 1 | 2 | 3 | 4 | 5) => void;
   setOnboardingSelectedProviderId: (id: AssistantProviderId | null) => void;
   handleAppSettingChange: <Key extends keyof AppSettings>(
     key: Key,
@@ -98,7 +100,7 @@ export function useAppSettings(): AppSettingsHandle {
   const [busyLabel, setBusyLabel] = useState('');
   const [error, setError] = useState('');
   const [onboardingSavingDisplayName, setOnboardingSavingDisplayName] = useState(false);
-  const [onboardingStep, setOnboardingStep] = useState<1 | 2 | 3 | 4>(1);
+  const [onboardingStep, setOnboardingStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   // Whether the user has resolved the first-run "connect a project" step (connected one or skipped).
   // Persisted so the step doesn't reappear after they've dealt with it once.
   const [onboardingProjectDismissed, setOnboardingProjectDismissed] = useState(
@@ -107,6 +109,16 @@ export function useAppSettings(): AppSettingsHandle {
   const dismissOnboardingProject = useCallback(() => {
     localStorage.setItem('oplyr.onboarding.projectDismissed', 'true');
     setOnboardingProjectDismissed(true);
+  }, []);
+  // Whether the user has resolved the first-run "pick your desk pet" step (chose one or skipped).
+  // Persisted so it shows once. Existing (already-named) users are auto-marked so the new step never
+  // pulls them back into onboarding (see the migration effect below).
+  const [onboardingPetChosen, setOnboardingPetChosen] = useState(
+    () => localStorage.getItem('oplyr.onboarding.petChosen') === 'true'
+  );
+  const dismissOnboardingPet = useCallback(() => {
+    localStorage.setItem('oplyr.onboarding.petChosen', 'true');
+    setOnboardingPetChosen(true);
   }, []);
   const [onboardingSelectedProviderId, setOnboardingSelectedProviderId] =
     useState<AssistantProviderId | null>(null);
@@ -198,17 +210,37 @@ export function useAppSettings(): AppSettingsHandle {
     void initialize();
   }, [initialize]);
 
+  // One-time migration: if the app is already onboarded (a display name is present on the FIRST status
+  // load) and the user has never seen the pet step, mark it chosen — so adding the step never yanks
+  // an existing user back into onboarding just to pick a pet.
+  const petMigrationRef = useRef(false);
+  useEffect(() => {
+    if (petMigrationRef.current || !status) return;
+    petMigrationRef.current = true;
+    if (
+      localStorage.getItem('oplyr.onboarding.petChosen') === null &&
+      status.appSettings.displayName?.trim()
+    ) {
+      localStorage.setItem('oplyr.onboarding.petChosen', 'true');
+      setOnboardingPetChosen(true);
+    }
+  }, [status]);
+
   useEffect(() => {
     const hasDisplayName = Boolean(status?.appSettings.displayName?.trim());
 
     if (!hasDisplayName) {
       setOnboardingStep(1);
       setOnboardingSelectedProviderId(null);
-      // Fresh onboarding (no name yet): clear any stale "skipped the project step" flag left over
-      // from a prior run so the connect-workspace step reliably reappears instead of staying hidden.
+      // Fresh onboarding (no name yet): clear any stale "skipped" flags left over from a prior run so
+      // the connect-workspace + pet steps reliably reappear instead of staying hidden.
       if (onboardingProjectDismissed) {
         localStorage.removeItem('oplyr.onboarding.projectDismissed');
         setOnboardingProjectDismissed(false);
+      }
+      if (onboardingPetChosen) {
+        localStorage.removeItem('oplyr.onboarding.petChosen');
+        setOnboardingPetChosen(false);
       }
       return;
     }
@@ -227,12 +259,18 @@ export function useAppSettings(): AppSettingsHandle {
       setOnboardingStep(4);
       return;
     }
-    setOnboardingStep((current) => (current === 1 || current === 2 ? 3 : current));
+    // Project resolved — the final onboarding beat is picking a desk pet (once per fresh install).
+    if (!onboardingPetChosen) {
+      setOnboardingStep(5);
+      return;
+    }
+    setOnboardingStep((current) => (current === 1 || current === 2 || current === 4 ? 3 : current));
   }, [
     activeProviderId,
     status?.appSettings.displayName,
     status?.workspace.projectRoot,
-    onboardingProjectDismissed
+    onboardingProjectDismissed,
+    onboardingPetChosen
   ]);
 
   useEffect(() => {
@@ -717,6 +755,8 @@ export function useAppSettings(): AppSettingsHandle {
     onboardingSelectedProviderId,
     onboardingProjectDismissed,
     dismissOnboardingProject,
+    onboardingPetChosen,
+    dismissOnboardingPet,
     setOnboardingStep,
     setOnboardingSelectedProviderId,
     handleAppSettingChange,

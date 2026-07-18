@@ -1,5 +1,5 @@
 import { getDatabase, isDatabaseConfigured } from '../../db/client.js';
-import type { AppSettings, AppTheme } from '../../types.js';
+import { DESK_PETS, type AppSettings, type AppTheme, type DeskPet } from '../../types.js';
 
 const preferenceKey = 'app.settings';
 let inMemoryFallback: AppSettings = getDefaultSettings();
@@ -52,7 +52,8 @@ function getDefaultSettings(): AppSettings {
     displayName: null,
     theme: 'dark',
     welcomedAt: null,
-    showDeskPet: true
+    showDeskPet: true,
+    deskPet: 'duck'
   };
 }
 
@@ -80,7 +81,8 @@ function normalizeAppSettings(value: unknown): AppSettings {
     theme: normalizeTheme(record.theme),
     welcomedAt: typeof record.welcomedAt === 'string' ? record.welcomedAt : null,
     // Absent (pre-existing settings) → on; only a stored `false` disables the pet.
-    showDeskPet: record.showDeskPet !== false
+    showDeskPet: record.showDeskPet !== false,
+    deskPet: DESK_PETS.includes(record.deskPet as DeskPet) ? (record.deskPet as DeskPet) : 'duck'
   };
 }
 

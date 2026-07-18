@@ -422,12 +422,6 @@ async function ensureLocalApi() {
   });
 }
 
-function stopLocalApi() {
-  if (apiProcessOwnedByElectron && apiProcess && !apiProcess.killed) {
-    apiProcess.kill('SIGTERM');
-  }
-}
-
 function resolveShellPath(): string {
   const envShell = process.env.SHELL;
   if (envShell) {
@@ -734,7 +728,35 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('before-quit', () => {
+// Quit cleanly. Kill the terminals immediately, then SIGTERM the forked API and WAIT for it to fully
+// exit before the app terminates. Quitting while the ELECTRON_RUN_AS_NODE API child is still shutting
+// down (its piped stdio closes out from under it) is what triggered macOS's "Oplyr quit unexpectedly"
+// crash report — the child is the same signed binary. A SIGKILL fallback guarantees the quit never hangs.
+let apiShutdownStarted = false;
+app.on('before-quit', (event) => {
   killAllPtySessions();
-  stopLocalApi();
+  const child = apiProcess;
+  if (apiShutdownStarted || !apiProcessOwnedByElectron || !child || child.killed) {
+    return;
+  }
+  apiShutdownStarted = true;
+  event.preventDefault();
+  let done = false;
+  let timer: ReturnType<typeof setTimeout>;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    clearTimeout(timer);
+    app.quit();
+  };
+  child.once('exit', finish);
+  child.kill('SIGTERM');
+  timer = setTimeout(() => {
+    try {
+      child.kill('SIGKILL');
+    } catch {
+      /* already gone */
+    }
+    finish();
+  }, 3000);
 });

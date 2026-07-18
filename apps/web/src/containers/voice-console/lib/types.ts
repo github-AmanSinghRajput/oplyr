@@ -56,6 +56,16 @@ export interface CodebaseMapResponse {
   map: CodebaseMapData | null;
 }
 
+/** A git repo detected inside the connected workspace folder (for the map's repo picker). */
+export interface DetectedRepo {
+  name: string;
+  path: string;
+  relativePath: string;
+}
+export interface WorkspaceReposResponse {
+  repos: DetectedRepo[];
+}
+
 /** Mirrors the backend AssistantClientError kinds so the UI can react to (e.g.) rate limits. */
 export type AssistantErrorKind = 'auth' | 'rate_limit' | 'service' | 'unknown';
 
@@ -187,11 +197,15 @@ export interface TranscriptionModelOption {
 
 export type AppTheme = 'dark' | 'light';
 
+export type DeskPet = 'duck' | 'bird' | 'frog' | 'cat' | 'dog';
+export const DESK_PETS: readonly DeskPet[] = ['duck', 'bird', 'frog', 'cat', 'dog'];
+
 export interface AppSettings {
   displayName: string | null;
   theme: AppTheme;
   welcomedAt: string | null;
   showDeskPet: boolean;
+  deskPet: DeskPet;
 }
 
 export interface VoiceSettings {

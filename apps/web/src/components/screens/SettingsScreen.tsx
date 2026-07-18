@@ -10,6 +10,7 @@ import { formatReasoningEffort } from '@/containers/voice-console/lib/helpers';
 import type {
   AppSettings,
   AssistantProviderId,
+  DeskPet,
   ClaudeSettingsResponse,
   CodexSettingsResponse,
   ConsolePreferences,
@@ -465,7 +466,7 @@ export function SettingsScreen({
             </SettingRow>
             <SettingRow
               label="Desk pet"
-              hint="A tiny duck that waddles along the top bar. Purely cosmetic — turn it off if you'd rather not have it."
+              hint="A tiny animated companion that waddles along the top bar. Purely cosmetic — turn it off if you'd rather not have it."
             >
               <input
                 type="checkbox"
@@ -474,6 +475,21 @@ export function SettingsScreen({
                 onChange={(e) => onAppSettingChange('showDeskPet', e.target.checked)}
               />
             </SettingRow>
+            {appSettings?.showDeskPet !== false && (
+              <SettingRow label="Which pet" hint="Pick your companion.">
+                <select
+                  className="rounded-[var(--radius-control)] border border-border bg-surface-2 px-2 py-1 text-sm text-text-primary"
+                  value={appSettings?.deskPet ?? 'duck'}
+                  onChange={(e) => onAppSettingChange('deskPet', e.target.value as DeskPet)}
+                >
+                  <option value="duck">🦆 Duck</option>
+                  <option value="bird">🐦 Bird</option>
+                  <option value="frog">🐸 Frog</option>
+                  <option value="cat">🐱 Cat</option>
+                  <option value="dog">🐶 Dog</option>
+                </select>
+              </SettingRow>
+            )}
           </SectionCard>
 
           <SectionCard

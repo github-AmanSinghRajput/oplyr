@@ -28,6 +28,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { StandbyScreen } from '@/components/screens/StandbyScreen';
 import { OplyrLogoMark } from '@/components/branding/OplyrLogoMark';
 import { UpdateBanner } from '@/components/layout/UpdateBanner';
+import { GreetingOverlay } from '@/components/layout/GreetingOverlay';
 import { cn } from '@/lib/cn';
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
 import { formatReasoningEffort, getVoiceState } from '@/containers/voice-console/lib/helpers';
@@ -99,97 +100,99 @@ function VoiceBootstrapScreen({
   const phase = status?.phase ?? 'idle';
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-6 py-10">
-      <div className="w-full max-w-3xl rounded-[calc(var(--radius-panel)+8px)] border border-border bg-surface-1 p-10">
-        <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-[24px] bg-surface-2 ring-1 ring-border">
-          <OplyrLogoMark className="h-12 w-12" />
-        </div>
-        <div className="mx-auto max-w-2xl text-center">
-          <h1 className="mb-2 text-2xl font-semibold text-text-primary">
-            {phase === 'failed'
-              ? 'Local voice setup needs attention'
-              : 'Warming up the speech models'}
-          </h1>
-          <p className="mb-6 text-sm text-text-secondary">
-            {status?.message ??
-              'Warming up the speech models Oplyr needs before onboarding becomes interactive.'}
-          </p>
-        </div>
-
-        <div className="mx-auto mb-8 max-w-2xl">
-          <div className="mb-3 flex items-center justify-between text-xs uppercase tracking-[0.2em] text-text-tertiary">
-            <span>
-              {phase === 'installing' ? 'Installing speech models' : 'Warming up speech models'}
-            </span>
-            <span>{status?.progressPercent ?? 0}%</span>
+    <div className="h-full overflow-y-auto">
+      <div className="flex min-h-full items-center justify-center px-6 py-10">
+        <div className="w-full max-w-3xl rounded-[calc(var(--radius-panel)+8px)] border border-border bg-surface-1 p-10">
+          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-[24px] bg-surface-2 ring-1 ring-border">
+            <OplyrLogoMark className="h-12 w-12" />
           </div>
-          <div className="overflow-hidden rounded-full border border-border bg-surface-2">
-            <motion.div
-              animate={{ width: `${status?.progressPercent ?? 0}%` }}
-              className="h-3 rounded-full bg-accent"
-              transition={{ duration: 0.35, ease: 'easeOut' }}
-            />
+          <div className="mx-auto max-w-2xl text-center">
+            <h1 className="mb-2 text-2xl font-semibold text-text-primary">
+              {phase === 'failed'
+                ? 'Local voice setup needs attention'
+                : 'Warming up the speech models'}
+            </h1>
+            <p className="mb-6 text-sm text-text-secondary">
+              {status?.message ??
+                'Warming up the speech models Oplyr needs before onboarding becomes interactive.'}
+            </p>
           </div>
-        </div>
 
-        <div className="grid gap-3 md:grid-cols-2">
-          {(status?.steps ?? []).map((step) => (
-            <div
-              key={step.id}
-              className={cn(
-                'rounded-[calc(var(--radius-panel)-2px)] border px-4 py-4 text-left transition-colors',
-                step.state === 'completed' && 'border-success/30 bg-success-muted/40',
-                step.state === 'running' && 'border-accent-border bg-accent-muted/40',
-                step.state === 'failed' && 'border-danger/30 bg-danger-muted/40',
-                step.state === 'pending' && 'border-border bg-surface-2',
-                step.state === 'skipped' && 'border-border/60 bg-surface-2/50 opacity-75'
-              )}
-            >
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-text-primary">{step.label}</p>
-                  <p className="text-xs text-text-secondary">{step.description}</p>
-                </div>
-                <span
-                  className={cn(
-                    'inline-flex min-w-[5.5rem] justify-center rounded-full px-2.5 py-1 text-[10px] uppercase tracking-[0.16em]',
-                    step.state === 'completed' && 'bg-success-muted text-success',
-                    step.state === 'running' && 'bg-accent-muted text-accent',
-                    step.state === 'failed' && 'bg-danger-muted text-danger',
-                    (step.state === 'pending' || step.state === 'skipped') &&
-                      'bg-surface-3 text-text-tertiary'
-                  )}
-                >
-                  {step.state.replace('_', ' ')}
-                </span>
-              </div>
-              {step.detail && <p className="text-sm text-text-secondary">{step.detail}</p>}
+          <div className="mx-auto mb-8 max-w-2xl">
+            <div className="mb-3 flex items-center justify-between text-xs uppercase tracking-[0.2em] text-text-tertiary">
+              <span>
+                {phase === 'installing' ? 'Installing speech models' : 'Warming up speech models'}
+              </span>
+              <span>{status?.progressPercent ?? 0}%</span>
             </div>
-          ))}
-        </div>
-
-        <div className="mt-6 rounded-[var(--radius-control)] border border-border bg-surface-2 px-4 py-3 text-sm text-text-secondary">
-          <p className="font-medium text-text-primary">Voice assets location</p>
-          <p className="mt-1 break-all">
-            {status?.installRoot || 'Waiting for the Oplyr user data directory.'}
-          </p>
-        </div>
-
-        {status?.error && (
-          <div className="mt-6 rounded-[var(--radius-control)] border border-danger/30 bg-danger-muted p-4 text-sm text-danger">
-            {status.error}
+            <div className="overflow-hidden rounded-full border border-border bg-surface-2">
+              <motion.div
+                animate={{ width: `${status?.progressPercent ?? 0}%` }}
+                className="h-3 rounded-full bg-accent"
+                transition={{ duration: 0.35, ease: 'easeOut' }}
+              />
+            </div>
           </div>
-        )}
 
-        {phase === 'failed' && (
-          <button
-            className="mt-6 inline-flex h-10 items-center justify-center rounded-radius-control bg-accent px-5 py-2 text-sm font-medium text-background transition-colors hover:bg-accent/90"
-            onClick={onRetry}
-            type="button"
-          >
-            Retry voice setup
-          </button>
-        )}
+          <div className="grid gap-3 md:grid-cols-2">
+            {(status?.steps ?? []).map((step) => (
+              <div
+                key={step.id}
+                className={cn(
+                  'rounded-[calc(var(--radius-panel)-2px)] border px-4 py-4 text-left transition-colors',
+                  step.state === 'completed' && 'border-success/30 bg-success-muted/40',
+                  step.state === 'running' && 'border-accent-border bg-accent-muted/40',
+                  step.state === 'failed' && 'border-danger/30 bg-danger-muted/40',
+                  step.state === 'pending' && 'border-border bg-surface-2',
+                  step.state === 'skipped' && 'border-border/60 bg-surface-2/50 opacity-75'
+                )}
+              >
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-text-primary">{step.label}</p>
+                    <p className="text-xs text-text-secondary">{step.description}</p>
+                  </div>
+                  <span
+                    className={cn(
+                      'inline-flex min-w-[5.5rem] justify-center rounded-full px-2.5 py-1 text-[10px] uppercase tracking-[0.16em]',
+                      step.state === 'completed' && 'bg-success-muted text-success',
+                      step.state === 'running' && 'bg-accent-muted text-accent',
+                      step.state === 'failed' && 'bg-danger-muted text-danger',
+                      (step.state === 'pending' || step.state === 'skipped') &&
+                        'bg-surface-3 text-text-tertiary'
+                    )}
+                  >
+                    {step.state.replace('_', ' ')}
+                  </span>
+                </div>
+                {step.detail && <p className="text-sm text-text-secondary">{step.detail}</p>}
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-6 rounded-[var(--radius-control)] border border-border bg-surface-2 px-4 py-3 text-sm text-text-secondary">
+            <p className="font-medium text-text-primary">Voice assets location</p>
+            <p className="mt-1 break-all">
+              {status?.installRoot || 'Waiting for the Oplyr user data directory.'}
+            </p>
+          </div>
+
+          {status?.error && (
+            <div className="mt-6 rounded-[var(--radius-control)] border border-danger/30 bg-danger-muted p-4 text-sm text-danger">
+              {status.error}
+            </div>
+          )}
+
+          {phase === 'failed' && (
+            <button
+              className="mt-6 inline-flex h-10 items-center justify-center rounded-radius-control bg-accent px-5 py-2 text-sm font-medium text-background transition-colors hover:bg-accent/90"
+              onClick={onRetry}
+              type="button"
+            >
+              Retry voice setup
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -397,17 +400,50 @@ export function AppShell() {
   const [voiceBootstrap, setVoiceBootstrap] = useState<VoiceBootstrapStatus | null>(null);
   const bootstrapRequestedRef = useRef(false);
   const statusRefreshedAfterBootstrapRef = useRef(false);
+  // Fresh-start greeting + boot cover. 'booting' = opaque cover held over the loading screens so a
+  // returning user never sees the VoiceBootstrap → Onboarding flash; 'greeting' = the animated hello;
+  // 'done' = the app is visible. See the effect below for the transitions.
+  const [bootPhase, setBootPhase] = useState<'booting' | 'greeting' | 'done'>('booting');
+  const greetedRef = useRef(false);
   // Onboarding runs until: name set + an agent connected + the first-project step resolved
   // (a project is connected, OR the user skipped it). The project step is the final, skippable nudge.
   const projectConnected = Boolean(status?.workspace.projectRoot);
   const onboardingRequired =
     !displayName?.trim() ||
     !assistantReady ||
-    (!projectConnected && !settings.onboardingProjectDismissed);
+    (!projectConnected && !settings.onboardingProjectDismissed) ||
+    !settings.onboardingPetChosen;
 
   useEffect(() => {
     setProjectInput(status?.workspace.projectRoot ?? '');
   }, [status?.workspace.projectRoot]);
+
+  // The user has fully landed on the workspace: voice models ready, status loaded, onboarding cleared.
+  const dashboardReady =
+    voiceBootstrap?.phase === 'ready' && status !== null && !onboardingRequired;
+
+  useEffect(() => {
+    // Greet at most once per app launch.
+    if (greetedRef.current) return;
+    if (dashboardReady) {
+      // Returning user on launch, or a new user who just finished onboarding → play the hello.
+      greetedRef.current = true;
+      setBootPhase('greeting');
+    } else if (status !== null && onboardingRequired) {
+      // Genuinely new user (needs onboarding / model download) — drop the cover so they can see it.
+      // We'll still greet later, once they reach the workspace (dashboardReady flips true above).
+      setBootPhase((phase) => (phase === 'booting' ? 'done' : phase));
+    }
+  }, [dashboardReady, status, onboardingRequired]);
+
+  // Safety valve: never trap the user behind the cover if the API is slow/unreachable at launch.
+  useEffect(() => {
+    if (bootPhase !== 'booting') return;
+    const timer = window.setTimeout(() => {
+      setBootPhase((phase) => (phase === 'booting' ? 'done' : phase));
+    }, 8000);
+    return () => window.clearTimeout(timer);
+  }, [bootPhase]);
 
   useEffect(() => {
     let cancelled = false;
@@ -560,6 +596,12 @@ export function AppShell() {
           }}
           onConnectProject={(path) => void settings.handleSaveProject(path)}
           onSkipProject={() => settings.dismissOnboardingProject()}
+          currentPet={status?.appSettings.deskPet ?? 'duck'}
+          onChoosePet={(pet) => {
+            void settings.handleAppSettingChange('deskPet', pet);
+            settings.dismissOnboardingPet();
+          }}
+          onSkipPet={() => settings.dismissOnboardingPet()}
         />
       );
     }
@@ -775,7 +817,9 @@ export function AppShell() {
           }}
         />
       ) : onboardingRequired ? (
-        <div className="min-h-screen px-6 py-10">
+        // h-full + overflow-y-auto so a short/cropped window can scroll to the rest of the step
+        // (the body is overflow:hidden, so this branch needs its own scroll container).
+        <div className="h-full overflow-y-auto px-6 py-10">
           <div className="mx-auto max-w-4xl">
             <Suspense fallback={<ScreenFallback />}>{renderScreen()}</Suspense>
           </div>
@@ -840,6 +884,16 @@ export function AppShell() {
           </ContentFrame>
           <ProductTourOverlay />
         </>
+      )}
+
+      {/* Fresh-start greeting + boot cover (portals to <body>, above everything). Covers the launch
+          flash while booting, then inks a warm hello once the user lands on the workspace. */}
+      {bootPhase !== 'done' && (
+        <GreetingOverlay
+          reveal={bootPhase === 'greeting'}
+          userName={displayName}
+          onDone={() => setBootPhase('done')}
+        />
       )}
 
       {/* Floating auto-update banner (desktop only; renders nothing in the browser) */}

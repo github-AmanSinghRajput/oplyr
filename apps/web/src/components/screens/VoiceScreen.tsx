@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Mic, Square, Send, Check } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { VoiceWaveform } from '@/components/voice/VoiceWaveform';
-import { VoiceListeningStrip } from '@/components/voice/VoiceListeningStrip';
 import { TypingDots } from '@/components/voice/TypingDots';
 import { MessageBubble } from '@/components/chat/MessageBubble';
 import { AgentActivityTimeline } from '@/components/chat/AgentActivityTimeline';
@@ -136,11 +135,6 @@ export function VoiceScreen({
       <div className="w-full rounded-[var(--radius-panel)] border border-border bg-surface-1 px-4 py-4">
         <VoiceWaveform mode={mode} analyserRef={micAnalyserRef} />
       </div>
-
-      <VoiceListeningStrip
-        active={isRecording || voiceState === 'listening'}
-        analyserRef={micAnalyserRef}
-      />
 
       <div className="flex items-center gap-3">
         <motion.div whileTap={{ scale: 0.95 }} data-tour="voice-mic">

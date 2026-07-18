@@ -21,6 +21,7 @@ import type {
   GeminiSettingsResponse,
   ClearResponse,
   CodebaseMapResponse,
+  WorkspaceReposResponse,
   CodebaseFileSummaryResponse,
   CodebaseFileSymbolsResponse,
   LogsResponse,
@@ -554,33 +555,40 @@ export class OperatorConsoleApiService extends BaseApiService {
     });
   }
 
-  getCodebaseMap() {
-    return this.request<CodebaseMapResponse>('/api/workspace/codebase-map');
+  getWorkspaceRepos() {
+    return this.request<WorkspaceReposResponse>('/api/workspace/repos');
   }
 
-  rescanCodebaseMap() {
+  getCodebaseMap(repo?: string) {
+    const query = repo ? `?repo=${encodeURIComponent(repo)}` : '';
+    return this.request<CodebaseMapResponse>(`/api/workspace/codebase-map${query}`);
+  }
+
+  rescanCodebaseMap(repo?: string) {
     return this.request<CodebaseMapResponse>('/api/workspace/codebase-map/rescan', {
-      method: 'POST'
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(repo ? { repo } : {})
     });
   }
 
-  summarizeCodebaseFile(path: string, symbol?: string) {
+  summarizeCodebaseFile(path: string, symbol?: string, repo?: string) {
     return this.request<CodebaseFileSummaryResponse>('/api/workspace/codebase-map/summary', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(symbol ? { path, symbol } : { path })
+      body: JSON.stringify({ path, ...(symbol ? { symbol } : {}), ...(repo ? { repo } : {}) })
     });
   }
 
-  getCodebaseFileSymbols(path: string) {
+  getCodebaseFileSymbols(path: string, repo?: string) {
     return this.request<CodebaseFileSymbolsResponse>('/api/workspace/codebase-map/file-symbols', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ path })
+      body: JSON.stringify({ path, ...(repo ? { repo } : {}) })
     });
   }
 

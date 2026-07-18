@@ -206,12 +206,18 @@ export interface TranscriptionModelOption {
 
 export type AppTheme = 'dark' | 'light';
 
+/** The little animated companion that walks the topbar. */
+export type DeskPet = 'duck' | 'bird' | 'frog' | 'cat' | 'dog';
+export const DESK_PETS: readonly DeskPet[] = ['duck', 'bird', 'frog', 'cat', 'dog'];
+
 export interface AppSettings {
   displayName: string | null;
   theme: AppTheme;
   welcomedAt: string | null;
-  // Whether the little desk-pet (walking duck) shows on the topbar. On by default; devs can opt out.
+  // Whether the little desk-pet shows on the topbar. On by default; devs can opt out.
   showDeskPet: boolean;
+  // Which pet walks the topbar. Defaults to the duck.
+  deskPet: DeskPet;
 }
 
 export interface VoiceSettings {

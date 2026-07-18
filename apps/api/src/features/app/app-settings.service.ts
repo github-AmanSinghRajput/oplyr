@@ -1,4 +1,4 @@
-import type { AppSettings } from '../../types.js';
+import { DESK_PETS, type AppSettings, type DeskPet } from '../../types.js';
 import { AppSettingsRepository } from './app-settings.repository.js';
 
 export class AppSettingsService {
@@ -32,6 +32,7 @@ function sanitizeAppSettings(input: Partial<AppSettings>): AppSettings {
     welcomedAt:
       typeof input.welcomedAt === 'string' && input.welcomedAt.trim() ? input.welcomedAt : null,
     // Default on when unset so existing users keep the pet; only an explicit `false` disables it.
-    showDeskPet: input.showDeskPet !== false
+    showDeskPet: input.showDeskPet !== false,
+    deskPet: DESK_PETS.includes(input.deskPet as DeskPet) ? (input.deskPet as DeskPet) : 'duck'
   };
 }

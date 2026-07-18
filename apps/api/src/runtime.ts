@@ -126,10 +126,10 @@ export async function validateProjectRoot(inputPath: string) {
     throw new Error('Selected project path is not a directory.');
   }
 
+  // A Git repo is NOT required to connect. Any folder can be a workspace (e.g. a parent that holds
+  // several repos). Git-dependent features (approval diffs, the codebase map's git scoping) degrade
+  // gracefully when isGitRepo is false — connecting must never fail just because there's no .git.
   const isGitRepo = await detectGitRepo(realProjectRoot);
-  if (!isGitRepo) {
-    throw new Error('Selected project must be a Git repository.');
-  }
 
   return {
     projectRoot: realProjectRoot,
