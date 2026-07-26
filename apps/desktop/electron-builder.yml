@@ -40,6 +40,14 @@ extraResources:
   # Shipped OUTSIDE asar so the forked (ELECTRON_RUN_AS_NODE) API process can require it.
   - from: ../../node_modules/better-sqlite3
     to: api/node_modules/better-sqlite3
+    # Ship only what's needed at runtime (the compiled .node). Exclude native build intermediates
+    # (*.o / *.a / obj.target / .deps): codesign fails trying to timestamp them and they're unused.
+    filter:
+      - "**/*"
+      - "!**/*.o"
+      - "!**/*.a"
+      - "!build/Release/obj.target/**"
+      - "!build/Release/.deps/**"
   - from: ../../node_modules/bindings
     to: api/node_modules/bindings
   # bindings' runtime dependency (better-sqlite3 → bindings → file-uri-to-path).
@@ -52,6 +60,13 @@ extraResources:
   # spawn-helper). No runtime npm deps on macOS (node-addon-api = build headers; ps-list = Win test).
   - from: ../../node_modules/node-pty
     to: api/node_modules/node-pty
+    # Same as better-sqlite3: keep pty.node + spawn-helper, drop native build intermediates.
+    filter:
+      - "**/*"
+      - "!**/*.o"
+      - "!**/*.a"
+      - "!build/Release/obj.target/**"
+      - "!build/Release/.deps/**"
   # Native STT binary (build first: cd ../stt && swift build -c release).
   - from: ../stt/.build/release/oplyr-stt
     to: stt/oplyr-stt
