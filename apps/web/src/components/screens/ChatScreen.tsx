@@ -1,7 +1,11 @@
 import { type FormEvent } from 'react';
 import { MessageList } from '@/components/chat/MessageList';
 import { ChatComposer } from '@/components/chat/ChatComposer';
-import type { ChatAttachment, MessageEntry } from '@/containers/voice-console/lib/types';
+import type {
+  AssistantProviderId,
+  ChatAttachment,
+  MessageEntry
+} from '@/containers/voice-console/lib/types';
 
 interface ChatScreenProps {
   apiBaseUrl: string;
@@ -20,6 +24,7 @@ interface ChatScreenProps {
   onRemoveAttachment: (id: string) => void;
   onStartVoice: () => void;
   onCancelStreaming: () => void;
+  mentionAgents: AssistantProviderId[];
 }
 
 export function ChatScreen({
@@ -38,10 +43,11 @@ export function ChatScreen({
   onAttachFiles,
   onRemoveAttachment,
   onStartVoice,
-  onCancelStreaming
+  onCancelStreaming,
+  mentionAgents
 }: ChatScreenProps) {
   return (
-    <div className="flex flex-col h-[calc(100vh-var(--topbar-height))]">
+    <div className="flex flex-col h-[calc(100vh-var(--topbar-height)-3rem)] min-h-0 overflow-hidden">
       <MessageList
         messages={messages}
         streamingMessageId={streamingMessageId}
@@ -62,6 +68,7 @@ export function ChatScreen({
           draftAttachments={draftAttachments}
           disabled={disabled}
           isStreaming={isStreaming}
+          mentionAgents={mentionAgents}
         />
       </div>
     </div>

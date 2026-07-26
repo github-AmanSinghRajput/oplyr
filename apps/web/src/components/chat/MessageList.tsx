@@ -49,7 +49,7 @@ export function MessageList({
   }, []);
 
   return (
-    <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
+    <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-4 py-4">
       <div className="flex flex-col gap-4">
         {messages.map((msg, i) => (
           <motion.div
@@ -65,6 +65,7 @@ export function MessageList({
               apiBaseUrl={apiBaseUrl}
               liveActivity={msg.id === streamingMessageId ? liveActivity : null}
               activityLog={msg.id === streamingMessageId ? activityLog : undefined}
+              showAuthor
             />
           </motion.div>
         ))}

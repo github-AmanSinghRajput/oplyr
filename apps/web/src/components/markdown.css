@@ -104,18 +104,23 @@
   padding: 0.1em 0.35em;
   border-radius: 6px;
 }
+/* Fenced code is rendered by the CodeBlock component (its own bordered card + header + copy button).
+   The <pre> here is just the scroll/padding surface INSIDE that card — it must NOT draw its own box,
+   or the block gets a doubled border/background and inconsistent margins. */
 .md-body pre {
-  margin: 0.7em 0;
-  padding: 0.9em;
-  background: var(--color-surface-2);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control, 10px);
+  margin: 0;
+  padding: 0.85em 0.9em;
+  background: transparent;
+  border: none;
+  border-radius: 0;
   overflow-x: auto;
 }
 .md-body pre code {
   background: transparent;
   padding: 0;
-  font-size: 0.85em;
+  font-family: 'Geist Mono', 'SF Mono', 'Menlo', monospace;
+  font-size: 0.8125rem;
+  line-height: 1.6;
 }
 
 /* Tables (the GFM scorecard-style output). Scroll horizontally on narrow bubbles. */
@@ -141,4 +146,81 @@
 }
 .md-body tr:nth-child(even) td {
   background: color-mix(in srgb, var(--color-surface-2), transparent 55%);
+}
+
+/* ── Syntax highlighting (rehype-highlight / highlight.js token classes) ──────────────────
+ * The app ships no hljs stylesheet, so without this every language renders monochrome. A compact,
+ * medium-saturation palette chosen to stay legible on the code surface in BOTH light and dark themes.
+ */
+.md-body .hljs {
+  color: var(--color-text-primary);
+  background: transparent;
+}
+.md-body .hljs-comment,
+.md-body .hljs-quote {
+  color: var(--color-text-tertiary);
+  font-style: italic;
+}
+.md-body .hljs-keyword,
+.md-body .hljs-selector-tag,
+.md-body .hljs-literal,
+.md-body .hljs-section,
+.md-body .hljs-doctag,
+.md-body .hljs-type {
+  color: #a23bb0;
+}
+.md-body .hljs-string,
+.md-body .hljs-regexp,
+.md-body .hljs-meta .hljs-string {
+  color: #2f8f3e;
+}
+.md-body .hljs-number,
+.md-body .hljs-built_in,
+.md-body .hljs-params {
+  color: #c26a1b;
+}
+.md-body .hljs-title,
+.md-body .hljs-title.function_,
+.md-body .hljs-function .hljs-title,
+.md-body .hljs-class .hljs-title {
+  color: #2f6fd0;
+}
+.md-body .hljs-attr,
+.md-body .hljs-attribute,
+.md-body .hljs-variable,
+.md-body .hljs-template-variable,
+.md-body .hljs-property {
+  color: #9a7212;
+}
+.md-body .hljs-tag,
+.md-body .hljs-name,
+.md-body .hljs-selector-id,
+.md-body .hljs-selector-class,
+.md-body .hljs-symbol,
+.md-body .hljs-bullet {
+  color: #c0392b;
+}
+.md-body .hljs-meta,
+.md-body .hljs-link {
+  color: #4c8f9c;
+}
+.md-body .hljs-emphasis {
+  font-style: italic;
+}
+.md-body .hljs-strong {
+  font-weight: 600;
+}
+
+/* Diff blocks (```diff) — proposed changes read as highlighted +/- lines. */
+.md-body .hljs-addition {
+  color: #2f8f3e;
+  background: color-mix(in srgb, #2f8f3e, transparent 88%);
+  display: inline-block;
+  width: 100%;
+}
+.md-body .hljs-deletion {
+  color: #c0392b;
+  background: color-mix(in srgb, #c0392b, transparent 88%);
+  display: inline-block;
+  width: 100%;
 }

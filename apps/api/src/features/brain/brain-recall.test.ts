@@ -144,6 +144,40 @@ test('cross-project recall skips projects the user marked isolated', () => {
   assert.equal(bundle.injected, false);
 });
 
+// A cross-project atom with only modest relevance (0.25) clears the same-project bar (0.22) but not
+// the strict cross-project bar (0.45) — so by default it stays hidden.
+test('cross-project memory below the strict bar stays hidden by default', () => {
+  const bundle = buildBrainRecallBundle(
+    'ragfuse retrieval strategy',
+    [candidate('a1', 'ragfuse indexes documents with embeddings', 'workspace-2')],
+    getDefaultBrainSettings(),
+    context()
+  );
+  assert.equal(bundle.injected, false);
+});
+
+test('explicit recall surfaces cross-project memory at the low bar', () => {
+  const bundle = buildBrainRecallBundle(
+    'ragfuse retrieval strategy',
+    [candidate('a1', 'ragfuse indexes documents with embeddings', 'workspace-2')],
+    getDefaultBrainSettings(),
+    context({ explicitRecall: true })
+  );
+  assert.equal(bundle.injected, true);
+  assert.equal(bundle.atoms[0]!.crossProject, true);
+});
+
+test('naming a past project surfaces its cross-project memory', () => {
+  const bundle = buildBrainRecallBundle(
+    'ragfuse retrieval strategy',
+    [candidate('a1', 'ragfuse indexes documents with embeddings', 'workspace-2')],
+    getDefaultBrainSettings(),
+    context({ namedProjectKeys: new Set(['workspace-2']) })
+  );
+  assert.equal(bundle.injected, true);
+  assert.equal(bundle.atoms[0]!.crossProject, true);
+});
+
 test('recall text surfaces multiple contributing agents', () => {
   const item = candidate(
     'a1',

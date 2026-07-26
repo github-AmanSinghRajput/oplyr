@@ -204,15 +204,15 @@ This starts moving Oplyr from "voice coding app" toward "voice-native developer 
 
 ## Post-Beta TODO
 
-### Shared memory ("brain")
+### Shared memory ("brain") — ✅ SHIPPED (0.2)
 
-The design is **approved** — see `docs/superpowers/specs/2026-06-25-oplyr-brain-memory-design.md`
-(unified local-first graph + vector memory; per-agent write permission; SQLite + sqlite-vec). The
-open schema/access/storage questions that used to live here are settled there. Build follows the
-spec's staged delivery (single-project loop → machine-wide → richer sources).
+Now live: agent-distilled capture + recall on a local-first graph, per-agent attribution, and
+cross-project recall (see `docs/BRAIN_TECH_EXPLAINER.md` and the v2 spec
+`docs/superpowers/specs/2026-07-11-oplyr-brain-memory-v2-design.md`). Backed by embedded SQLite +
+on-device embeddings (sqlite-vec is the deferred optimization; brute-force cosine ships today).
 
-This is intentionally deferred until after beta launch so bootstrap, onboarding, voice, chat, and
-provider reliability can reach demo quality first.
+Remaining brain work is incremental: richer sources, sqlite-vec acceleration, and the multi-agent
+@mention room (in design) that lets agents see + flag each other's turns.
 
 ---
 

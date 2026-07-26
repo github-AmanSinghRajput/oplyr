@@ -76,7 +76,7 @@ export function TopbarUsageMeters({
                 <span className="text-[10px] font-medium uppercase tracking-wide text-text-tertiary">
                   {shortLabel(meter)}
                 </span>
-                <div className="h-1.5 w-11 overflow-hidden rounded-full bg-surface-2">
+                <div className="h-1.5 w-24 overflow-hidden rounded-full bg-surface-2">
                   <div
                     className={cn(
                       'h-full rounded-full transition-[width] duration-500 ease-out',

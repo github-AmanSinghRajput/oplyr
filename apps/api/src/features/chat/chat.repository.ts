@@ -5,11 +5,25 @@ import type { ChatAttachment, ChatMessage } from '../../types.js';
 
 interface PersistedSession {
   id: string;
-  workspaceId: string | null;
+  projectKey: string | null;
 }
 
 export class ChatRepository {
   private session: PersistedSession | null = null;
+
+  // Chat history is scoped to the connected project. Mirror the Brain's key (`id ?? projectRoot`);
+  // in the local runtime `id` is always null, so this is effectively the project's root path. A null
+  // key = "no folder connected" (its own conversation, and where pre-scoping global history lives).
+  private currentProjectKey(): string | null {
+    const workspace = getWorkspaceState();
+    return workspace.id ?? workspace.projectRoot ?? null;
+  }
+
+  /** The cached session, but only if it still belongs to the currently-connected project. */
+  private cachedSessionForCurrentProject(): PersistedSession | null {
+    const projectKey = this.currentProjectKey();
+    return this.session && this.session.projectKey === projectKey ? this.session : null;
+  }
 
   async listRecentMessages(limit = 120): Promise<ChatMessage[]> {
     if (!isDatabaseConfigured()) {
@@ -25,7 +39,7 @@ export class ChatRepository {
     const rows = database
       .prepare(
         `
-        SELECT id, role, source, content, attachments_json, created_at
+        SELECT id, role, source, content, attachments_json, created_at, author_provider_id
         FROM conversation_messages
         WHERE session_id = ?
         ORDER BY created_at DESC
@@ -39,6 +53,7 @@ export class ChatRepository {
       content: string;
       attachments_json: string;
       created_at: string;
+      author_provider_id: ChatMessage['authorProviderId'];
     }[];
 
     return rows.reverse().map((row) => ({
@@ -47,6 +62,7 @@ export class ChatRepository {
       source: row.source,
       text: row.content,
       attachments: parseAttachments(row.attachments_json),
+      authorProviderId: row.author_provider_id ?? null,
       createdAt: new Date(row.created_at).toISOString()
     }));
   }
@@ -60,8 +76,8 @@ export class ChatRepository {
     await withTransaction(async (database) => {
       const statement = database.prepare(
         `
-          INSERT INTO conversation_messages (id, session_id, role, source, content, attachments_json, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO conversation_messages (id, session_id, role, source, content, attachments_json, created_at, author_provider_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `
       );
 
@@ -73,7 +89,8 @@ export class ChatRepository {
           message.source,
           message.text || '',
           JSON.stringify(message.attachments ?? []),
-          message.createdAt
+          message.createdAt,
+          message.authorProviderId ?? null
         );
       }
     });
@@ -103,62 +120,72 @@ export class ChatRepository {
   }
 
   private async ensureSession() {
-    if (this.session) {
-      const workspaceId = getWorkspaceState().id ?? null;
-      if (this.session.workspaceId === workspaceId) {
-        return this.session;
-      }
+    const cached = this.cachedSessionForCurrentProject();
+    if (cached) {
+      return cached;
     }
 
     const database = getDatabase();
-    const workspaceId = getWorkspaceState().id ?? null;
-    const result = database
+    const projectKey = this.currentProjectKey();
+
+    // Reuse this project's existing session if there is one; only create a new one otherwise. (The
+    // old code always inserted, which could strand history across app restarts.)
+    const existing = database
       .prepare(
         `
-        INSERT INTO conversation_sessions (workspace_id)
-        VALUES (?)
-        RETURNING id
-      `
-      )
-      .get(workspaceId) as { id: string };
-
-    this.session = {
-      id: result.id,
-      workspaceId
-    };
-
-    return this.session;
-  }
-
-  private async resolveSession() {
-    if (this.session) {
-      return this.session;
-    }
-
-    const database = getDatabase();
-    const result = database
-      .prepare(
-        `
-        SELECT id, workspace_id
+        SELECT id
         FROM conversation_sessions
-        WHERE workspace_id IS ?
+        WHERE project_key IS ?
         ORDER BY created_at DESC
         LIMIT 1
       `
       )
-      .get(getWorkspaceState().id ?? null) as
-      | { id: string; workspace_id: string | null }
-      | undefined;
+      .get(projectKey) as { id: string } | undefined;
+
+    const id =
+      existing?.id ??
+      (
+        database
+          .prepare(
+            `
+            INSERT INTO conversation_sessions (project_key)
+            VALUES (?)
+            RETURNING id
+          `
+          )
+          .get(projectKey) as { id: string }
+      ).id;
+
+    this.session = { id, projectKey };
+    return this.session;
+  }
+
+  private async resolveSession() {
+    const cached = this.cachedSessionForCurrentProject();
+    if (cached) {
+      return cached;
+    }
+
+    const database = getDatabase();
+    const projectKey = this.currentProjectKey();
+    const result = database
+      .prepare(
+        `
+        SELECT id, project_key
+        FROM conversation_sessions
+        WHERE project_key IS ?
+        ORDER BY created_at DESC
+        LIMIT 1
+      `
+      )
+      .get(projectKey) as { id: string; project_key: string | null } | undefined;
 
     if (!result) {
+      // Don't cache a miss — ensureSession may create the session on the next write.
       return null;
     }
 
-    this.session = {
-      id: result.id,
-      workspaceId: result.workspace_id
-    };
-
+    this.session = { id: result.id, projectKey: result.project_key };
     return this.session;
   }
 }

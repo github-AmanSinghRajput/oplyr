@@ -878,6 +878,8 @@ export function SettingsScreen({
           )}
         </TabsContent>
       </Tabs>
+
+      <p className="mt-6 text-center text-xs text-text-tertiary">Oplyr v{__APP_VERSION__}</p>
     </div>
   );
 }

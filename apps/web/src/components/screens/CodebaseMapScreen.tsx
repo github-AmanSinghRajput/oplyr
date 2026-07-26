@@ -326,7 +326,7 @@ export function CodebaseMapScreen({ projectRoot }: CodebaseMapScreenProps) {
     <div className="flex flex-col gap-4">
       {/* Header — centered title + project picker (the picker names the repo, so we don't repeat it) */}
       <div className="flex flex-col items-center gap-3 text-center">
-        <h2 className="text-lg font-semibold text-text-primary">Codebase map</h2>
+        {/* <h2 className="text-lg font-semibold text-text-primary">Codebase map</h2> */}
 
         {repos.length > 1 ? (
           <select

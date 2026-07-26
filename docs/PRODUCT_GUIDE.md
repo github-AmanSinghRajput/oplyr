@@ -15,7 +15,7 @@ If someone reads one document to understand Oplyr, this should be that document.
 
 ## 2. What Oplyr Is
 
-Oplyr is a desktop-first, voice-first AI coding workspace.
+Oplyr is a desktop-first, voice-native AI coding workspace.
 
 It lets a developer:
 
@@ -96,7 +96,7 @@ The differentiation is not just "voice."
 
 Oplyr becomes distinctive when it combines:
 
-1. voice-first interaction
+1. voice-native interaction
 2. real local execution against the user's machine and repo
 3. project/workspace boundaries
 4. approval before mutation
@@ -324,6 +324,6 @@ Until beta and launch quality are strong, Oplyr should resist:
 
 Oplyr is becoming:
 
-`a trustworthy voice-first coding workspace with real local execution, approval-gated changes, provider flexibility, and a long-term path into developer memory and immersive tooling.`
+`a trustworthy voice-native coding workspace with real local execution, approval-gated changes, provider flexibility, and a long-term path into developer memory and immersive tooling.`
 
 That should be the lens for product, design, and engineering decisions.

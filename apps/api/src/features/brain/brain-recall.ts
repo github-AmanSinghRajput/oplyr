@@ -58,6 +58,14 @@ export interface BrainRecallContext {
   isolatedProjectKeys: Set<string>;
   /** When the current project is isolated, no other project's atoms may be recalled into it. */
   currentProjectIsolated: boolean;
+  /**
+   * The user is explicitly asking to recall past work (a recall phrase, or they named a past
+   * project). When set, cross-project memory clears the same low bar as this project's memory, so
+   * old-project context actually surfaces instead of staying behind the strict cross-project gate.
+   */
+  explicitRecall?: boolean;
+  /** Cross-project keys the query names directly — always surfaced at the same-project bar + ranked up. */
+  namedProjectKeys?: Set<string>;
 }
 
 interface ScoredCandidate {
@@ -88,8 +96,19 @@ export function buildBrainRecallBundle(
   for (const candidate of eligible) {
     const crossProject =
       candidate.atom.scope === 'project' && candidate.atom.projectKey !== context.currentProjectKey;
+    // A directly-named past project (e.g. the user said "ragfuse") is treated like the current
+    // project: it clears the low bar and gets a ranking boost so it leads the results.
+    const named = Boolean(
+      crossProject &&
+      candidate.atom.projectKey &&
+      context.namedProjectKeys?.has(candidate.atom.projectKey)
+    );
     const relevance = relevanceScore(candidate, queryTokens, context.queryEmbedding);
-    const threshold = crossProject ? CROSS_PROJECT_THRESHOLD : SAME_PROJECT_THRESHOLD;
+    // Cross-project memory normally clears a stricter bar. When the user explicitly asks to recall
+    // past work — or names the project outright — drop it to the same-project bar.
+    const relaxCross = context.explicitRecall || named;
+    const threshold =
+      crossProject && !relaxCross ? CROSS_PROJECT_THRESHOLD : SAME_PROJECT_THRESHOLD;
     if (relevance < threshold) {
       continue;
     }
@@ -101,7 +120,8 @@ export function buildBrainRecallBundle(
         relevance +
         candidate.atom.salience * 0.1 +
         candidate.atom.confidence * 0.08 +
-        recencyScore(candidate.atom.lastSeenAt) * 0.08
+        recencyScore(candidate.atom.lastSeenAt) * 0.08 +
+        (named ? 0.15 : 0)
     });
   }
 

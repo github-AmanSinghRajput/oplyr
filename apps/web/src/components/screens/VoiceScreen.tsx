@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Mic, Square, Send, Check } from 'lucide-react';
+import { Mic, Square, Send, Check, StopCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { VoiceWaveform } from '@/components/voice/VoiceWaveform';
 import { TypingDots } from '@/components/voice/TypingDots';
@@ -40,6 +40,8 @@ interface VoiceScreenProps {
   userName?: string | null;
   onStart: () => void;
   onStopAndSend: () => void;
+  /** Abort the agent while it's working on a voice turn (the "stop" the mic can't do once recording ends). */
+  onStopResponse: () => void;
   autoSend: boolean;
   onToggleAutoSend: () => void;
   pendingTranscript: string;
@@ -71,6 +73,7 @@ export function VoiceScreen({
   userName,
   onStart,
   onStopAndSend,
+  onStopResponse,
   autoSend,
   onToggleAutoSend,
   pendingTranscript,
@@ -89,9 +92,8 @@ export function VoiceScreen({
 
   const mode = isRecording ? 'recording' : voiceState === 'speaking' ? 'speaking' : 'idle';
   // The agent turn (shared with chat) is the real "working" signal — a turn started from chat also
-  // lights up voice. Mic is disabled while a turn runs so only one request is ever in flight.
+  // lights up voice. While a turn runs the mic becomes a Stop button so you can abort the response.
   const isWorking = agentWorking;
-  const busy = agentWorking;
   const replyText = aiReply?.text?.trim() ?? '';
   const showResponseBlock = Boolean(aiReply && replyText) || isWorking;
 
@@ -142,17 +144,28 @@ export function VoiceScreen({
             size="lg"
             className={cn(
               'rounded-full h-16 w-16 p-0 cursor-pointer',
-              isRecording ? 'bg-danger hover:bg-danger/90' : 'bg-accent hover:bg-accent/90',
+              isRecording || agentWorking
+                ? 'bg-danger hover:bg-danger/90'
+                : 'bg-accent hover:bg-accent/90',
               'text-background'
             )}
-            disabled={busy || !audioAvailable}
-            onClick={isRecording ? onStopAndSend : onStart}
-            aria-label={isRecording ? 'Stop and send' : 'Tap to speak'}
+            // Enabled while the agent works so you can STOP it; only needs the mic to START a turn.
+            disabled={!isRecording && !agentWorking && !audioAvailable}
+            onClick={isRecording ? onStopAndSend : agentWorking ? onStopResponse : onStart}
+            aria-label={
+              isRecording ? 'Stop and send' : agentWorking ? 'Stop response' : 'Tap to speak'
+            }
           >
-            {isRecording ? <Square size={22} /> : <Mic size={22} />}
+            {isRecording ? (
+              <Square size={22} />
+            ) : agentWorking ? (
+              <StopCircle size={22} />
+            ) : (
+              <Mic size={22} />
+            )}
           </Button>
         </motion.div>
-        {isRecording && (
+        {isRecording ? (
           <Button
             variant="outline"
             className="rounded-full h-10 cursor-pointer"
@@ -160,7 +173,15 @@ export function VoiceScreen({
           >
             Stop &amp; send
           </Button>
-        )}
+        ) : agentWorking ? (
+          <Button
+            variant="outline"
+            className="rounded-full h-10 cursor-pointer"
+            onClick={onStopResponse}
+          >
+            Stop
+          </Button>
+        ) : null}
       </div>
 
       {reviewing ? (

@@ -286,7 +286,12 @@ function buildWriteExecutionPrompt(
     .join('\n');
 }
 
-async function runCodexCommand(args: string[], cwd: string, timeoutMs = 10 * 60 * 1000) {
+async function runCodexCommand(
+  args: string[],
+  cwd: string,
+  timeoutMs = 10 * 60 * 1000,
+  signal?: AbortSignal
+) {
   const startedAt = Date.now();
   const command = args[0] ?? 'unknown';
   logger.info('codex.command.started', { command, cwd });
@@ -304,11 +309,13 @@ async function runCodexCommand(args: string[], cwd: string, timeoutMs = 10 * 60 
     let stdout = '';
     let stderr = '';
     let settled = false;
+    let abortListener: (() => void) | null = null;
 
     const settle = (fn: () => void) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      if (abortListener && signal) signal.removeEventListener('abort', abortListener);
       fn();
     };
 
@@ -347,6 +354,32 @@ async function runCodexCommand(args: string[], cwd: string, timeoutMs = 10 * 60 
       });
     });
 
+    // Stop button / client disconnect → kill the running codex process so the model actually stops.
+    abortListener = () => {
+      settle(() => {
+        try {
+          child.kill('SIGTERM');
+        } catch {
+          /* already gone */
+        }
+        setTimeout(() => {
+          try {
+            child.kill('SIGKILL');
+          } catch {
+            /* already gone */
+          }
+        }, 1500);
+        reject(createAbortError());
+      });
+    };
+    if (signal) {
+      if (signal.aborted) {
+        abortListener();
+      } else {
+        signal.addEventListener('abort', abortListener, { once: true });
+      }
+    }
+
     child.on('close', (code) => {
       settle(() => {
         if (code === 0) {
@@ -377,6 +410,7 @@ async function runCodexPrompt(options: {
   prompt: string;
   outputSchema?: unknown;
   executionContext?: { surface: 'voice' | 'text'; intent: 'discussion' | 'write' };
+  signal?: AbortSignal;
 }) {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'oplyr-'));
   const outputFile = path.join(tempDir, 'last-message.txt');
@@ -414,7 +448,7 @@ async function runCodexPrompt(options: {
   args.push(options.prompt);
 
   try {
-    await runCodexCommand(args, options.cwd);
+    await runCodexCommand(args, options.cwd, undefined, options.signal);
     const raw = (await fs.readFile(outputFile, 'utf8')).trim();
     if (!raw) {
       throw new Error('Codex returned an empty response.');
@@ -791,7 +825,7 @@ export async function generateAssistantReply(
   userText: string,
   history: ChatMessage[],
   workspace: WorkspaceState,
-  options?: { voiceTurnId?: string }
+  options?: { voiceTurnId?: string; signal?: AbortSignal }
 ) {
   await assertCodexReady();
   const cwd = resolveAssistantCwd(workspace);
@@ -800,6 +834,7 @@ export async function generateAssistantReply(
     cwd,
     sandbox: 'read-only',
     prompt: buildReadOnlyPrompt(userText, history, workspace),
+    signal: options?.signal,
     executionContext: {
       surface: options?.voiceTurnId ? 'voice' : 'text',
       intent: 'discussion'
@@ -975,7 +1010,7 @@ export async function decideWriteIntent(
   userText: string,
   history: ChatMessage[],
   workspace: WorkspaceState,
-  options?: { voiceTurnId?: string }
+  options?: { voiceTurnId?: string; signal?: AbortSignal }
 ) {
   await assertCodexReady();
   const cwd = workspace.projectRoot ?? getRootDir();
@@ -1018,6 +1053,7 @@ export async function decideWriteIntent(
     sandbox: 'read-only',
     prompt: buildWriteDecisionPrompt(userText, history, workspace),
     outputSchema: schema,
+    signal: options?.signal,
     executionContext: {
       surface: options?.voiceTurnId ? 'voice' : 'text',
       intent: 'write'
@@ -1549,7 +1585,7 @@ export async function executeApprovedWrite(
   approval: PendingApproval,
   history: ChatMessage[],
   workspace: WorkspaceState,
-  options?: { voiceTurnId?: string }
+  options?: { voiceTurnId?: string; signal?: AbortSignal }
 ) {
   await assertCodexReady();
   const startedAt = Date.now();
@@ -1557,6 +1593,7 @@ export async function executeApprovedWrite(
     cwd: approval.projectRoot,
     sandbox: 'workspace-write',
     prompt: buildWriteExecutionPrompt(approval, history, workspace),
+    signal: options?.signal,
     executionContext: {
       surface: options?.voiceTurnId ? 'voice' : 'text',
       intent: 'write'

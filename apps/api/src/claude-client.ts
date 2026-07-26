@@ -82,7 +82,12 @@ function execClaudeCommand(args: string[], cwd: string) {
   });
 }
 
-function execClaudeCommandWithStdin(args: string[], cwd: string, stdinData: string) {
+function execClaudeCommandWithStdin(
+  args: string[],
+  cwd: string,
+  stdinData: string,
+  signal?: AbortSignal
+) {
   return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
     const startedAt = Date.now();
     logger.info('claude.command.started', {
@@ -97,7 +102,9 @@ function execClaudeCommandWithStdin(args: string[], cwd: string, stdinData: stri
         cwd,
         env: agentSpawnEnv(),
         timeout: 10 * 60 * 1000,
-        maxBuffer: 1024 * 1024 * 12
+        maxBuffer: 1024 * 1024 * 12,
+        // Stop button / client disconnect aborts this signal → execFile kills the claude process.
+        signal
       },
       (error, stdout, stderr) => {
         if (error) {
@@ -539,7 +546,7 @@ export async function generateClaudeReply(
   userText: string,
   history: ChatMessage[],
   workspace: WorkspaceState,
-  options?: { voiceTurnId?: string }
+  options?: { voiceTurnId?: string; signal?: AbortSignal }
 ) {
   await assertClaudeReady();
   const cwd = resolveAssistantCwd(workspace);
@@ -548,6 +555,7 @@ export async function generateClaudeReply(
     cwd,
     prompt: buildReadOnlyPrompt(userText, history, workspace),
     allowedTools: 'Read',
+    signal: options?.signal,
     executionContext: {
       surface: options?.voiceTurnId ? 'voice' : 'text',
       intent: 'discussion'
@@ -860,7 +868,7 @@ export async function decideClaudeWriteIntent(
   userText: string,
   history: ChatMessage[],
   workspace: WorkspaceState,
-  options?: { voiceTurnId?: string; onActivity?: (activity: string) => void }
+  options?: { voiceTurnId?: string; onActivity?: (activity: string) => void; signal?: AbortSignal }
 ) {
   await assertClaudeReady();
   const cwd = workspace.projectRoot ?? getRootDir();
@@ -885,6 +893,7 @@ export async function decideClaudeWriteIntent(
     prompt: buildWriteDecisionPrompt(userText, history, workspace),
     allowedTools: 'Read',
     outputSchema: schema,
+    signal: options?.signal,
     onActivityUpdate: options?.onActivity,
     executionContext: {
       surface: options?.voiceTurnId ? 'voice' : 'text',
@@ -939,7 +948,7 @@ export async function executeClaudeApprovedWrite(
   approval: PendingApproval,
   history: ChatMessage[],
   workspace: WorkspaceState,
-  options?: { voiceTurnId?: string; onActivity?: (activity: string) => void }
+  options?: { voiceTurnId?: string; onActivity?: (activity: string) => void; signal?: AbortSignal }
 ) {
   await assertClaudeReady();
   const startedAt = Date.now();
@@ -948,6 +957,7 @@ export async function executeClaudeApprovedWrite(
     cwd: approval.projectRoot,
     prompt: buildWriteExecutionPrompt(approval, history, workspace),
     allowedTools: 'Read,Edit,Bash',
+    signal: options?.signal,
     onActivityUpdate: options?.onActivity,
     executionContext: {
       surface: options?.voiceTurnId ? 'voice' : 'text',
@@ -972,6 +982,7 @@ async function runClaudePrompt(options: {
   allowedTools: string;
   outputSchema?: unknown;
   executionContext?: { surface: 'voice' | 'text'; intent: 'discussion' | 'write' };
+  signal?: AbortSignal;
 }) {
   const args = ['--print', '-', '--allowedTools', options.allowedTools, '--output-format', 'json'];
 
@@ -984,7 +995,12 @@ async function runClaudePrompt(options: {
     if (executionSettings?.model) {
       args.push('--model', executionSettings.model);
     }
-    const { stdout } = await execClaudeCommandWithStdin(args, options.cwd, options.prompt);
+    const { stdout } = await execClaudeCommandWithStdin(
+      args,
+      options.cwd,
+      options.prompt,
+      options.signal
+    );
     const trimmed = stdout.trim();
     if (!trimmed) {
       throw new Error('Claude Code returned an empty response.');

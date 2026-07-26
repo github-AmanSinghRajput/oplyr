@@ -214,11 +214,22 @@ login-free download).
 
 ---
 
-## Quick status
+## Quick status (updated 2026-07 — shipping 0.2.2)
 
-- Phase 0: **you** — pay Apple, make cert + app-specific password.
-- Phase 1: not started — the real gate (packaged runtime not wired).
-- Phase 2: not started — no electron-builder config yet; icon pipeline defined here.
-- Phases 3–4: blocked on 1–2.
-- Phase 5: `/download` page + event logging done; invite-email + wiring pending.
-- Phase 6: documented; build post-public.
+The hard parts below are DONE. This file is now background/reference; the day-to-day release runbook
+lives in **[`releases/README.md`](./releases/README.md)** (with the exact commands).
+
+- Phase 0 — ✅ Apple Developer account active; Developer ID cert + app-specific password in place.
+- Phase 1 — ✅ Packaged app runs on-device: forked API, STT binary, PATH fix, native modules.
+- Phase 2 — ✅ electron-builder config + icon + esbuild API bundle, all validated.
+- Phases 3–4 — ✅ Signed, **notarized, and stapled**; shipping via DMG (gated) + GitHub zip auto-update.
+- Phase 5 — ✅ Website `/download`, invite gate, and emailed `/get` link live.
+- Phase 6 — Homebrew / Mac App Store: still post-public, unbuilt.
+
+### Two gotchas learned the hard way (not obvious from the phases above)
+
+- **Don't set `CSC_NAME`** to the full `"Developer ID Application: …"` string — electron-builder auto-
+  selects the cert from the keychain, and the prefixed name trips its validation.
+- **electron-builder notarizes the `.app`, not the DMG wrapper.** After `npm run dist` you must still
+  `codesign` → `notarytool submit` → `stapler staple` the DMG by hand. And quit the installed
+  `/Applications/Oplyr.app` before `dev:desktop` — they both bind `:8787`.

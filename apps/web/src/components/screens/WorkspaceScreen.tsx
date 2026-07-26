@@ -1,4 +1,4 @@
-import { FolderOpen, Shield, FileCheck, AlertTriangle, RotateCcw } from 'lucide-react';
+import { FolderOpen, Shield, FileCheck, AlertTriangle, RotateCcw, Eraser } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -11,10 +11,12 @@ interface WorkspaceScreenProps {
   workspace: WorkspaceState | null;
   canBrowseProjectFolder: boolean;
   isResetting: boolean;
+  isClearingChat: boolean;
   onProjectInputChange: (value: string) => void;
   onBrowseProjectFolder: () => void;
   onSaveProject: () => void;
   onToggleWriteAccess: (enabled: boolean) => void;
+  onClearChat: () => void;
   onResetApp: () => void;
 }
 
@@ -24,10 +26,12 @@ export function WorkspaceScreen({
   workspace,
   canBrowseProjectFolder,
   isResetting,
+  isClearingChat,
   onProjectInputChange,
   onBrowseProjectFolder,
   onSaveProject,
   onToggleWriteAccess,
+  onClearChat,
   onResetApp
 }: WorkspaceScreenProps) {
   return (
@@ -142,6 +146,32 @@ export function WorkspaceScreen({
       </div>
 
       <Separator />
+
+      {/* Clear chat — a light, non-destructive reset that KEEPS the Brain. */}
+      <div className="rounded-[var(--radius-panel)] border border-border bg-surface-1 p-5">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <Eraser size={16} className="text-text-tertiary mt-0.5 shrink-0" />
+            <div>
+              <h3 className="text-sm font-semibold text-text-primary">Clear chat</h3>
+              <p className="text-xs text-text-secondary mt-1">
+                Wipes the current conversation, diffs, and pending approvals — but keeps your Brain
+                memory. Handy when switching projects: start a fresh chat while Oplyr still
+                remembers what you worked on before.
+              </p>
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            disabled={isClearingChat}
+            onClick={onClearChat}
+            className="shrink-0"
+          >
+            <Eraser size={14} className="mr-1.5" />
+            {isClearingChat ? 'Clearing…' : 'Clear chat'}
+          </Button>
+        </div>
+      </div>
 
       {/* Danger zone */}
       <div className="rounded-[var(--radius-panel)] border border-danger/30 bg-danger-muted/30 p-5">

@@ -300,6 +300,24 @@ export function AppShell() {
     startTransition(() => setActiveScreen('workspace'));
   }, [chat, settings, setActiveScreen]);
 
+  // Clear chat only — wipes the conversation, diffs, and approvals but KEEPS the Brain, so memory
+  // carries across a context switch (clear chat on project A → recall it later from project B).
+  const [clearingChat, setClearingChat] = useState(false);
+  const handleClearChat = useCallback(async () => {
+    if (clearingChat) return;
+    setClearingChat(true);
+    try {
+      await service.clearLogs();
+      chat.resetChatState();
+      await refreshStatus();
+      pushToast('success', 'Chat cleared', 'Your Brain memory is untouched.');
+    } catch {
+      pushToast('error', 'Could not clear chat', 'Please try again.');
+    } finally {
+      setClearingChat(false);
+    }
+  }, [clearingChat, service, chat, refreshStatus, pushToast]);
+
   const handleReviewApprove = useCallback(async () => {
     const approved = await handleApprove();
     if (!approved) return;
@@ -340,14 +358,26 @@ export function AppShell() {
 
   useKeyboardShortcuts(setActiveScreen);
 
-  const chatHistoryLoadedRef = useRef(false);
+  // Chat history is per connected folder. Load it on first status, and RELOAD whenever the project
+  // changes — clearing the previous folder's messages from the UI first — so switching folders shows
+  // that folder's own conversation (the Brain stays global and is unaffected).
+  const loadedChatProjectRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
-    if (chatHistoryLoadedRef.current) return;
-    chatHistoryLoadedRef.current = true;
+    if (!status) return;
+    const project = status.workspace.projectRoot ?? null;
+    if (loadedChatProjectRef.current === project) return;
+    const isInitial = loadedChatProjectRef.current === undefined;
+    loadedChatProjectRef.current = project;
+    if (!isInitial) {
+      chat.resetChatState();
+    }
     void chat.loadLogs();
-  }, [chat]);
+  }, [status, chat]);
 
   const displayName = status?.appSettings.displayName ?? null;
+  // Agents connected in the app — the set the user can @mention in Agentic Chat.
+  const connectedAgentIds =
+    status?.assistantProviders.providers.filter((p) => p.appConnected).map((p) => p.id) ?? [];
   const voiceState = getVoiceState(status);
   // "Agent busy" = a turn is in flight: a chat reply is streaming, or the voice session is
   // thinking/responding. While busy we block switching the active agent, model, or reasoning effort
@@ -615,6 +645,7 @@ export function AppShell() {
             workspace={status?.workspace ?? null}
             canBrowseProjectFolder={Boolean(window.desktopShell?.pickProjectFolder)}
             isResetting={settings.busyLabel === 'Resetting Oplyr...'}
+            isClearingChat={clearingChat}
             onProjectInputChange={setProjectInput}
             onBrowseProjectFolder={() => {
               if (window.desktopShell?.pickProjectFolder) {
@@ -627,6 +658,7 @@ export function AppShell() {
             }}
             onSaveProject={() => void settings.handleSaveProject(projectInput)}
             onToggleWriteAccess={(enabled) => void settings.handleToggleWriteAccess(enabled)}
+            onClearChat={() => void handleClearChat()}
             onResetApp={() => void handleResetApp()}
           />
         );
@@ -648,6 +680,10 @@ export function AppShell() {
             userName={displayName}
             onStart={voice.onStart}
             onStopAndSend={voice.onStopAndSend}
+            onStopResponse={() => {
+              chat.abortActiveChatStream();
+              void refreshStatus();
+            }}
             autoSend={preferences.autoSendVoice}
             onToggleAutoSend={() => setPreference('autoSendVoice', !preferences.autoSendVoice)}
             pendingTranscript={voice.pendingTranscript}
@@ -674,6 +710,7 @@ export function AppShell() {
             onRemoveAttachment={chat.handleRemoveDraftAttachment}
             onStartVoice={() => setActiveScreen('voice')}
             onCancelStreaming={chat.abortActiveChatStream}
+            mentionAgents={connectedAgentIds}
           />
         );
       case 'shell':

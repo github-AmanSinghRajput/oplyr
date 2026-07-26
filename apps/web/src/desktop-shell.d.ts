@@ -19,6 +19,9 @@ export type DesktopUpdateStatus =
   | { state: 'error'; message: string };
 
 declare global {
+  // Injected by Vite (see vite.config.ts `define`) — the build-time app version.
+  const __APP_VERSION__: string;
+
   interface Window {
     desktopShell?: {
       platform: string;

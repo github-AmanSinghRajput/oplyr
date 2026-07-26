@@ -38,6 +38,27 @@ export function setBrainEventEmitter(emitter: (event: BrainUpdateEvent) => void)
   brainEventEmitter = emitter;
 }
 
+// Phrases that signal the user wants to pull in past / other-project work, so cross-project memory
+// clears the same low bar as this project's memory (the "recall it like a human" case).
+const EXPLICIT_RECALL_RE =
+  /\b(recall|previously|earlier|used to|(?:other|another|previous|past|last|earlier)\s+project)\b/i;
+
+/** Human label for a project key (its last path segment), used to match the query against it. */
+function projectLabel(projectKey: string): string {
+  const segment = projectKey.split(/[\\/]/).filter(Boolean).pop() ?? projectKey;
+  return segment.trim().toLowerCase();
+}
+
+/** True when the query names a project by its folder label as a whole word (e.g. "ragfuse"). */
+function queryNamesProject(query: string, projectKey: string): boolean {
+  const label = projectLabel(projectKey);
+  if (label.length < 3) {
+    return false;
+  }
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`\\b${escaped}\\b`, 'i').test(query);
+}
+
 const defaultComplete: BrainCompletionFn = async ({ prompt, workspace }) => {
   const { text } = await generateAssistantReply(prompt, [], workspace);
   return text;
@@ -122,11 +143,24 @@ export class BrainService {
 
     const queryEmbedding = await this.embedOne(input.query);
 
+    // Explicit recall intent: either the query names another project that has memories, or it uses a
+    // recall phrase. When set, cross-project memory is surfaced at the same low bar as this project's.
+    const namedProjectKeys = new Set<string>();
+    for (const candidate of candidates) {
+      const key = candidate.atom.projectKey;
+      if (key && key !== projectKey && queryNamesProject(input.query, key)) {
+        namedProjectKeys.add(key);
+      }
+    }
+    const explicitRecall = namedProjectKeys.size > 0 || EXPLICIT_RECALL_RE.test(input.query);
+
     return buildBrainRecallBundle(input.query, candidates, settings, {
       currentProjectKey: projectKey,
       queryEmbedding,
       isolatedProjectKeys: new Set(isolatedKeys),
-      currentProjectIsolated: projectSettings.isolate
+      currentProjectIsolated: projectSettings.isolate,
+      explicitRecall,
+      namedProjectKeys
     });
   }
 

@@ -3,6 +3,7 @@ import {
   type DragEvent,
   type FormEvent,
   type KeyboardEvent,
+  useLayoutEffect,
   useRef,
   useState
 } from 'react';
@@ -11,7 +12,17 @@ import { cn } from '@/lib/cn';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { AttachmentChip } from './AttachmentChip';
-import type { ChatAttachment } from '@/containers/voice-console/lib/types';
+import { ProviderLogo } from '@/components/providers/ProviderLogo';
+import type { AssistantProviderId, ChatAttachment } from '@/containers/voice-console/lib/types';
+
+// The composer grows with its content up to this height, then scrolls internally.
+const MAX_TEXTAREA_PX = 160;
+
+const AGENT_LABEL: Record<AssistantProviderId, string> = {
+  codex: 'Codex',
+  claude: 'Claude',
+  gemini: 'Gemini'
+};
 
 interface ChatComposerProps {
   value: string;
@@ -24,6 +35,8 @@ interface ChatComposerProps {
   draftAttachments: ChatAttachment[];
   disabled?: boolean;
   isStreaming?: boolean;
+  /** Connected agents the user can @mention in the room (Agentic Chat). */
+  mentionAgents?: AssistantProviderId[];
 }
 
 export function ChatComposer({
@@ -36,13 +49,73 @@ export function ChatComposer({
   onCancelStreaming,
   draftAttachments,
   disabled,
-  isStreaming
+  isStreaming,
+  mentionAgents = []
 }: ChatComposerProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [isDragActive, setIsDragActive] = useState(false);
 
+  // @mention autocomplete: `mention` tracks the token being typed (query + its start index).
+  const [mention, setMention] = useState<{ query: string; start: number } | null>(null);
+  const [mentionIndex, setMentionIndex] = useState(0);
+  const suggestions = mention
+    ? mentionAgents.filter((id) => id.startsWith(mention.query.toLowerCase()))
+    : [];
+  const mentionOpen = suggestions.length > 0;
+
+  // A mention is "open" when the caret sits right after a `@word` at a word boundary.
+  const updateMention = (text: string, caret: number) => {
+    const before = text.slice(0, caret);
+    const match = before.match(/(?:^|\s)@(\w*)$/);
+    if (match) {
+      setMention({ query: match[1] ?? '', start: caret - (match[1] ?? '').length - 1 });
+      setMentionIndex(0);
+    } else {
+      setMention(null);
+    }
+  };
+
+  const applyMention = (agentId: AssistantProviderId) => {
+    if (!mention) return;
+    const caret = textareaRef.current?.selectionStart ?? value.length;
+    const next = `${value.slice(0, mention.start)}@${agentId} ${value.slice(caret)}`;
+    onChange(next);
+    setMention(null);
+    // Restore focus + drop the caret just after the inserted "@agent ".
+    const nextCaret = mention.start + agentId.length + 2;
+    requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (textarea) {
+        textarea.focus();
+        textarea.setSelectionRange(nextCaret, nextCaret);
+      }
+    });
+  };
+
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (mentionOpen) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setMentionIndex((i) => (i + 1) % suggestions.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setMentionIndex((i) => (i - 1 + suggestions.length) % suggestions.length);
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        applyMention(suggestions[mentionIndex]!);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setMention(null);
+        return;
+      }
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       e.currentTarget.form?.requestSubmit();
@@ -56,15 +129,18 @@ export function ChatComposer({
     }
   };
 
-  const resizeTextarea = () => {
+  // Auto-grow the textarea with its content up to MAX_TEXTAREA_PX, then scroll inside. Runs on every
+  // value change so it also resyncs after send (clear), paste, and @mention insertion — not just typing.
+  useLayoutEffect(() => {
     const textarea = textareaRef.current;
     if (!textarea) return;
-    textarea.style.height = '0px';
-    textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`;
-  };
+    textarea.style.height = 'auto';
+    textarea.style.height = `${Math.min(textarea.scrollHeight, MAX_TEXTAREA_PX)}px`;
+  }, [value]);
 
   const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
-    const files = Array.from(event.clipboardData.files ?? []);
+    // Only intercept file pastes (attachments). Text pastes fall through to the native behavior.
+    const files = Array.from(event.clipboardData?.files ?? []);
     if (files.length === 0) return;
     event.preventDefault();
     onAttachFiles(files);
@@ -111,22 +187,51 @@ export function ChatComposer({
 
         <div className="flex items-end gap-2">
           <div className="flex-1 relative">
+            {mentionOpen && (
+              <div className="absolute bottom-full left-0 mb-1 w-60 overflow-hidden rounded-[var(--radius-control)] border border-border bg-surface-1 shadow-lg z-20">
+                {suggestions.map((id, i) => (
+                  <button
+                    key={id}
+                    type="button"
+                    // onMouseDown (not onClick) so the textarea doesn't blur before we insert.
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      applyMention(id);
+                    }}
+                    className={cn(
+                      'flex w-full items-center gap-2 px-3 py-2 text-left text-sm',
+                      i === mentionIndex
+                        ? 'bg-accent-muted text-accent'
+                        : 'text-text-primary hover:bg-surface-2'
+                    )}
+                  >
+                    <ProviderLogo providerId={id} size="sm" />
+                    <span className="font-medium">@{id}</span>
+                    <span className="ml-auto text-xs text-text-tertiary">{AGENT_LABEL[id]}</span>
+                  </button>
+                ))}
+              </div>
+            )}
             <textarea
               ref={textareaRef}
               className={cn(
                 'w-full resize-none rounded-[var(--radius-control)] bg-surface-1 border border-border',
                 'px-3 py-2.5 text-sm text-text-primary placeholder:text-text-tertiary',
                 'focus:outline-none focus:border-accent-border focus:ring-1 focus:ring-accent-border',
-                'min-h-[40px] max-h-[160px]'
+                'min-h-[40px] max-h-[160px] overflow-y-auto'
               )}
               disabled={disabled}
               onChange={(e) => {
                 onChange(e.target.value);
-                resizeTextarea();
+                updateMention(e.target.value, e.target.selectionStart ?? e.target.value.length);
               }}
               onKeyDown={handleKeyDown}
               onPaste={handlePaste}
-              placeholder="Type a message..."
+              placeholder={
+                mentionAgents.length > 1
+                  ? 'Message… @mention an agent to address it'
+                  : 'Type a message...'
+              }
               rows={1}
               value={value}
             />

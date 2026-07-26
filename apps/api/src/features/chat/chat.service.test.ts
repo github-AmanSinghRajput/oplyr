@@ -85,6 +85,8 @@ test('ChatService returns a normal reply in read-only mode and persists both mes
   const runtime = createChatRuntime(createWorkspaceState());
 
   const service = new ChatService(repository as never, approvals as never, runtime as never, {
+    getConnectedProviderIds: async () => [],
+    streamAssistantReplyFor: async () => ({ text: 'unused' }),
     generateAssistantReply: async () => ({ text: 'Read-only answer' }),
     streamAssistantReply: async () => ({ text: 'unused' }),
     decideWriteIntent: async () => {
@@ -122,6 +124,8 @@ test('ChatService creates an approval when write intent is proposed', async () =
   );
 
   const service = new ChatService(repository as never, approvals as never, runtime as never, {
+    getConnectedProviderIds: async () => [],
+    streamAssistantReplyFor: async () => ({ text: 'unused' }),
     generateAssistantReply: async () => ({ text: 'unused' }),
     streamAssistantReply: async () => ({ text: 'unused' }),
     decideWriteIntent: async () => ({
@@ -171,6 +175,8 @@ test('ChatService records approval decisions with workspace and conversation lin
   });
 
   const service = new ChatService(repository as never, approvals as never, runtime as never, {
+    getConnectedProviderIds: async () => [],
+    streamAssistantReplyFor: async () => ({ text: 'unused' }),
     generateAssistantReply: async () => ({ text: 'unused' }),
     streamAssistantReply: async () => ({ text: 'unused' }),
     decideWriteIntent: async () => ({
@@ -247,6 +253,8 @@ test('ChatService.rejectPending clears lastDiff so the review screen is not stal
   let collectCalled = false;
   let revertCalled = false;
   const service = new ChatService(repository as never, approvals as never, runtime as never, {
+    getConnectedProviderIds: async () => [],
+    streamAssistantReplyFor: async () => ({ text: 'unused' }),
     generateAssistantReply: async () => ({ text: 'unused' }),
     streamAssistantReply: async () => ({ text: 'unused' }),
     decideWriteIntent: async () => ({
@@ -314,6 +322,8 @@ test('ChatService.approvePending rejects with 403 when write access is disabled 
 
   let executeCalled = false;
   const service = new ChatService(repository as never, approvals as never, runtime as never, {
+    getConnectedProviderIds: async () => [],
+    streamAssistantReplyFor: async () => ({ text: 'unused' }),
     generateAssistantReply: async () => ({ text: 'unused' }),
     streamAssistantReply: async () => ({ text: 'unused' }),
     decideWriteIntent: async () => ({
@@ -347,4 +357,41 @@ test('ChatService.approvePending rejects with 403 when write access is disabled 
 
   assert.equal(executeCalled, false);
   assert.equal(approvals.decisions.length, 0);
+});
+
+test('Agentic Chat: @mentions route to each connected agent in order and author their replies', async () => {
+  const repository = new ChatRepositoryStub();
+  const approvals = new ApprovalRepositoryStub();
+  const runtime = createChatRuntime(createWorkspaceState());
+
+  const calls: string[] = [];
+  const service = new ChatService(repository as never, approvals as never, runtime as never, {
+    // Report both mentioned agents as connected (preserve mention order).
+    getConnectedProviderIds: async (candidates?: Array<'codex' | 'claude' | 'gemini'>) =>
+      candidates ?? [],
+    streamAssistantReplyFor: async (providerId: 'codex' | 'claude' | 'gemini') => {
+      calls.push(providerId);
+      return { text: `${providerId} says hi` };
+    },
+    generateAssistantReply: async () => ({ text: 'unused' }),
+    streamAssistantReply: async () => ({ text: 'unused' }),
+    decideWriteIntent: async () => {
+      throw new Error('The room is reply-only — no write intent.');
+    },
+    executeApprovedWrite: async () => {
+      throw new Error('The room is reply-only — no writes.');
+    },
+    collectGitDiff: async () => ({ isGitRepo: false, changedFiles: [], files: [] })
+  });
+
+  const result = await service.streamTurn('@claude @codex what do you think?', 'text');
+
+  assert.equal(result.type, 'reply');
+  // Each mentioned agent replied, in mention order.
+  assert.deepEqual(calls, ['claude', 'codex']);
+  // One user message + one authored reply per agent, in order.
+  const assistants = repository.messages.filter((message) => message.role === 'assistant');
+  assert.equal(assistants.length, 2);
+  assert.equal((assistants[0] as { authorProviderId?: string }).authorProviderId, 'claude');
+  assert.equal((assistants[1] as { authorProviderId?: string }).authorProviderId, 'codex');
 });

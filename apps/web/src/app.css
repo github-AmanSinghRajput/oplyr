@@ -66,13 +66,13 @@
 
 /* Light mode overrides */
 :root[data-theme='light'] {
-  --color-background: #f4f7fb;
-  --color-background-elevated: #ffffff;
-  --color-surface-1: #ffffff;
-  --color-surface-2: #f0f4f9;
-  --color-surface-3: #e4ebf3;
-  --color-border: rgba(88, 103, 122, 0.18);
-  --color-border-strong: rgba(79, 98, 121, 0.32);
+  --color-background: #f7efe4;
+  --color-background-elevated: #fff8ef;
+  --color-surface-1: #fffaf3;
+  --color-surface-2: #f1e6d8;
+  --color-surface-3: #e6d6c4;
+  --color-border: rgba(91, 64, 78, 0.16);
+  --color-border-strong: rgba(91, 64, 78, 0.3);
   --color-text-primary: #0f1a28;
   --color-text-secondary: #5a6a7e;
   --color-text-tertiary: #8995a6;

@@ -1,3 +1,4 @@
+import { type ReactNode } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
@@ -6,8 +7,21 @@ import '../markdown.css';
 import { CodeBlock } from './CodeBlock';
 import { AgentActivityTimeline } from './AgentActivityTimeline';
 import { MemoryChip } from './MemoryChip';
-import type { MessageEntry } from '@/containers/voice-console/lib/types';
+import { ProviderLogo } from '@/components/providers/ProviderLogo';
+import type { AssistantProviderId, MessageEntry } from '@/containers/voice-console/lib/types';
 import { formatClock } from '@/containers/voice-console/lib/helpers';
+
+// Short agent names for the room's author label (Agentic Chat).
+const AGENT_LABEL: Record<AssistantProviderId, string> = {
+  codex: 'Codex',
+  claude: 'Claude',
+  gemini: 'Gemini'
+};
+
+// react-markdown wraps fenced code in a default <pre>; CodeBlock renders its OWN <pre> wrapper, so
+// without this passthrough the block gets double-wrapped (invalid nesting + a doubled box/margins).
+// This makes CodeBlock the single source of truth for block rendering.
+const MarkdownPre = ({ children }: { children?: ReactNode }) => <>{children}</>;
 
 interface MessageBubbleProps {
   message: MessageEntry;
@@ -18,6 +32,9 @@ interface MessageBubbleProps {
   liveActivity?: string | null;
   /** Chronological log of the turn's actions, for the expandable timeline. */
   activityLog?: string[];
+  /** Show the authoring agent's logo + name (Agentic Chat room). Off on the voice screen, which has
+   *  its own agent header. */
+  showAuthor?: boolean;
 }
 
 export function MessageBubble({
@@ -25,7 +42,8 @@ export function MessageBubble({
   isStreaming,
   typedText,
   liveActivity,
-  activityLog
+  activityLog,
+  showAuthor
 }: MessageBubbleProps) {
   const isUser = message.role === 'user';
   const displayText = typedText ?? message.text;
@@ -45,6 +63,14 @@ export function MessageBubble({
           <p className="text-sm leading-relaxed whitespace-pre-wrap">{displayText}</p>
         ) : (
           <>
+            {showAuthor && message.authorProviderId ? (
+              <div className="mb-1.5 flex items-center gap-1.5">
+                <ProviderLogo providerId={message.authorProviderId} size="sm" />
+                <span className="text-[11px] font-semibold text-text-secondary">
+                  {AGENT_LABEL[message.authorProviderId]}
+                </span>
+              </div>
+            ) : null}
             <div className="md-body text-sm leading-relaxed">
               {isStreaming && !hasText ? (
                 // No text yet — surface what the agent is actually doing instead of a blank bubble.
@@ -58,7 +84,7 @@ export function MessageBubble({
                   <Markdown
                     remarkPlugins={[remarkGfm]}
                     rehypePlugins={[rehypeHighlight]}
-                    components={{ code: CodeBlock }}
+                    components={{ code: CodeBlock, pre: MarkdownPre }}
                   >
                     {displayText}
                   </Markdown>

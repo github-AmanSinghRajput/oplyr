@@ -5,8 +5,9 @@ These come AFTER the first notarized DMG ships (see `docs/DISTRIBUTION.md`). The
 
 ## Build order
 1. **Guided connect flow** (Feature A) — build first; it's a prerequisite for a useful room (you need ≥2 agents actually connected before "agents talk to each other" means anything).
-2. **Multi-agent room — conducted @mention** (Feature B1).
+2. **Multi-agent room — conducted @mention** (Feature B1). ✅ SHIPPED (backend + UI; 2026-07-22).
 3. **Multi-agent room — capped debate** (Feature B2) — opt-in, guarded, fast-follow.
+4. **Import existing agent memory** (Feature C) — onboarding wedge; deferred, documented below.
 
 Each gets its own short spec → plan → build when we start.
 
@@ -47,6 +48,29 @@ Each gets its own short spec → plan → build when we start.
 - **Hard guardrails:** read-only during the debate (no write-intent / approvals mid-argument), round cap, **Stop** aborts instantly (AbortSignal), cost cap, optional synthesis at the end. File writes happen only AFTER, when the human tells one agent to implement the agreed approach through the normal approval flow.
 - Brain captures debate turns with attribution; agreement between agents raises confidence via corroboration.
 - **Risks respected:** runaway loops, token/cost blowup, controllability — all bounded by the guardrails above. This is why we do NOT ship fully-autonomous agent↔agent.
+
+---
+
+## Feature C — Import existing agent memory (onboarding wedge)
+**Status:** deferred, documented 2026-07-22. Pick up after the current round of testing.
+
+**Idea:** on connect, import a user's EXISTING Claude Code / Codex memory into the Oplyr Brain so they never start from scratch. Kills the cold-start feeling and leans on our two real differentiators — the Brain + local-first.
+
+**Where the source data lives (verified on-disk 2026-07-22):**
+- **Claude — curated:** `<repo>/CLAUDE.md` (+ subdir `CLAUDE.md`, `@imports`) and global `~/.claude/CLAUDE.md`. **History:** `~/.claude/projects/<slugified-cwd>/<session-id>.jsonl` (one dir per project; path `/`→`-`) + `~/.claude/history.jsonl`. Config: `~/.claude.json`.
+- **Codex — curated:** `<repo>/AGENTS.md`, `~/.codex/rules`. **History/memory:** `~/.codex/history.jsonl`, session rollouts, and structured SQLite stores (`~/.codex/memories_1.sqlite`, `goals_1.sqlite`).
+
+**Build in two tiers:**
+- **Tier 1 (first — easy, high value):** parse curated files (`CLAUDE.md` project+global, `AGENTS.md` / Codex `rules`) → Brain distiller → atoms, scoped project vs global (1:1 with the Brain's existing scopes). Stable, small, curated → instant "Oplyr already knows my project".
+- **Tier 2 (deeper, opt-in):** distill recent `.jsonl` transcripts (Claude `projects/` + Codex sessions) into durable memories, selective by recency. Optionally read Codex's `memories_1.sqlite` directly.
+
+**Must-haves / caveats:**
+- **100% local** — read local files → distill locally → write local `brain.db`; never upload. On-brand; say it in the UI.
+- **Provenance** — tag imported atoms (`source: claude-md | codex-agents | imported-transcript`) so recall can say "learned from your existing setup."
+- **Consent + preview** before writing to the Brain (show which files + how many memories will be added).
+- **Brittleness** — undocumented internal paths/formats; start with the stable MD files, treat transcripts/SQLite as best-effort.
+
+**UI:** offer at the "connect a folder" onboarding step + in Settings: *"Import your existing Claude & Codex memory."*
 
 ---
 

@@ -116,7 +116,7 @@ interface CodingAssistantProvider {
     userText: string,
     history: ChatMessage[],
     workspace: WorkspaceState,
-    options?: { voiceTurnId?: string }
+    options?: { voiceTurnId?: string; signal?: AbortSignal }
   ): Promise<{ text: string }>;
   streamReply(
     userText: string,
@@ -128,13 +128,21 @@ interface CodingAssistantProvider {
     userText: string,
     history: ChatMessage[],
     workspace: WorkspaceState,
-    options?: { voiceTurnId?: string; onActivity?: (activity: string) => void }
+    options?: {
+      voiceTurnId?: string;
+      onActivity?: (activity: string) => void;
+      signal?: AbortSignal;
+    }
   ): Promise<WriteDecision>;
   executeApprovedWrite(
     approval: PendingApproval,
     history: ChatMessage[],
     workspace: WorkspaceState,
-    options?: { voiceTurnId?: string; onActivity?: (activity: string) => void }
+    options?: {
+      voiceTurnId?: string;
+      onActivity?: (activity: string) => void;
+      signal?: AbortSignal;
+    }
   ): Promise<{ text: string }>;
 }
 
@@ -345,7 +353,7 @@ export async function generateAssistantReply(
   userText: string,
   history: ChatMessage[],
   workspace: WorkspaceState,
-  options?: { voiceTurnId?: string }
+  options?: { voiceTurnId?: string; signal?: AbortSignal }
 ) {
   const provider = await getActiveProvider();
   return provider.generateReply(userText, history, workspace, options);
@@ -365,7 +373,7 @@ export async function decideWriteIntent(
   userText: string,
   history: ChatMessage[],
   workspace: WorkspaceState,
-  options?: { voiceTurnId?: string; onActivity?: (activity: string) => void }
+  options?: { voiceTurnId?: string; onActivity?: (activity: string) => void; signal?: AbortSignal }
 ) {
   const provider = await getActiveProvider();
   return provider.decideWriteIntent(userText, history, workspace, options);
@@ -375,7 +383,7 @@ export async function executeApprovedWrite(
   approval: PendingApproval,
   history: ChatMessage[],
   workspace: WorkspaceState,
-  options?: { voiceTurnId?: string; onActivity?: (activity: string) => void }
+  options?: { voiceTurnId?: string; onActivity?: (activity: string) => void; signal?: AbortSignal }
 ) {
   const provider = await getActiveProvider();
   return provider.executeApprovedWrite(approval, history, workspace, options);
@@ -430,6 +438,43 @@ async function getActiveProvider() {
     projectName: path.basename(getRootDir())
   });
   return provider;
+}
+
+/**
+ * Filter/order candidate provider ids down to the ones actually connected in the app. Used by the
+ * Agentic Chat room to route @mentions only to agents the user can really reach. Preserves the
+ * candidate order (so replies follow the mention order); with no candidates, returns all connected.
+ */
+export async function getConnectedProviderIds(
+  candidates?: AssistantProviderId[]
+): Promise<AssistantProviderId[]> {
+  const statuses = await getAssistantStatuses();
+  const connected = new Set(
+    statuses.filter((status) => status.appConnected).map((status) => status.id)
+  );
+  const ordered = candidates ?? statuses.map((status) => status.id);
+  return ordered.filter((id) => connected.has(id));
+}
+
+/** Stream a reply from a SPECIFIC agent (not just the active one) — the room addresses each @mention. */
+export async function streamAssistantReplyFor(
+  providerId: AssistantProviderId,
+  userText: string,
+  history: ChatMessage[],
+  workspace: WorkspaceState,
+  options?: StreamReplyOptions
+) {
+  const statuses = await getAssistantStatuses();
+  const status = statuses.find((entry) => entry.id === providerId);
+  const provider = providers[providerId];
+  if (!status?.appConnected) {
+    throw new AssistantClientError(
+      'auth',
+      `${provider.name} is not connected in this app.`,
+      `Connect ${provider.name} before mentioning it in Agentic Chat.`
+    );
+  }
+  return provider.streamReply(userText, history, workspace, options);
 }
 
 function resolveActiveProviderId(

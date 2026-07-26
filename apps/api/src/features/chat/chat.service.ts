@@ -13,10 +13,12 @@ import {
   decideWriteIntent,
   executeApprovedWrite,
   generateAssistantReply,
+  getConnectedProviderIds,
   revertProtectedGitChanges,
   revertWorkingTree,
   snapshotWorkingTree,
-  streamAssistantReply
+  streamAssistantReply,
+  streamAssistantReplyFor
 } from '../../assistant-client.js';
 import { AppError } from '../../lib/errors.js';
 import type {
@@ -75,10 +77,12 @@ interface ChatAssistantAdapter {
   decideWriteIntent: typeof decideWriteIntent;
   executeApprovedWrite: typeof executeApprovedWrite;
   generateAssistantReply: typeof generateAssistantReply;
+  getConnectedProviderIds: typeof getConnectedProviderIds;
   revertProtectedGitChanges?: typeof revertProtectedGitChanges;
   snapshotWorkingTree?: typeof snapshotWorkingTree;
   revertWorkingTree?: typeof revertWorkingTree;
   streamAssistantReply: typeof streamAssistantReply;
+  streamAssistantReplyFor: typeof streamAssistantReplyFor;
 }
 
 interface ChatBrainAdapter {
@@ -101,10 +105,12 @@ const defaultAssistantAdapter: ChatAssistantAdapter = {
   decideWriteIntent,
   executeApprovedWrite,
   generateAssistantReply,
+  getConnectedProviderIds,
   revertProtectedGitChanges,
   snapshotWorkingTree,
   revertWorkingTree,
-  streamAssistantReply
+  streamAssistantReply,
+  streamAssistantReplyFor
 };
 
 const defaultBrainAdapter = new BrainService();
@@ -127,7 +133,8 @@ export class ChatService {
     role: ChatMessage['role'],
     text: string,
     source: ChatSource,
-    attachments: ChatAttachment[] = []
+    attachments: ChatAttachment[] = [],
+    authorProviderId: AssistantProviderId | null = null
   ): ChatMessage {
     return {
       id: crypto.randomUUID(),
@@ -135,6 +142,7 @@ export class ChatService {
       text,
       attachments,
       source,
+      authorProviderId,
       createdAt: new Date().toISOString()
     };
   }
@@ -163,6 +171,24 @@ export class ChatService {
     signal?: AbortSignal,
     attachmentIds: string[] = []
   ): Promise<ChatTurnResult> {
+    // Agentic Chat: an @mention of a connected agent makes this a room turn — each named agent replies
+    // in sequence, seeing the ones before it. No mention → the existing single-agent flow (active agent).
+    const mentions = parseMentions(text);
+    if (mentions.length > 0) {
+      const targets = await this.assistant.getConnectedProviderIds(mentions);
+      if (targets.length > 0) {
+        return this.streamRoomTurn(
+          text,
+          source,
+          targets,
+          callbacks,
+          correlation,
+          signal,
+          attachmentIds
+        );
+      }
+    }
+
     const workspace = this.runtime.getWorkspaceState();
     const history = await this.readConversationHistory();
     const attachments = await this.attachments.listByIds(attachmentIds);
@@ -191,13 +217,14 @@ export class ChatService {
         workspace,
         // The write path is batch (plan → apply), not token-streamed — surface its phases as activity
         // so the UI shows real progress across the long edit instead of a frozen line.
-        (activity) => callbacks?.onActivity?.({ activity })
+        (activity) => callbacks?.onActivity?.({ activity }),
+        signal
       );
     }
 
-    const assistantMessage = this.toChatMessage('assistant', '', source);
-    callbacks?.onStarted?.({ userMessage, assistantMessage });
     const providerId = this.runtime.getActiveProviderId();
+    const assistantMessage = this.toChatMessage('assistant', '', source, [], providerId);
+    callbacks?.onStarted?.({ userMessage, assistantMessage });
     const memoryInput = await this.buildInputWithMemory(assistantInput, workspace, providerId);
     // Attach recall provenance before streaming so every delta snapshot carries the "used memory" chip.
     assistantMessage.memory = memoryInput.memory;
@@ -232,6 +259,80 @@ export class ChatService {
     };
   }
 
+  /**
+   * Agentic Chat room turn: reply-only. Each mentioned agent (already filtered to connected ones)
+   * replies in sequence, re-reading the room history each time so it sees the prior agents' replies
+   * and can agree with or flag them. Every reply is authored to its agent and captured to the brain
+   * with that attribution. Writes stay single-agent (the no-mention path); the room is for discussion,
+   * human-conducted — the user drives every turn.
+   */
+  private async streamRoomTurn(
+    text: string,
+    source: ChatSource,
+    targets: AssistantProviderId[],
+    callbacks?: StreamTurnCallbacks,
+    correlation?: CodexCorrelationOptions,
+    signal?: AbortSignal,
+    attachmentIds: string[] = []
+  ): Promise<ChatTurnResult> {
+    const workspace = this.runtime.getWorkspaceState();
+    const attachments = await this.attachments.listByIds(attachmentIds);
+    const userMessage = this.toChatMessage('user', text, source, toPublicAttachments(attachments));
+    const assistantInput = buildAssistantInput(text, attachments);
+
+    let lastAssistant: ChatMessage | null = null;
+    let userPersisted = false;
+
+    for (const providerId of targets) {
+      if (signal?.aborted) break;
+      // Re-read each iteration so this agent sees the user message + any earlier agents' replies,
+      // then re-author it from THIS agent's point of view (self = assistant, others = "[Name]: …").
+      const history = roomHistoryFor(providerId, await this.readConversationHistory());
+      const memoryInput = await this.buildInputWithMemory(assistantInput, workspace, providerId);
+      // Prepend the identity preamble so the agent knows who it is and speaks in the first person.
+      const roomInput = `${roomPreamble(providerId, targets)}\n\n${memoryInput.text}`;
+      const assistantMessage = this.toChatMessage('assistant', '', source, [], providerId);
+      assistantMessage.memory = memoryInput.memory;
+      callbacks?.onStarted?.({ userMessage, assistantMessage });
+
+      const reply = await this.assistant.streamAssistantReplyFor(
+        providerId,
+        roomInput,
+        history,
+        workspace,
+        {
+          signal,
+          voiceTurnId: correlation?.voiceTurnId,
+          onTextSnapshot: (snapshotText) => {
+            assistantMessage.text = snapshotText;
+            callbacks?.onDelta?.({ assistantMessage: { ...assistantMessage } });
+          },
+          onActivityUpdate: (activity) => callbacks?.onActivity?.({ activity })
+        }
+      );
+      assistantMessage.text = reply.text;
+
+      // Persist so the NEXT agent's history read includes this reply. The user message goes in once.
+      await this.persistMessages(
+        userPersisted ? [assistantMessage] : [userMessage, assistantMessage]
+      );
+      userPersisted = true;
+      this.scheduleCapture(providerId, workspace, userMessage, assistantMessage);
+      lastAssistant = assistantMessage;
+    }
+
+    // Aborted before any reply landed → still record the user message so the room isn't left empty.
+    if (!userPersisted) {
+      await this.persistMessages([userMessage]);
+    }
+
+    return {
+      type: 'reply',
+      userMessage,
+      assistantMessage: lastAssistant ?? this.toChatMessage('assistant', '', source)
+    };
+  }
+
   private async processTurnWithUserMessage(
     text: string,
     source: ChatSource,
@@ -239,7 +340,8 @@ export class ChatService {
     correlation?: CodexCorrelationOptions,
     existingHistory?: ChatMessage[],
     existingWorkspace?: ReturnType<ChatRuntimeAdapter['getWorkspaceState']>,
-    onActivity?: (activity: string) => void
+    onActivity?: (activity: string) => void,
+    signal?: AbortSignal
   ): Promise<ChatTurnResult> {
     const workspace = existingWorkspace ?? this.runtime.getWorkspaceState();
     const history = existingHistory ?? (await this.readConversationHistory());
@@ -252,7 +354,7 @@ export class ChatService {
         textWithMemory,
         history,
         workspace,
-        correlation
+        { ...correlation, signal }
       );
       const assistantMessage = this.toChatMessage('assistant', assistantReply.text, source);
       assistantMessage.memory = memoryInput.memory;
@@ -269,7 +371,8 @@ export class ChatService {
     onActivity?.('Reviewing your request and planning the changes');
     const decision = await this.assistant.decideWriteIntent(textWithMemory, history, workspace, {
       ...correlation,
-      onActivity
+      onActivity,
+      signal
     });
     logger.info('chat.write_intent.decided', {
       source,
@@ -667,6 +770,59 @@ export class ChatService {
 // question words ("how are you", "what I want is…"), so we deliberately do NOT bail on those.
 // The model's decideWriteIntent makes the precise reply-vs-propose_write call; a false positive
 // here just costs one decision pass that returns "reply".
+const MENTION_RE = /@(codex|claude|gemini)\b/gi;
+
+/** Extract @codex / @claude / @gemini from a message, in first-appearance order, de-duplicated. */
+function parseMentions(text: string): AssistantProviderId[] {
+  const found: AssistantProviderId[] = [];
+  for (const match of text.matchAll(MENTION_RE)) {
+    const id = match[1]!.toLowerCase() as AssistantProviderId;
+    if (!found.includes(id)) {
+      found.push(id);
+    }
+  }
+  return found;
+}
+
+const AGENT_NAME: Record<AssistantProviderId, string> = {
+  codex: 'Codex',
+  claude: 'Claude',
+  gemini: 'Gemini'
+};
+
+/** Tells an agent who it is in the room so it speaks in the first person (not "Codex is right"). */
+function roomPreamble(
+  providerId: AssistantProviderId,
+  participants: AssistantProviderId[]
+): string {
+  const me = AGENT_NAME[providerId];
+  const others = participants.filter((id) => id !== providerId).map((id) => AGENT_NAME[id]);
+  const roster = others.length > 0 ? ` Other agents in this room: ${others.join(', ')}.` : '';
+  return (
+    `You are ${me}, one of several AI agents in a shared chat room with the user.${roster} ` +
+    `Speak in the first person as ${me} — never refer to yourself in the third person. ` +
+    `Messages from other agents are shown prefixed like "[Claude]: …"; refer to them by name. ` +
+    `If you agree or disagree with another agent, say so plainly and add anything they missed.`
+  );
+}
+
+/**
+ * Re-author the room transcript from one agent's point of view: its own past replies stay as
+ * assistant turns ("me"); other agents' replies become labeled user-side context ("[Claude]: …") so
+ * the agent never mistakes another agent's words — or its own — for a faceless "assistant".
+ */
+function roomHistoryFor(providerId: AssistantProviderId, messages: ChatMessage[]): ChatMessage[] {
+  return messages.map((message) => {
+    if (message.role !== 'assistant') return message;
+    if (!message.authorProviderId || message.authorProviderId === providerId) return message;
+    return {
+      ...message,
+      role: 'user' as const,
+      text: `[${AGENT_NAME[message.authorProviderId]}]: ${message.text}`
+    };
+  });
+}
+
 function looksLikeWriteRequest(text: string) {
   const normalized = text.trim().toLowerCase();
   if (!normalized) {

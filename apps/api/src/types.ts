@@ -35,6 +35,8 @@ export interface ChatMessage {
   createdAt: string;
   source: ChatSource;
   attachments?: ChatAttachment[];
+  /** Which AI agent authored this assistant reply (Agentic Chat room). null/undefined = the user. */
+  authorProviderId?: AssistantProviderId | null;
   /** Present on assistant messages when recall injected memory (live-only; not persisted). */
   memory?: ChatMemoryUsage;
 }

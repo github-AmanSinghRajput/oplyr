@@ -127,6 +127,8 @@ export interface MessageEntry {
   createdAt: string;
   source: MessageSource;
   attachments?: ChatAttachment[];
+  /** Which AI agent authored this reply (Agentic Chat room). null/undefined = the user. */
+  authorProviderId?: AssistantProviderId | null;
   /** Present on assistant messages when recall injected memory into the turn. */
   memory?: ChatMemoryUsage;
 }
