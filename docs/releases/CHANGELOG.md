@@ -9,6 +9,20 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/): **Added 
 
 ---
 
+## 0.3.1 — 2026-07-27
+
+**Fixed**
+- **Provider usage loads with a single agent connected.** Codex on its own no longer shows "failed to
+  fetch" — the first cold `/status` read is retried so the meters land, so you don't need to connect a
+  second agent to see usage.
+- **Usage meters sit centered** in the top bar instead of overlapping the provider dropdown.
+
+**Changed**
+- **Packaging:** native build intermediates (`*.o` / `*.a`) are excluded from the app bundle — fixes a
+  codesign timestamp failure during the zip step and trims the download by a few MB.
+
+---
+
 ## 0.3.0 — 2026-07-26
 
 **Added**
