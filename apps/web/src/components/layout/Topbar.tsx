@@ -102,12 +102,12 @@ export function Topbar({
         </div>
 
         {/* Center: live provider usage limits (hidden on narrow windows to avoid crowding the
-            workspace label / action cluster; the full breakdown lives in Settings → Agents). */}
+            workspace label / action cluster; the full breakdown lives in Settings → Agents). In-flow
+            + flex-1 so it centers between the left/right groups without overlapping the provider
+            dropdown. */}
         {assistantReady && (
-          <div className="pointer-events-none absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 xl:block">
-            <div className="pointer-events-auto">
-              <TopbarUsageMeters usage={providerUsage} loading={providerUsageLoading} />
-            </div>
+          <div className="hidden min-w-0 flex-1 items-center justify-center px-3 xl:flex">
+            <TopbarUsageMeters usage={providerUsage} loading={providerUsageLoading} />
           </div>
         )}
 

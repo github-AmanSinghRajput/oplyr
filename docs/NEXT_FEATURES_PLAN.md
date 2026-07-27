@@ -8,6 +8,7 @@ These come AFTER the first notarized DMG ships (see `docs/DISTRIBUTION.md`). The
 2. **Multi-agent room — conducted @mention** (Feature B1). ✅ SHIPPED (backend + UI; 2026-07-22).
 3. **Multi-agent room — capped debate** (Feature B2) — opt-in, guarded, fast-follow.
 4. **Import existing agent memory** (Feature C) — onboarding wedge; deferred, documented below.
+5. **Local-network team collaboration** (Feature D) — shared room over LAN; flagship-sized, deferred, documented below.
 
 Each gets its own short spec → plan → build when we start.
 
@@ -74,6 +75,29 @@ Each gets its own short spec → plan → build when we start.
 
 ---
 
+## Feature D — Local-network team collaboration ("shared room over LAN")
+**Status:** idea captured 2026-07-27 (user's idea). Not scheduled — flagship-sized (v0.5 / v1.0 territory). Deferred.
+
+**Idea:** two people running Oplyr on the same local network pair their instances into ONE shared session/room — pair programming, mentoring, or a small mob directing AI together, locally. Extends the multi-agent room from multi-agent to multi-**human** + multi-agent. On-brand: local-first, private, no cloud relay (unlike VS Code Live Share, which is cloud-relayed).
+
+**Decision — share the ROOM, not the login.** Each participant's turns run on THEIR OWN connected agent, on THEIR OWN machine, under THEIR OWN subscription. Do NOT pool or share subscriptions/credentials.
+- **Why not pool subscriptions (the original framing):** routing one person's prompts through another's Codex/Claude account is per-seat account-sharing — almost certainly violates provider ToS, risks account bans, exposes credentials, and directly contradicts the "your accounts, your machine, your call" pillar. The shared-room model delivers ~95% of the value (everyone sees each other's turns, proposals, and diffs live) with none of that risk. A teammate without a subscription can still take part in the room using their own free/BYO agent.
+
+**Scope fork (pick for v1):**
+- **v1 (simpler):** the HOST owns the project; the guest joins the room to co-direct. Shared chat/room + proposed diffs + approvals visible to both; approvals gated by the host (or shared). Start here.
+- **v2 (harder, defer):** both edit the same repo in real time → Live-Share/CRDT-level file + diff sync and a "who approves what" model.
+
+**Technical building blocks:**
+- Each Mac already runs its own local runtime (`:8787`) — the pairing substrate exists.
+- Needs: LAN peer discovery (mDNS/Bonjour), an explicit pairing handshake with trust (a short code / QR — never auto-join strangers), an encrypted peer-to-peer channel, and real-time sync of the shared room + diffs + approvals + presence over it.
+- **Touches:** `apps/desktop` (discovery + peer transport + IPC), `apps/api` (shared-session state + sync protocol), `apps/web` (host/join UI, shared room rendering, presence).
+
+**NON-goal:** subscription/quota pooling or credential sharing (ToS + security + brand).
+
+**Positioning:** the wedge from a solo tool to a team tool — "the golden era of coding, together, locally." Differentiated: local-first, agent-native collaboration vs cloud-relayed pair tools.
+
+---
+
 ## Notes
-- Both features are **desktop-first** (PTY, IPC) — validate with `npm run dev:desktop`, not the browser.
-- No code written yet for either — this file only captures the locked decisions so they aren't forgotten.
+- These features are **desktop-first** (PTY, IPC, LAN transport) — validate with `npm run dev:desktop`, not the browser.
+- No code written yet for the deferred ones — this file only captures the decisions/ideas so they aren't forgotten.

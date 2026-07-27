@@ -190,16 +190,32 @@ export function useAppSettings(): AppSettingsHandle {
     // (seq === latest) is allowed to commit state ("latest wins").
     const seq = ++usageRequestSeq.current;
     setProviderUsageLoading(true);
-    try {
-      const next = await service.getAssistantUsage();
+
+    // The first Codex read is a ~20s cold CLI scrape; if that request drops ("Failed to fetch"), the
+    // server still finishes it and caches the result — so a short retry lands on the warm cache. This
+    // lets a single connected agent (e.g. Codex only) show usage without connecting a second one. A
+    // warm cache resolves on the first try; the gaps sum past a cold scrape.
+    const retryGapsMs = [0, 8000, 8000, 8000];
+    for (let attempt = 0; attempt < retryGapsMs.length; attempt++) {
+      if (retryGapsMs[attempt] > 0) {
+        await new Promise((resolve) => setTimeout(resolve, retryGapsMs[attempt]));
+      }
       if (seq !== usageRequestSeq.current) return;
-      setProviderUsage(next.usage);
-    } catch {
-      if (seq !== usageRequestSeq.current) return;
-      setProviderUsage(null);
-    } finally {
-      if (seq === usageRequestSeq.current) setProviderUsageLoading(false);
+      try {
+        const next = await service.getAssistantUsage();
+        if (seq !== usageRequestSeq.current) return;
+        setProviderUsage(next.usage);
+        setProviderUsageLoading(false);
+        return;
+      } catch {
+        if (seq !== usageRequestSeq.current) return;
+        // Transient — usually a dropped connection during a cold capture. Fall through and retry.
+      }
     }
+
+    if (seq !== usageRequestSeq.current) return;
+    setProviderUsage(null);
+    setProviderUsageLoading(false);
   }, [activeProviderId, service]);
 
   const initialize = useCallback(async () => {
