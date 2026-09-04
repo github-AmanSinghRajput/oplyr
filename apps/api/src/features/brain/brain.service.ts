@@ -1,15 +1,26 @@
 import crypto from 'node:crypto';
 import { gzipSync } from 'node:zlib';
+import os from 'node:os';
+import fs from 'node:fs/promises';
 import type { WorkspaceState } from '../../types.js';
-import { generateAssistantReply } from '../../assistant-client.js';
+import { generateAssistantReply, getConnectedProviderIds } from '../../assistant-client.js';
 import { logger } from '../../lib/logger.js';
 import { BrainRepository } from './brain.repository.js';
 import { BrainSettingsService, type BrainSettingsUpdate } from './brain-settings.service.js';
-import { distillTurn, resolveProjectKey } from './brain-distiller.js';
+import { distillTurn, resolveProjectKey, type PreparedAtom } from './brain-distiller.js';
 import { buildBrainRecallBundle, searchCandidates } from './brain-recall.js';
 import { buildBrainGraph } from './brain-graph.js';
 import { getEmbeddingProvider } from './brain-embedding.service.js';
 import { redactMemoryText } from './brain-safety.js';
+import { scanAgentMemory } from './import/import-scanner.js';
+import {
+  distillMemoryFile,
+  distillSession,
+  type DistillMemoryFileInput
+} from './import/import-distiller.js';
+import { computeSourceHash, sha256 } from './import/import-ledger.js';
+import { readTail, extractMessages, buildSessionText } from './import/session-transcripts.js';
+import type { ImportManifest, ImportSelector } from './import/import.types.js';
 import type {
   BrainAtomRecord,
   BrainAtomUpsert,
@@ -67,6 +78,31 @@ const defaultComplete: BrainCompletionFn = async ({ prompt, workspace }) => {
 export interface BrainServiceDeps {
   complete?: BrainCompletionFn;
   embeddings?: BrainEmbeddingProvider;
+}
+
+export interface ImportProgressEvent {
+  phase: 'distill' | 'store' | 'done';
+  sourceLabel: string;
+  /** Absolute path of the source being processed, so the UI can tick the exact row (null on `done`). */
+  sourcePath: string | null;
+  current: number;
+  total: number;
+  atomsAdded: number;
+}
+type ImportFileJob = Omit<DistillMemoryFileInput, 'workspace'>;
+
+interface ImportTask {
+  label: string;
+  providerId: 'claude' | 'codex' | 'gemini';
+  scope: 'global' | 'project';
+  projectKey: string | null;
+  projectName: string | null;
+  distill: () => Promise<PreparedAtom[]>;
+  /** Import-ledger fields — set on the real disk-backed path (`runImport`), absent for the in-memory
+   *  test core (`runImportFiles`). When present, a successful distill records the source. */
+  path?: string;
+  kind?: 'global' | 'project' | 'session';
+  contentHash?: string | null;
 }
 
 export class BrainService {
@@ -135,7 +171,8 @@ export class BrainService {
     const candidates = await this.repository.listRecallCandidates(projectKey, {
       includeCrossProject,
       includeSensitive,
-      embeddingModel: this.embeddings.model
+      embeddingModel: this.embeddings.model,
+      projectRootKey: input.workspace.projectRoot ?? undefined
     });
     if (candidates.length === 0) {
       return emptyBundle('no_candidates');
@@ -156,6 +193,7 @@ export class BrainService {
 
     return buildBrainRecallBundle(input.query, candidates, settings, {
       currentProjectKey: projectKey,
+      currentProjectRootKey: input.workspace.projectRoot,
       queryEmbedding,
       isolatedProjectKeys: new Set(isolatedKeys),
       currentProjectIsolated: projectSettings.isolate,
@@ -176,7 +214,14 @@ export class BrainService {
       limit: 400
     });
     const queryEmbedding = await this.embedOne(query);
-    return searchCandidates(query, candidates, queryEmbedding, projectKey, limit);
+    return searchCandidates(
+      query,
+      candidates,
+      queryEmbedding,
+      projectKey,
+      limit,
+      workspace.projectRoot
+    );
   }
 
   async captureTurn(input: BrainCaptureTurnInput) {
@@ -233,6 +278,273 @@ export class BrainService {
     });
 
     return { captured: true as const, atoms: stored, reason: null };
+  }
+
+  /** Read-only scan of installed agents' curated memory on disk (paths/counts, never bodies). */
+  async scanImport(homeDir: string = os.homedir()): Promise<ImportManifest> {
+    const connectedIds = await getConnectedProviderIds();
+    const connected: Record<'claude' | 'codex' | 'gemini', boolean> = {
+      claude: false,
+      codex: false,
+      gemini: false
+    };
+    for (const id of connectedIds) {
+      if (id in connected) connected[id as 'claude' | 'codex' | 'gemini'] = true;
+    }
+    const manifest = await scanAgentMemory({ homeDir, connected });
+    await this.annotateImportStatus(manifest);
+    return manifest;
+  }
+
+  /** Tag every discovered source with `new` / `added` / `changed` from the import ledger. Only files
+   *  that were imported before get hashed (a `new` file skips the read), so a first-run scan of a
+   *  fresh install does no extra I/O. */
+  private async annotateImportStatus(manifest: ImportManifest): Promise<void> {
+    const ledger = this.repository.listImportSources();
+    for (const agent of manifest.agents) {
+      const files = [agent.global, ...agent.projects, ...agent.sessions].filter(
+        (f): f is NonNullable<typeof f> => Boolean(f)
+      );
+      for (const file of files) {
+        const record = ledger.get(file.path);
+        if (!record) {
+          file.status = 'new';
+          continue;
+        }
+        const currentHash = await computeSourceHash(file);
+        file.status = currentHash && currentHash === record.contentHash ? 'added' : 'changed';
+        file.atomsAdded = record.atomsAdded;
+      }
+    }
+  }
+
+  /** Store loop shared by curated-file + session import: distill → upsert → embed, with progress. */
+  private async runImportTasks(
+    tasks: ImportTask[],
+    onProgress?: (event: ImportProgressEvent) => void
+  ) {
+    const byProject: Record<string, number> = {};
+    const skipped: string[] = [];
+    let atomsAdded = 0;
+    const total = tasks.length;
+
+    for (let i = 0; i < tasks.length; i += 1) {
+      const task = tasks[i]!;
+      onProgress?.({
+        phase: 'distill',
+        sourceLabel: task.label,
+        sourcePath: task.path ?? null,
+        current: i,
+        total,
+        atomsAdded
+      });
+      let prepared: PreparedAtom[];
+      try {
+        prepared = await task.distill();
+      } catch (error) {
+        logger.warn('brain.import.distill_failed', {
+          source: task.label,
+          message: error instanceof Error ? error.message : String(error)
+        });
+        skipped.push(task.label);
+        continue;
+      }
+      logger.info('brain.import.distilled', { source: task.label, atoms: prepared.length });
+
+      let storedCount = 0;
+      if (prepared.length > 0) {
+        const contributor = {
+          providerId: task.providerId,
+          sessionId: null,
+          lastAssertedAt: new Date().toISOString()
+        };
+        const upserts = prepared.map((atom) => ({
+          ...atom.input,
+          entities: atom.entities,
+          contributor
+        }));
+        onProgress?.({
+          phase: 'store',
+          sourceLabel: task.label,
+          sourcePath: task.path ?? null,
+          current: i,
+          total,
+          atomsAdded
+        });
+        const stored = await this.repository.upsertAtoms(upserts);
+        await this.embedAtoms(stored);
+        storedCount = stored.length;
+        logger.info('brain.import.stored', {
+          source: task.label,
+          projectKey: task.projectKey,
+          stored: storedCount
+        });
+        atomsAdded += storedCount;
+        if (task.scope === 'project' && task.projectName) {
+          byProject[task.projectName] = (byProject[task.projectName] ?? 0) + storedCount;
+        }
+        brainEventEmitter?.({
+          type: 'brain_update',
+          payload: { projectKey: task.projectKey, capturedAtoms: storedCount }
+        });
+      } else {
+        skipped.push(task.label);
+      }
+
+      // Record the source in the import ledger (best-effort) so a re-scan reports it as `added`
+      // rather than re-offering it. Only present on the real disk-backed path; a distill failure
+      // `continue`s above and stays retryable (no ledger row).
+      if (task.path && task.contentHash) {
+        try {
+          this.repository.upsertImportSource({
+            path: task.path,
+            providerId: task.providerId,
+            kind: task.kind ?? (task.scope === 'global' ? 'global' : 'project'),
+            projectKey: task.projectKey,
+            contentHash: task.contentHash,
+            atomsAdded: storedCount
+          });
+        } catch (error) {
+          logger.warn('brain.import.ledger_failed', {
+            source: task.label,
+            message: error instanceof Error ? error.message : String(error)
+          });
+        }
+      }
+    }
+    logger.info('brain.import.completed', {
+      atomsAdded,
+      sources: total,
+      skipped: skipped.length
+    });
+    onProgress?.({
+      phase: 'done',
+      sourceLabel: '',
+      sourcePath: null,
+      current: total,
+      total,
+      atomsAdded
+    });
+    return { atomsAdded, byProject, skipped };
+  }
+
+  /** Unit-testable core: distill already-loaded curated files → upsert → embed. */
+  async runImportFiles(
+    files: ImportFileJob[],
+    workspace: WorkspaceState,
+    onProgress?: (event: ImportProgressEvent) => void
+  ) {
+    const settings = await this.settingsService.getSettings();
+    const tasks: ImportTask[] = files.map((file) => ({
+      label:
+        file.scope === 'global'
+          ? `${file.providerId} · global`
+          : `${file.providerId} · ${file.projectName ?? 'project'}`,
+      providerId: file.providerId,
+      scope: file.scope,
+      projectKey: file.projectKey,
+      projectName: file.projectName,
+      distill: () => distillMemoryFile({ ...file, workspace }, settings, this.complete)
+    }));
+    return this.runImportTasks(tasks, onProgress);
+  }
+
+  /** Scan → build distill tasks for the selected curated files AND session transcripts → run.
+   *  Sessions are read from disk as a bounded tail (transcripts can be hundreds of MB). */
+  async runImport(
+    input: {
+      selectors: ImportSelector[];
+      workspace: WorkspaceState;
+      includeProjectScope: boolean;
+    },
+    onProgress?: (event: ImportProgressEvent) => void
+  ) {
+    const settings = await this.settingsService.getSettings();
+    const manifest = await this.scanImport();
+    const tasks: ImportTask[] = [];
+
+    for (const sel of input.selectors) {
+      const group = manifest.agents.find((a) => a.providerId === sel.providerId);
+      if (!group) continue;
+      const providerId = sel.providerId;
+      const selectedPaths = new Set(sel.paths);
+      const candidates = [group.global, ...group.projects, ...group.sessions].filter(
+        Boolean
+      ) as NonNullable<typeof group.global>[];
+
+      for (const file of candidates) {
+        if (!selectedPaths.has(file.path)) continue;
+        // Everything but the global file is project-scoped → gated behind the project-scope opt-in.
+        if (file.kind !== 'global' && !input.includeProjectScope) continue;
+
+        if (file.kind === 'session') {
+          const projectKey = file.projectRoot;
+          if (!projectKey) continue;
+          const format = providerId === 'claude' ? 'claude' : 'codex';
+          tasks.push({
+            label: `${providerId} · ${file.projectName ?? 'project'} session`,
+            providerId,
+            scope: 'project',
+            projectKey,
+            projectName: file.projectName,
+            path: file.path,
+            kind: 'session',
+            contentHash: await computeSourceHash(file),
+            distill: async () => {
+              const tail = await readTail(file.path);
+              const sessionText = buildSessionText(extractMessages(tail, format));
+              if (!sessionText) return [];
+              return distillSession(
+                {
+                  providerId,
+                  sessionText,
+                  projectKey,
+                  projectName: file.projectName,
+                  workspace: input.workspace
+                },
+                settings,
+                this.complete
+              );
+            }
+          });
+        } else {
+          let fileText: string;
+          try {
+            fileText = await fs.readFile(file.path, 'utf8');
+          } catch {
+            continue;
+          }
+          const scope = file.kind === 'project' ? 'project' : 'global';
+          tasks.push({
+            label:
+              scope === 'global'
+                ? `${providerId} · global`
+                : `${providerId} · ${file.projectName ?? 'project'}`,
+            providerId,
+            scope,
+            projectKey: file.projectRoot,
+            projectName: file.projectName,
+            path: file.path,
+            kind: file.kind,
+            contentHash: sha256(fileText),
+            distill: () =>
+              distillMemoryFile(
+                {
+                  providerId,
+                  fileText,
+                  scope,
+                  projectKey: file.projectRoot,
+                  projectName: file.projectName,
+                  workspace: input.workspace
+                },
+                settings,
+                this.complete
+              )
+          });
+        }
+      }
+    }
+    return this.runImportTasks(tasks, onProgress);
   }
 
   async deleteAtom(atomId: string) {

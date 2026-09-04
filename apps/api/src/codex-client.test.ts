@@ -28,6 +28,16 @@ async function createRepo() {
   return projectRoot;
 }
 
+async function initRepoAt(dir: string) {
+  await fs.mkdir(dir, { recursive: true });
+  await git(dir, ['init', '-q']);
+  await git(dir, ['config', 'user.email', 'test@example.com']);
+  await git(dir, ['config', 'user.name', 'Oplyr Test']);
+  await fs.writeFile(path.join(dir, 'tracked.txt'), 'base\n');
+  await git(dir, ['add', 'tracked.txt']);
+  await git(dir, ['commit', '-q', '-m', 'init']);
+}
+
 test('collectGitDiffSince includes AI edits to pre-existing untracked files', async () => {
   const projectRoot = await createRepo();
   try {
@@ -40,12 +50,7 @@ test('collectGitDiffSince includes AI edits to pre-existing untracked files', as
     await fs.appendFile(path.join(projectRoot, 'note.txt'), 'ai untracked change\n');
     await fs.writeFile(path.join(projectRoot, 'ai-new.txt'), 'ai new file\n');
 
-    const diff = await collectGitDiffSince(
-      projectRoot,
-      baseline.ref,
-      baseline.untracked,
-      baseline.untrackedSnapshots
-    );
+    const diff = await collectGitDiffSince(baseline);
 
     assert.deepEqual(diff.changedFiles.sort(), ['ai-new.txt', 'note.txt', 'tracked.txt']);
 
@@ -63,10 +68,8 @@ test('collectGitDiffSince includes AI edits to pre-existing untracked files', as
     assert.equal(added?.status, 'added');
 
     await revertWorkingTree(
-      projectRoot,
-      baseline.ref,
-      diff.files.map((file) => ({ filePath: file.filePath, status: file.status })),
-      baseline.untrackedSnapshots
+      baseline,
+      diff.files.map((file) => ({ filePath: file.filePath, status: file.status }))
     );
 
     assert.equal(
@@ -91,22 +94,15 @@ test('collectGitDiffSince includes deleted pre-existing untracked files', async 
     const baseline = await snapshotWorkingTree(projectRoot);
     await fs.rm(path.join(projectRoot, 'note.txt'));
 
-    const diff = await collectGitDiffSince(
-      projectRoot,
-      baseline.ref,
-      baseline.untracked,
-      baseline.untrackedSnapshots
-    );
+    const diff = await collectGitDiffSince(baseline);
 
     assert.deepEqual(diff.changedFiles, ['note.txt']);
     assert.equal(diff.files[0]?.status, 'deleted');
     assert.match(diff.files[0]?.diff ?? '', /-user untracked note/);
 
     await revertWorkingTree(
-      projectRoot,
-      baseline.ref,
-      diff.files.map((file) => ({ filePath: file.filePath, status: file.status })),
-      baseline.untrackedSnapshots
+      baseline,
+      diff.files.map((file) => ({ filePath: file.filePath, status: file.status }))
     );
 
     assert.equal(
@@ -115,5 +111,47 @@ test('collectGitDiffSince includes deleted pre-existing untracked files', async 
     );
   } finally {
     await fs.rm(projectRoot, { force: true, recursive: true });
+  }
+});
+
+test('nested repos: diff aggregates with repo-prefixed paths and revert routes per repo', async () => {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'oplyr-nested-'));
+  const parent = await fs.realpath(tempRoot);
+  try {
+    // A connected PARENT folder that is not itself a git repo, holding two nested repos.
+    await initRepoAt(path.join(parent, 'backend'));
+    await initRepoAt(path.join(parent, 'frontend'));
+
+    const baseline = await snapshotWorkingTree(parent);
+    assert.deepEqual(baseline.repos.map((repo) => repo.relativePath).sort(), [
+      'backend',
+      'frontend'
+    ]);
+
+    // AI edits a tracked file in each nested repo and adds a new file in one.
+    await fs.appendFile(path.join(parent, 'backend', 'tracked.txt'), 'ai backend change\n');
+    await fs.appendFile(path.join(parent, 'frontend', 'tracked.txt'), 'ai frontend change\n');
+    await fs.writeFile(path.join(parent, 'frontend', 'new.txt'), 'ai new\n');
+
+    const diff = await collectGitDiffSince(baseline);
+    assert.equal(diff.isGitRepo, true);
+    assert.deepEqual(diff.changedFiles.sort(), [
+      'backend/tracked.txt',
+      'frontend/new.txt',
+      'frontend/tracked.txt'
+    ]);
+    const backend = diff.files.find((file) => file.filePath === 'backend/tracked.txt');
+    assert.match(backend?.diff ?? '', /\+ai backend change/);
+
+    // Reject: each repo-prefixed path routes back to its own repo and restores the committed content.
+    await revertWorkingTree(
+      baseline,
+      diff.files.map((file) => ({ filePath: file.filePath, status: file.status }))
+    );
+    assert.equal(await fs.readFile(path.join(parent, 'backend', 'tracked.txt'), 'utf8'), 'base\n');
+    assert.equal(await fs.readFile(path.join(parent, 'frontend', 'tracked.txt'), 'utf8'), 'base\n');
+    await assert.rejects(() => fs.stat(path.join(parent, 'frontend', 'new.txt')));
+  } finally {
+    await fs.rm(parent, { force: true, recursive: true });
   }
 });

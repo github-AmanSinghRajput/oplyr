@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/cn';
 import { ProviderLogo } from '@/components/providers/ProviderLogo';
+import { MemoryImportPanel } from '@/components/screens/memory/MemoryImportPanel';
 import { OplyrLogoMark } from '@/components/branding/OplyrLogoMark';
 import { PetPreview } from '@/components/layout/TopbarPet';
 import {
@@ -439,52 +440,56 @@ export function OnboardingScreen({
             )}
 
             {step === 4 && (
-              <div className="min-h-[28rem] rounded-[calc(var(--radius-panel)+6px)] border border-border bg-surface-1 px-10 py-10 text-center">
-                <p className="text-xs text-text-tertiary uppercase tracking-wider mb-2">Step 4</p>
-                <h1 className="text-2xl font-semibold text-text-primary mb-3">
-                  Connect your first project
-                </h1>
-                <p className="mx-auto mb-8 max-w-xl text-sm text-text-secondary">
-                  Point Oplyr at a project folder to start working — it scans your codebase into a
-                  live map and your agents work inside this boundary. You can change it anytime.
-                </p>
-                {error && <p className="text-sm text-danger mb-4">{error}</p>}
+              <div className="flex flex-col gap-4">
+                <MemoryImportPanel compact hideWhenCaughtUp />
+                <div className="min-h-[28rem] rounded-[calc(var(--radius-panel)+6px)] border border-border bg-surface-1 px-10 py-10 text-center">
+                  <p className="text-xs text-text-tertiary uppercase tracking-wider mb-2">Step 4</p>
+                  <h1 className="text-2xl font-semibold text-text-primary mb-3">
+                    Connect your first project
+                  </h1>
+                  <p className="mx-auto mb-8 max-w-xl text-sm text-text-secondary">
+                    Point Oplyr at a project folder to start working — it scans your codebase into a
+                    live map and your agents work inside this boundary. You can change it anytime.
+                  </p>
+                  {error && <p className="text-sm text-danger mb-4">{error}</p>}
 
-                <div className="mx-auto mb-6 flex max-w-md items-center gap-2">
-                  <Input
-                    autoFocus
-                    className="h-11 flex-1 rounded-[14px] px-4 text-sm"
-                    placeholder="/path/to/your/project"
-                    value={projectInput}
-                    onChange={(e) => setProjectInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && projectInput.trim()) onConnectProject(projectInput);
-                    }}
-                  />
-                  {canBrowseProjectFolder && (
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        void onBrowseProjectFolder().then((folder) => {
-                          if (folder) setProjectInput(folder);
-                        });
+                  <div className="mx-auto mb-6 flex max-w-md items-center gap-2">
+                    <Input
+                      autoFocus
+                      className="h-11 flex-1 rounded-[14px] px-4 text-sm"
+                      placeholder="/path/to/your/project"
+                      value={projectInput}
+                      onChange={(e) => setProjectInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && projectInput.trim())
+                          onConnectProject(projectInput);
                       }}
-                    >
-                      Browse…
-                    </Button>
-                  )}
-                </div>
+                    />
+                    {canBrowseProjectFolder && (
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          void onBrowseProjectFolder().then((folder) => {
+                            if (folder) setProjectInput(folder);
+                          });
+                        }}
+                      >
+                        Browse…
+                      </Button>
+                    )}
+                  </div>
 
-                <div className="flex items-center justify-center gap-3">
-                  <Button variant="ghost" onClick={onSkipProject}>
-                    Skip for now
-                  </Button>
-                  <Button
-                    disabled={!projectInput.trim()}
-                    onClick={() => onConnectProject(projectInput)}
-                  >
-                    Connect project
-                  </Button>
+                  <div className="flex items-center justify-center gap-3">
+                    <Button variant="ghost" onClick={onSkipProject}>
+                      Skip for now
+                    </Button>
+                    <Button
+                      disabled={!projectInput.trim()}
+                      onClick={() => onConnectProject(projectInput)}
+                    >
+                      Connect project
+                    </Button>
+                  </div>
                 </div>
               </div>
             )}

@@ -63,15 +63,11 @@ export interface PendingApproval {
   summary: string;
   tasks: string[];
   agents: string[];
-  // Working-tree snapshot taken before the assistant applied its edit, so a reject can revert
-  // ONLY the assistant's changes back to this point without disturbing other uncommitted work.
-  baselineRef?: string | null;
-  // Untracked files that already existed at snapshot time — used to tell the assistant's NEW
-  // files apart from the user's pre-existing untracked files when scoping the diff.
-  baselineUntracked?: string[];
-  // Content snapshots for pre-existing untracked files. These let review/reject detect AI edits
-  // to files that are not tracked by git without showing unrelated untracked files.
-  baselineUntrackedSnapshots?: BaselineUntrackedSnapshot[];
+  // Working-tree snapshot taken before the assistant applied its edit, so a reject can revert ONLY
+  // the assistant's changes back to this point without disturbing other uncommitted work. Covers
+  // every git repo under the connected folder (nested-repo aware), so edits inside a child repo of a
+  // connected parent are diffed + reverted correctly.
+  baseline?: WorkspaceBaseline | null;
   // The assistant's own natural-language message from applying the edit (captured at proposal time).
   // Shown verbatim on approve as the post-edit summary ("I changed X, Y…"), like a CLI agent would.
   executionSummary?: string;
@@ -81,6 +77,21 @@ export interface BaselineUntrackedSnapshot {
   filePath: string;
   blobHash: string;
   mode?: number;
+}
+
+/** Pre-edit snapshot of a single git repo. `relativePath` is '' for a repo at the connected folder's
+ *  root, else the repo's path relative to it (so diff file paths + reverts route to the right repo). */
+export interface RepoBaseline {
+  relativePath: string;
+  root: string;
+  ref: string;
+  untracked: string[];
+  untrackedSnapshots: BaselineUntrackedSnapshot[];
+}
+
+/** Pre-edit snapshot of every git repo under the connected workspace folder. */
+export interface WorkspaceBaseline {
+  repos: RepoBaseline[];
 }
 
 export type DiffFileStatus = 'added' | 'modified' | 'deleted' | 'renamed';

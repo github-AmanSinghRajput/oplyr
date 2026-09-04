@@ -51,19 +51,38 @@ const HELLOS: Hello[] = [
   { word: 'Bula', lang: 'Fijian' }
 ];
 
-const NAMED_SUBS: Array<(name: string) => string> = [
-  (n) => `Welcome back, ${n}.`,
-  (n) => `Good to see you, ${n}.`,
+// Sub-lines that work for anyone (no "back" assumption). Named + generic variants.
+const SUBS_ANY_NAMED: Array<(name: string) => string> = [
   (n) => `Ready when you are, ${n}.`,
-  (n) => `Let's build something, ${n}.`
+  (n) => `Let's build something, ${n}.`,
+  (n) => `Let's smash some bugs, ${n}.`,
+  (n) => `The room's yours, ${n}.`,
+  (n) => `What are we shipping, ${n}?`,
+  (n) => `Let's get into it, ${n}.`
 ];
-
-const GENERIC_SUBS = [
-  'Welcome back to Oplyr.',
-  'Your workspace is ready.',
+const SUBS_ANY_GENERIC = [
+  'Ready when you are.',
   "Let's build something.",
-  'Everything you need, in one place.'
+  "Let's smash some bugs.",
+  'Your agents are standing by.',
+  'What are we shipping today?',
+  'The workspace is yours.'
 ];
+// First-ever greeting (brand-new user) — welcoming, never "back".
+const SUBS_NEW_NAMED: Array<(name: string) => string> = [
+  (n) => `Welcome, ${n}.`,
+  (n) => `Glad you're here, ${n}.`
+];
+const SUBS_NEW_GENERIC = ['Welcome to Oplyr.', "Glad you're here."];
+// Returning user — "back" is fair game.
+const SUBS_RETURNING_NAMED: Array<(name: string) => string> = [
+  (n) => `Welcome back, ${n}.`,
+  (n) => `Good to see you, ${n}.`
+];
+const SUBS_RETURNING_GENERIC = ['Welcome back to Oplyr.', 'Good to see you again.'];
+
+const GREET_RECENT_KEY = 'oplyr-greet-recent';
+const GREETED_KEY = 'oplyr-greeted';
 
 function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
@@ -79,12 +98,51 @@ export function GreetingOverlay({
   onDone: () => void;
 }) {
   const [exiting, setExiting] = useState(false);
+
+  // The set of recently-shown greetings + whether we've greeted before (→ returning user). Read once.
+  const recent = useMemo<Set<string>>(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem(GREET_RECENT_KEY) || '[]'));
+    } catch {
+      return new Set();
+    }
+  }, []);
+  const isReturning = useMemo(() => {
+    try {
+      return localStorage.getItem(GREETED_KEY) === '1';
+    } catch {
+      return false;
+    }
+  }, []);
+
   // Chosen once on mount (while still the boot cover) so it stays stable when `reveal` flips true.
-  const greeting = useMemo(() => pick(HELLOS), []);
+  // Exclude recently-shown languages so it genuinely rotates through the set instead of clustering.
+  const greeting = useMemo(() => {
+    const fresh = HELLOS.filter((h) => !recent.has(h.word));
+    return pick(fresh.length ? fresh : HELLOS);
+  }, [recent]);
   const subline = useMemo(() => {
     const name = userName?.trim();
-    return name ? pick(NAMED_SUBS)(name) : pick(GENERIC_SUBS);
-  }, [userName]);
+    const named = [...SUBS_ANY_NAMED, ...(isReturning ? SUBS_RETURNING_NAMED : SUBS_NEW_NAMED)];
+    const generic = [
+      ...SUBS_ANY_GENERIC,
+      ...(isReturning ? SUBS_RETURNING_GENERIC : SUBS_NEW_GENERIC)
+    ];
+    return name ? pick(named)(name) : pick(generic);
+  }, [userName, isReturning]);
+
+  // Once the greeting actually shows, remember it (so it's skipped next time) and mark that we've
+  // greeted (so the next launch is treated as a returning user, not new).
+  useEffect(() => {
+    if (!reveal) return;
+    try {
+      const next = [greeting.word, ...Array.from(recent)].slice(0, 12);
+      localStorage.setItem(GREET_RECENT_KEY, JSON.stringify([...new Set(next)]));
+      localStorage.setItem(GREETED_KEY, '1');
+    } catch {
+      /* localStorage unavailable — greeting still works, just no rotation memory */
+    }
+  }, [reveal, greeting, recent]);
 
   const dismiss = useCallback(() => {
     setExiting(true);

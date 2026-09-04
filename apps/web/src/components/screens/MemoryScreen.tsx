@@ -39,6 +39,9 @@ export function MemoryScreen({ refreshNonce }: { refreshNonce?: number }) {
   const [livePulse, setLivePulse] = useState(false);
 
   const livePulseTimer = useRef<number | null>(null);
+  // Trailing-debounce timer for live reloads: an import stores atoms in a burst (one brain_update
+  // each), so we collapse the burst into a single graph rebuild instead of dozens.
+  const reloadTimer = useRef<number | null>(null);
   // Guards async state writes: a burst of brain_update events can leave a load() in flight when the
   // screen unmounts; without this React warns about setting state on an unmounted component.
   const mountedRef = useRef(true);
@@ -106,7 +109,15 @@ export function MemoryScreen({ refreshNonce }: { refreshNonce?: number }) {
       window.clearTimeout(livePulseTimer.current);
     }
     livePulseTimer.current = window.setTimeout(() => setLivePulse(false), 2500);
-    void load();
+    // Debounce the actual reload — the pulse is instant feedback, but rebuilding the whole graph on
+    // every event during an import storm thrashes the canvas. One trailing reload once it quiets.
+    if (reloadTimer.current !== null) {
+      window.clearTimeout(reloadTimer.current);
+    }
+    reloadTimer.current = window.setTimeout(() => {
+      reloadTimer.current = null;
+      void load();
+    }, 900);
   }, [load]);
 
   useBrainEvents(handleBrainUpdate);
@@ -121,6 +132,9 @@ export function MemoryScreen({ refreshNonce }: { refreshNonce?: number }) {
       mountedRef.current = false;
       if (livePulseTimer.current !== null) {
         window.clearTimeout(livePulseTimer.current);
+      }
+      if (reloadTimer.current !== null) {
+        window.clearTimeout(reloadTimer.current);
       }
     };
   }, []);

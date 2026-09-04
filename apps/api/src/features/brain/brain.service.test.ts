@@ -232,7 +232,8 @@ test('recall enables cross-project by default and passes the active embedding mo
   assert.deepEqual(repository.recallOptions, {
     includeCrossProject: true,
     includeSensitive: false,
-    embeddingModel: 'none'
+    embeddingModel: 'none',
+    projectRootKey: '/tmp/oplyr'
   });
 });
 

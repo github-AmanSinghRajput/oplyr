@@ -10,7 +10,9 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { ProviderLogo } from '@/components/providers/ProviderLogo';
 import { ModelPicker, EffortPicker } from '@/components/providers/ModelPicker';
 import { TopbarUsageMeters } from '@/components/providers/TopbarUsageMeters';
+import { ConnectAgentModal } from '@/components/providers/ConnectAgentModal';
 import { TopbarPet } from '@/components/layout/TopbarPet';
+import { MemoryImportPill } from '@/components/layout/MemoryImportPill';
 import type {
   AssistantProviderId,
   ClaudeSettingsResponse,
@@ -25,6 +27,7 @@ interface TopbarProps {
   refreshing?: boolean;
   onDisconnect: () => void;
   onProviderSwitch: (providerId: AssistantProviderId) => void;
+  onProviderConnect: (providerId: AssistantProviderId) => void;
   codexSettings: CodexSettingsResponse | null;
   claudeSettings: ClaudeSettingsResponse | null;
   geminiSettings: GeminiSettingsResponse | null;
@@ -45,6 +48,7 @@ export function Topbar({
   refreshing,
   onDisconnect,
   onProviderSwitch,
+  onProviderConnect,
   codexSettings,
   claudeSettings,
   geminiSettings,
@@ -61,6 +65,7 @@ export function Topbar({
   const { theme, toggleTheme } = useTheme();
   const { sidebarPinned, setActiveScreen } = useNavigation();
   const { status, desktopRuntime, assistantReady } = useStatus();
+  const [connectOpen, setConnectOpen] = useState(false);
 
   const workspaceLabel = status?.workspace.projectName ?? 'No project selected';
   const writeMode = status?.workspace.writeAccessEnabled ? 'Approval-gated' : 'Advisory';
@@ -124,6 +129,9 @@ export function Topbar({
             </Badge>
           )}
 
+          {/* Persistent import progress — follows the user across screens while a run is active. */}
+          <MemoryImportPill />
+
           {assistantReady && (
             <span data-tour="topbar-provider" className="inline-flex">
               <ProviderSwitcher
@@ -132,7 +140,7 @@ export function Topbar({
                 authLabel={authLabel}
                 reachable={desktopRuntime ? desktopRuntime.apiReachable : true}
                 onSwitch={onProviderSwitch}
-                onConnectNew={() => setActiveScreen('settings')}
+                onConnectNew={() => setConnectOpen(true)}
                 disabled={agentBusy}
               />
             </span>
@@ -208,6 +216,21 @@ export function Topbar({
           )}
         </div>
       </header>
+
+      <ConnectAgentModal
+        open={connectOpen}
+        onClose={() => setConnectOpen(false)}
+        providers={status?.assistantProviders.providers ?? []}
+        activeProviderId={activeProviderId}
+        onConnect={onProviderConnect}
+        onSwitch={onProviderSwitch}
+        onRefresh={onRefresh}
+        onOpenSettings={() => {
+          setConnectOpen(false);
+          setActiveScreen('settings');
+        }}
+        busy={agentBusy}
+      />
     </TooltipProvider>
   );
 }

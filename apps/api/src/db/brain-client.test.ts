@@ -37,6 +37,7 @@ test('createBrainDatabase applies brain migrations to a dedicated SQLite file', 
     assert.ok(tables.includes('brain_embeddings'));
     assert.ok(tables.includes('brain_raw_archive'));
     assert.ok(tables.includes('brain_preferences'));
+    assert.ok(tables.includes('brain_import_sources'));
     assert.ok(tables.includes('brain_schema_migrations'));
 
     const atomColumns = db
@@ -55,7 +56,8 @@ test('createBrainDatabase applies brain migrations to a dedicated SQLite file', 
         '0001_initial.sql',
         '0002_modes_and_sensitivity.sql',
         '0003_embeddings.sql',
-        '0004_atom_graph_attribution.sql'
+        '0004_atom_graph_attribution.sql',
+        '0005_import_ledger.sql'
       ]
     );
     db.close();
@@ -75,7 +77,7 @@ test('createBrainDatabase is idempotent across repeated opens', () => {
       .prepare('SELECT COUNT(*) AS count FROM brain_schema_migrations')
       .get() as { count: number };
 
-    assert.equal(migrationCount.count, 4);
+    assert.equal(migrationCount.count, 5);
     db.close();
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });

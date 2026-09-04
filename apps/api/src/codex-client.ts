@@ -10,9 +10,12 @@ import type {
   DiffFileStatus,
   DiffSummary,
   PendingApproval,
+  RepoBaseline,
+  WorkspaceBaseline,
   WorkspaceState
 } from './types.js';
 import { logger } from './lib/logger.js';
+import { detectRepos } from './features/workspaces/repo-detector.js';
 import { isProtectedWorkspacePath } from './lib/path-security.js';
 import { getRootDir } from './store.js';
 import { getPortableAssistantCwd } from './runtime-paths.js';
@@ -783,7 +786,15 @@ async function assertCodexReady() {
   }
 }
 
-export async function getCodexStatus() {
+export interface CodexLoginStatus {
+  installed: boolean;
+  loggedIn: boolean;
+  accountLabel: string | null;
+  authMode: string | null;
+  statusText: string;
+}
+
+async function probeCodexStatus(): Promise<CodexLoginStatus> {
   try {
     const { stdout, stderr } = await execFileAsync(getCodexCommand(), ['login', 'status'], {
       cwd: getRootDir(),
@@ -815,6 +826,62 @@ export async function getCodexStatus() {
       statusText: message
     };
   }
+}
+
+// Each status probe spawns the Codex CLI, and when the codex binary can't launch — blocked by macOS
+// Gatekeeper (e.g. a revoked/outdated signature) or a corrupt install — every spawn throws a system
+// dialog. This probe runs on every status read AND before every turn, so an un-launchable codex floods
+// the screen with popups. We detect the launch-failure shape, back off for a short cooldown, and return
+// the last verdict (with an actionable hint) instead of re-spawning. A healthy or merely logged-out
+// codex launches fine, so it is never cooled down and keeps probing fresh.
+const CODEX_LAUNCH_COOLDOWN_MS = 20_000;
+const CODEX_LAUNCH_HINT =
+  'Codex could not be launched — it may be blocked by macOS or outdated. Update it: npm i -g @openai/codex@latest';
+
+/**
+ * Launch failure = codex is installed but produced no recognizable login output (a process death),
+ * as opposed to a normal "Not logged in" (which contains "logged in") or a missing binary (not
+ * installed). "login" alone is not enough to clear it — execFile echoes the `login status` args into
+ * its error message — so we key on codex's status vocabulary ("logged in"), which only a CLI that
+ * actually ran prints.
+ */
+export function isCodexLaunchFailure(status: CodexLoginStatus): boolean {
+  return status.installed && !status.loggedIn && !/logged\s*in/i.test(status.statusText);
+}
+
+interface CodexCooldownState {
+  until: number;
+  status: CodexLoginStatus | null;
+}
+
+/** Pure reducer (unit-tested): fold a fresh probe into the cooldown state. */
+export function reduceCodexStatus(
+  probe: CodexLoginStatus,
+  now: number
+): { next: CodexCooldownState; value: CodexLoginStatus } {
+  if (isCodexLaunchFailure(probe)) {
+    const value: CodexLoginStatus = {
+      ...probe,
+      statusText: `${probe.statusText}\n\n${CODEX_LAUNCH_HINT}`
+    };
+    return { next: { until: now + CODEX_LAUNCH_COOLDOWN_MS, status: value }, value };
+  }
+  return { next: { until: 0, status: null }, value: probe };
+}
+
+let codexCooldown: CodexCooldownState = { until: 0, status: null };
+
+export async function getCodexStatus(options?: { force?: boolean }): Promise<CodexLoginStatus> {
+  const now = Date.now();
+  if (!options?.force && codexCooldown.status && now < codexCooldown.until) {
+    // Known-unlaunchable codex — return the cached verdict instead of re-spawning (and re-popping a
+    // macOS dialog) on every status read. Auto-heals after the cooldown once codex is fixed.
+    return codexCooldown.status;
+  }
+  const probe = await probeCodexStatus();
+  const { next, value } = reduceCodexStatus(probe, now);
+  codexCooldown = next;
+  return value;
 }
 
 export async function logoutCodex() {
@@ -1174,7 +1241,7 @@ async function buildBlobToPathDiff(
   }
 }
 
-export async function collectGitDiff(projectRoot: string): Promise<DiffSummary> {
+async function collectSingleRepoDiff(projectRoot: string): Promise<DiffSummary> {
   try {
     await execFileAsync('git', ['-C', projectRoot, 'rev-parse', '--show-toplevel'], {
       timeout: 20000,
@@ -1258,7 +1325,161 @@ export async function collectGitDiff(projectRoot: string): Promise<DiffSummary> 
   };
 }
 
+// ── Nested-repo aggregation ─────────────────────────────────────────────────────────────────────
+// A connected folder may hold several git repos (a parent with a backend + a frontend repo). Git run
+// in the parent can't see changes inside a child repo, so the public diff/revert functions fan out
+// over every detected repo and prefix file paths with the repo's path relative to the connected
+// folder. A single repo at the root reduces to the previous single-repo behavior exactly.
+
+interface AggregatedDiff {
+  changedFiles: string[];
+  files: DiffSummary['files'];
+  redactedFiles: string[];
+  anyGitRepo: boolean;
+}
+
+function mergeRepoDiff(target: AggregatedDiff, sub: DiffSummary, relativePath: string) {
+  if (!sub.isGitRepo) {
+    return;
+  }
+  target.anyGitRepo = true;
+  const prefix = relativePath ? `${relativePath}/` : '';
+  for (const file of sub.files) {
+    target.files.push({ ...file, filePath: `${prefix}${file.filePath}` });
+  }
+  for (const changed of sub.changedFiles) {
+    target.changedFiles.push(`${prefix}${changed}`);
+  }
+  for (const redacted of sub.redactedFiles ?? []) {
+    target.redactedFiles.push(`${prefix}${redacted}`);
+  }
+}
+
+function finalizeAggregatedDiff(target: AggregatedDiff): DiffSummary {
+  return {
+    isGitRepo: target.anyGitRepo,
+    changedFiles: target.changedFiles,
+    files: target.files,
+    ...(target.redactedFiles.length > 0 ? { redactedFiles: target.redactedFiles } : {})
+  };
+}
+
+/** Route a workspace-relative file path to the repo it lives in (callers pass repos sorted by
+ *  relativePath length DESC, so a nested repo wins over the root repo), plus the path relative to that
+ *  repo's own root. One implementation so diff-prefixing and revert-routing can never disagree. */
+function repoForPath<R extends { relativePath: string }>(
+  sortedRepos: R[],
+  filePath: string
+): { repo: R; localPath: string } | null {
+  const trimmed = filePath?.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const repo = sortedRepos.find(
+    (candidate) =>
+      candidate.relativePath === '' ||
+      trimmed === candidate.relativePath ||
+      trimmed.startsWith(`${candidate.relativePath}/`)
+  );
+  if (!repo) {
+    return null;
+  }
+  const prefix = repo.relativePath ? `${repo.relativePath}/` : '';
+  return { repo, localPath: prefix ? trimmed.slice(prefix.length) : trimmed };
+}
+
+/** Full working-tree diff across every git repo under the connected folder (nested-repo aware). */
+export async function collectGitDiff(projectRoot: string): Promise<DiffSummary> {
+  const repos = await resolveWorkspaceRepos(projectRoot);
+  const target: AggregatedDiff = {
+    changedFiles: [],
+    files: [],
+    redactedFiles: [],
+    anyGitRepo: false
+  };
+  for (const repo of repos) {
+    mergeRepoDiff(target, await collectSingleRepoDiff(repo.root), repo.relativePath);
+  }
+  return finalizeAggregatedDiff(target);
+}
+
+/** Turn-scoped diff since the pre-edit snapshot, across every repo the snapshot captured. */
+export async function collectGitDiffSince(baseline: WorkspaceBaseline): Promise<DiffSummary> {
+  const target: AggregatedDiff = {
+    changedFiles: [],
+    files: [],
+    redactedFiles: [],
+    anyGitRepo: false
+  };
+  for (const repo of baseline.repos) {
+    mergeRepoDiff(
+      target,
+      await collectSingleRepoDiffSince(
+        repo.root,
+        repo.ref,
+        repo.untracked,
+        repo.untrackedSnapshots
+      ),
+      repo.relativePath
+    );
+  }
+  return finalizeAggregatedDiff(target);
+}
+
+/** Revert the assistant's edits across every repo in the baseline. Each file routes to the repo whose
+ *  relative path it lives under (longest match wins, so a nested repo beats the root repo) and is
+ *  reverted with THAT repo's snapshot ref — never touching another repo or the user's other work. */
+export async function revertWorkingTree(
+  baseline: WorkspaceBaseline,
+  files: Array<{ filePath: string; status?: string }>
+) {
+  const sorted = [...baseline.repos].sort((a, b) => b.relativePath.length - a.relativePath.length);
+  const byRepo = new Map<RepoBaseline, Array<{ filePath: string; status?: string }>>();
+
+  for (const file of files) {
+    const hit = repoForPath(sorted, file.filePath);
+    if (!hit) {
+      continue;
+    }
+    const local = { ...file, filePath: hit.localPath };
+    const list = byRepo.get(hit.repo);
+    if (list) {
+      list.push(local);
+    } else {
+      byRepo.set(hit.repo, [local]);
+    }
+  }
+
+  for (const [repo, repoFiles] of byRepo) {
+    await revertSingleRepo(repo.root, repo.ref, repoFiles, repo.untrackedSnapshots);
+  }
+}
+
+/** Undo the assistant's edits to protected/secret files (redacted from the diff) across every repo
+ *  under the connected folder, routing each path to the repo it lives in. */
 export async function revertProtectedGitChanges(projectRoot: string, protectedPaths: string[]) {
+  const sorted = (await resolveWorkspaceRepos(projectRoot)).sort(
+    (a, b) => b.relativePath.length - a.relativePath.length
+  );
+  const byRepo = new Map<string, string[]>();
+  for (const rawPath of protectedPaths) {
+    const hit = repoForPath(sorted, rawPath);
+    if (!hit) {
+      continue;
+    }
+    const list = byRepo.get(hit.repo.root);
+    if (list) {
+      list.push(hit.localPath);
+    } else {
+      byRepo.set(hit.repo.root, [hit.localPath]);
+    }
+  }
+  for (const [root, paths] of byRepo) {
+    await revertProtectedSingleRepo(root, paths);
+  }
+}
+
+async function revertProtectedSingleRepo(projectRoot: string, protectedPaths: string[]) {
   const normalizedPaths = Array.from(
     new Set(protectedPaths.map((value) => value.trim()).filter(Boolean))
   );
@@ -1307,7 +1528,7 @@ export async function revertProtectedGitChanges(projectRoot: string, protectedPa
  * revert restores ONLY the assistant's edits without touching the user's other uncommitted work.
  * Returns HEAD when there is nothing stashable (clean tracked tree).
  */
-export async function snapshotWorkingTree(projectRoot: string): Promise<{
+async function snapshotSingleRepo(projectRoot: string): Promise<{
   ref: string;
   untracked: string[];
   untrackedSnapshots: BaselineUntrackedSnapshot[];
@@ -1338,6 +1559,37 @@ export async function snapshotWorkingTree(projectRoot: string): Promise<{
   }
 
   return { ref, untracked, untrackedSnapshots };
+}
+
+/** Every git repo under the connected folder, normalized. A non-git folder yields a single synthetic
+ *  entry at the root, so callers behave exactly as before nested-repo support. '.' → '' for prefixing. */
+async function resolveWorkspaceRepos(
+  projectRoot: string
+): Promise<Array<{ root: string; relativePath: string }>> {
+  const detected = await detectRepos(projectRoot);
+  if (detected.length === 0) {
+    return [{ root: projectRoot, relativePath: '' }];
+  }
+  return detected.map((repo) => ({
+    root: repo.path,
+    relativePath: repo.relativePath === '.' ? '' : repo.relativePath
+  }));
+}
+
+/**
+ * Snapshot the working tree of every git repo under the connected folder, so a later diff/revert is
+ * nested-repo aware — an edit inside a child repo of a connected parent is captured too.
+ */
+export async function snapshotWorkingTree(projectRoot: string): Promise<WorkspaceBaseline> {
+  const repos = await resolveWorkspaceRepos(projectRoot);
+  const snapshots = await Promise.all(
+    repos.map(async (repo) => ({
+      relativePath: repo.relativePath,
+      root: repo.root,
+      ...(await snapshotSingleRepo(repo.root))
+    }))
+  );
+  return { repos: snapshots };
 }
 
 async function snapshotUntrackedFiles(projectRoot: string, filePaths: string[]) {
@@ -1386,7 +1638,7 @@ async function resolveHeadRef(projectRoot: string): Promise<string> {
  * Tracked changes are diffed against the snapshot; untracked files are included only if they did
  * not already exist at snapshot time.
  */
-export async function collectGitDiffSince(
+async function collectSingleRepoDiffSince(
   projectRoot: string,
   baselineRef: string,
   baselineUntracked: string[] = [],
@@ -1534,7 +1786,7 @@ function nameStatusToFileStatus(code: string): DiffFileStatus {
  * (status 'added') are removed; everything else is restored from the snapshot ref. Only the
  * provided files are touched, so the user's other working-tree changes are preserved.
  */
-export async function revertWorkingTree(
+async function revertSingleRepo(
   projectRoot: string,
   baselineRef: string,
   files: Array<{ filePath: string; status?: string }>,

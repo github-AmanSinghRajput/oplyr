@@ -543,6 +543,63 @@ export interface BrainSearchResponse {
   atoms: BrainRecallAtom[];
 }
 
+// ── Import existing agent memory (CLAUDE.md / AGENTS.md / GEMINI.md → Brain) ──────────────────────
+/** Where a source stands relative to the brain: never imported, already in, or changed since import. */
+export type ImportFileStatus = 'new' | 'added' | 'changed';
+
+/** One curated memory file discovered on disk. `kind` is global (~/.claude/CLAUDE.md) or project. */
+export interface ImportFile {
+  path: string;
+  bytes: number;
+  kind: 'global' | 'project' | 'session';
+  projectRoot: string | null;
+  projectName: string | null;
+  /** From the import ledger (set by the scan): defaults to `new` when the join hasn't run. */
+  status?: ImportFileStatus;
+  /** Memories this source contributed on its last import; present when `added`/`changed`. */
+  atomsAdded?: number;
+}
+
+/** Everything importable for a single agent — its global file, per-project files, and the newest
+ *  session transcript per project ("where you left off"). */
+export interface ImportAgentGroup {
+  providerId: AssistantProviderId;
+  global: ImportFile | null;
+  projects: ImportFile[];
+  sessions: ImportFile[];
+}
+
+/** Read-only scan result from GET /api/brain/import/scan — paths + byte counts, never file bodies. */
+export interface ImportManifest {
+  agents: ImportAgentGroup[];
+  totalFiles: number;
+}
+
+/** Which files to import for a provider, sent to POST /api/brain/import/run. */
+export interface ImportSelector {
+  providerId: AssistantProviderId;
+  paths: string[];
+}
+
+/** NDJSON progress line streamed by POST /api/brain/import/run while it distills + stores atoms. */
+export interface ImportProgressEvent {
+  phase: 'distill' | 'store' | 'done';
+  sourceLabel: string;
+  /** Absolute path of the source being processed, so the UI can tick the exact row (null on `done`). */
+  sourcePath: string | null;
+  current: number;
+  total: number;
+  atomsAdded: number;
+}
+
+/** Final NDJSON line from POST /api/brain/import/run — the completed run summary. */
+export interface ImportRunSummary {
+  phase: 'summary';
+  atomsAdded: number;
+  byProject: Record<string, number>;
+  skipped: string[];
+}
+
 /** New event pushed through the existing /api/voice/events SSE stream on brain writes. */
 export interface BrainUpdateEvent {
   type: 'brain_update';

@@ -52,6 +52,10 @@ const TOP_HITS_FOR_GRAPH = 5;
 
 export interface BrainRecallContext {
   currentProjectKey: string;
+  /** The current workspace's absolute project root. An atom keyed by EITHER the workspace key or
+   *  this root counts as current-project — imported memory is keyed by the root, live capture by the
+   *  synthetic workspace id. Absent → no effect (backward compatible). */
+  currentProjectRootKey?: string | null;
   /** Embedding of the query for the active model, or null when embeddings are unavailable. */
   queryEmbedding: Float32Array | null;
   /** Project keys the user has marked isolated — excluded from cross-project recall. */
@@ -95,7 +99,9 @@ export function buildBrainRecallBundle(
   const scored: ScoredCandidate[] = [];
   for (const candidate of eligible) {
     const crossProject =
-      candidate.atom.scope === 'project' && candidate.atom.projectKey !== context.currentProjectKey;
+      candidate.atom.scope === 'project' &&
+      candidate.atom.projectKey !== context.currentProjectKey &&
+      candidate.atom.projectKey !== context.currentProjectRootKey;
     // A directly-named past project (e.g. the user said "ragfuse") is treated like the current
     // project: it clears the low bar and gets a ranking boost so it leads the results.
     const named = Boolean(
@@ -155,7 +161,8 @@ export function searchCandidates(
   candidates: BrainRecallCandidate[],
   queryEmbedding: Float32Array | null,
   currentProjectKey: string,
-  limit: number
+  limit: number,
+  currentProjectRootKey: string | null = null
 ): BrainRecallAtom[] {
   const queryTokens = tokenize(query);
   if (queryTokens.size === 0 && !queryEmbedding) {
@@ -176,7 +183,8 @@ export function searchCandidates(
         score: item.relevance,
         crossProject:
           item.candidate.atom.scope === 'project' &&
-          item.candidate.atom.projectKey !== currentProjectKey
+          item.candidate.atom.projectKey !== currentProjectKey &&
+          item.candidate.atom.projectKey !== currentProjectRootKey
       })
     );
 }
@@ -192,7 +200,10 @@ function isEligible(
   if (atom.scope === 'global') {
     return true;
   }
-  if (atom.projectKey === context.currentProjectKey) {
+  if (
+    atom.projectKey === context.currentProjectKey ||
+    (context.currentProjectRootKey != null && atom.projectKey === context.currentProjectRootKey)
+  ) {
     return true;
   }
   // A different project's atom: only when cross-project is on and neither side is isolated.

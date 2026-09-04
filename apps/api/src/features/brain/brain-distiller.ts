@@ -41,7 +41,7 @@ const ATOM_TYPES: readonly BrainAtomType[] = [
 
 // Salience = how important a memory is (independent of how sure we are). Decisions/preferences
 // outrank incidental facts when recall has to choose what to inject within a budget.
-const SALIENCE_BY_TYPE: Record<BrainAtomType, number> = {
+export const SALIENCE_BY_TYPE: Record<BrainAtomType, number> = {
   decision: 0.85,
   preference: 0.8,
   convention: 0.75,
@@ -317,7 +317,7 @@ function extractJsonObject(raw: string): string | null {
   return withoutFences.slice(start, end + 1);
 }
 
-function hashAtom(input: {
+export function hashAtom(input: {
   type: BrainAtomType;
   scope: string;
   projectKey: string | null;

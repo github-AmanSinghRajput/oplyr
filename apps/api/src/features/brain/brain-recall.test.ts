@@ -62,6 +62,37 @@ function context(overrides: Partial<BrainRecallContext> = {}): BrainRecallContex
   };
 }
 
+test('recall treats an atom keyed by the current projectRoot as current-project (imported memory)', () => {
+  const settings = { ...getDefaultBrainSettings(), maxRecallAtoms: 3, maxRecallCharacters: 500 };
+  // Imported project memory is keyed by the absolute project root, not the synthetic workspace id.
+  const imported = candidate(
+    'imp1',
+    'The billing retry keeps an idempotency key on every attempt.',
+    '/tmp/oplyr'
+  );
+  const query = 'billing retry idempotency key';
+
+  // Without the root fallback, an isolated project excludes any atom not keyed by the workspace id.
+  const excluded = buildBrainRecallBundle(
+    query,
+    [imported],
+    settings,
+    context({ currentProjectIsolated: true })
+  );
+  assert.equal(excluded.injected, false);
+
+  // With the root fallback, the same atom is current-project → it surfaces and is NOT cross-project.
+  const included = buildBrainRecallBundle(
+    query,
+    [imported],
+    settings,
+    context({ currentProjectIsolated: true, currentProjectRootKey: '/tmp/oplyr' })
+  );
+  assert.equal(included.injected, true);
+  assert.equal(included.atoms.length, 1);
+  assert.equal(included.atoms[0]!.crossProject, false);
+});
+
 test('buildBrainRecallBundle returns relevant bounded memory text (keyword fallback)', () => {
   const settings = { ...getDefaultBrainSettings(), maxRecallAtoms: 1, maxRecallCharacters: 500 };
   const bundle = buildBrainRecallBundle(

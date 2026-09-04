@@ -41,6 +41,9 @@ interface BrainRecallQueryOptions {
   includeSensitive: boolean;
   embeddingModel: string;
   limit?: number;
+  /** Fallback current-project key: imported project memory is keyed by the absolute project root
+   *  while live capture keys by the synthetic workspace id, so recall matches either. */
+  projectRootKey?: string;
 }
 
 const PROVIDER_IDS: readonly AssistantProviderId[] = ['codex', 'claude', 'gemini'];
@@ -166,7 +169,7 @@ export class BrainRepository {
     const limit = options.limit ?? 300;
     const projectFilter = options.includeCrossProject
       ? "AND (a.scope = 'global' OR a.scope = 'project')"
-      : "AND (a.scope = 'global' OR (a.scope = 'project' AND a.project_key = @projectKey))";
+      : "AND (a.scope = 'global' OR (a.scope = 'project' AND (a.project_key = @projectKey OR a.project_key = @projectRootKey)))";
     const sensitivityFilter = options.includeSensitive ? '' : "AND a.sensitivity = 'normal'";
 
     const rows = getBrainDatabase()
@@ -183,7 +186,12 @@ export class BrainRepository {
         LIMIT @limit
       `
       )
-      .all({ projectKey, model: options.embeddingModel, limit }) as BrainCandidateRow[];
+      .all({
+        projectKey,
+        projectRootKey: options.projectRootKey ?? projectKey,
+        model: options.embeddingModel,
+        limit
+      }) as BrainCandidateRow[];
 
     return rows.map((row) => ({
       atom: toAtomRecord(row),
@@ -305,6 +313,70 @@ export class BrainRepository {
       );
   }
 
+  /** Import ledger snapshot: absolute source path → last-import fingerprint, for scan de-duplication.
+   *  `database` is injectable so tests can drive a temp brain DB; production uses the singleton. */
+  listImportSources(
+    database: ReturnType<typeof getBrainDatabase> = getBrainDatabase()
+  ): Map<string, { contentHash: string; atomsAdded: number; importedAt: string }> {
+    const result = new Map<
+      string,
+      { contentHash: string; atomsAdded: number; importedAt: string }
+    >();
+    if (!isBrainDatabaseConfigured()) {
+      return result;
+    }
+    const rows = database
+      .prepare('SELECT path, content_hash, atoms_added, imported_at FROM brain_import_sources')
+      .all() as Array<{
+      path: string;
+      content_hash: string;
+      atoms_added: number;
+      imported_at: string;
+    }>;
+    for (const row of rows) {
+      result.set(row.path, {
+        contentHash: row.content_hash,
+        atomsAdded: Number(row.atoms_added),
+        importedAt: row.imported_at
+      });
+    }
+    return result;
+  }
+
+  /** Record (or refresh) a source in the import ledger. Best-effort caller — never blocks an import.
+   *  A re-import of an unchanged source stores 0 new atoms, so we keep the prior count rather than
+   *  overwriting it with 0. */
+  upsertImportSource(
+    row: {
+      path: string;
+      providerId: string;
+      kind: 'global' | 'project' | 'session';
+      projectKey: string | null;
+      contentHash: string;
+      atomsAdded: number;
+    },
+    database: ReturnType<typeof getBrainDatabase> = getBrainDatabase()
+  ) {
+    if (!isBrainDatabaseConfigured()) {
+      return;
+    }
+    database
+      .prepare(
+        `
+        INSERT INTO brain_import_sources (path, provider_id, kind, project_key, content_hash, atoms_added, imported_at)
+        VALUES (?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        ON CONFLICT(path) DO UPDATE SET
+          provider_id = excluded.provider_id,
+          kind = excluded.kind,
+          project_key = excluded.project_key,
+          content_hash = excluded.content_hash,
+          atoms_added = CASE WHEN excluded.atoms_added > 0 THEN excluded.atoms_added ELSE brain_import_sources.atoms_added END,
+          imported_at = excluded.imported_at
+      `
+      )
+      .run(row.path, row.providerId, row.kind, row.projectKey, row.contentHash, row.atomsAdded);
+  }
+
   async resetAll() {
     if (!isBrainDatabaseConfigured()) {
       return;
@@ -316,6 +388,7 @@ export class BrainRepository {
       database.exec('DELETE FROM brain_atoms');
       database.exec('DELETE FROM brain_entities');
       database.exec('DELETE FROM brain_preferences');
+      database.exec('DELETE FROM brain_import_sources');
     });
   }
 }

@@ -10,7 +10,13 @@ export type BrainAtomSensitivity = 'normal' | 'sensitive';
  * `deep` modes collapse into `standard` during settings normalization.
  */
 export type BrainMode = 'standard' | 'local_god';
-export type BrainSourceType = 'chat_turn' | 'diff' | 'transcript' | 'file_snapshot' | 'meeting';
+export type BrainSourceType =
+  | 'chat_turn'
+  | 'diff'
+  | 'transcript'
+  | 'file_snapshot'
+  | 'meeting'
+  | 'imported';
 export type BrainEdgeType =
   | 'relates-to'
   | 'caused-by'

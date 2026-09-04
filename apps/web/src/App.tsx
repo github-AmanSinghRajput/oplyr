@@ -1,6 +1,7 @@
 import { ThemeProvider } from '@/providers/ThemeProvider';
 import { ApiProvider } from '@/providers/ApiProvider';
 import { StatusProvider } from '@/providers/StatusProvider';
+import { MemoryImportProvider } from '@/providers/MemoryImportProvider';
 import { NavigationProvider } from '@/providers/NavigationProvider';
 import { ToastProvider } from '@/providers/ToastProvider';
 import { ApprovalProvider } from '@/providers/ApprovalProvider';
@@ -27,15 +28,17 @@ export default function App() {
     <ThemeProvider>
       <ApiProvider>
         <StatusProvider>
-          <NavigationProvider>
-            <ToastProvider>
-              <ApprovalProvider>
-                <TourProvider>
-                  <AppShell />
-                </TourProvider>
-              </ApprovalProvider>
-            </ToastProvider>
-          </NavigationProvider>
+          <MemoryImportProvider>
+            <NavigationProvider>
+              <ToastProvider>
+                <ApprovalProvider>
+                  <TourProvider>
+                    <AppShell />
+                  </TourProvider>
+                </ApprovalProvider>
+              </ToastProvider>
+            </NavigationProvider>
+          </MemoryImportProvider>
         </StatusProvider>
       </ApiProvider>
     </ThemeProvider>

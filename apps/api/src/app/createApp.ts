@@ -66,7 +66,8 @@ import {
   setActiveProviderId,
   setLastDiff,
   setVoiceSessionState,
-  setWorkspaceState
+  setWorkspaceState,
+  toClientApproval
 } from '../runtime.js';
 
 function getVoiceTurnId(request: Request) {
@@ -348,7 +349,7 @@ export function createApp(options?: { apiAuthToken?: string }) {
         assistantProviders,
         appSettings,
         workspace: runtime.workspace,
-        pendingApproval: runtime.pendingApproval,
+        pendingApproval: runtime.pendingApproval ? toClientApproval(runtime.pendingApproval) : null,
         lastDiff: safeLastDiff,
         audio: runtime.audio,
         voiceSession: runtime.voiceSession,
@@ -479,6 +480,31 @@ export function createApp(options?: { apiAuthToken?: string }) {
     asyncHandler(async (_request: Request, response: Response) => {
       response.set('Cache-Control', 'no-store');
       response.json(await brainService.getStatus(getRuntimeState().workspace));
+    })
+  );
+
+  app.get(
+    '/api/brain/import/scan',
+    asyncHandler(async (_request: Request, response: Response) => {
+      response.set('Cache-Control', 'no-store');
+      response.json(await brainService.scanImport());
+    })
+  );
+
+  app.post(
+    '/api/brain/import/run',
+    asyncHandler(async (request: Request, response: Response) => {
+      response.set('Content-Type', 'application/x-ndjson');
+      response.set('Cache-Control', 'no-store');
+      const selectors = Array.isArray(request.body?.selectors) ? request.body.selectors : [];
+      const includeProjectScope = request.body?.includeProjectScope === true;
+      const write = (obj: unknown) => response.write(`${JSON.stringify(obj)}\n`);
+      const summary = await brainService.runImport(
+        { selectors, includeProjectScope, workspace: getRuntimeState().workspace },
+        (event) => write(event)
+      );
+      write({ phase: 'summary', ...summary });
+      response.end();
     })
   );
 

@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
+import { MemoryImportPanel } from '@/components/screens/memory/MemoryImportPanel';
 import type { WorkspaceState } from '@/containers/voice-console/lib/types';
 
 interface WorkspaceScreenProps {
@@ -36,6 +37,10 @@ export function WorkspaceScreen({
 }: WorkspaceScreenProps) {
   return (
     <div className="flex flex-col gap-6">
+      {/* Bring existing agent memory + sessions into the Brain. Self-hides when there's nothing new,
+          and its dismissed state lives in the shared provider so it doesn't reappear on tab switches. */}
+      <MemoryImportPanel dismissible hideWhenCaughtUp />
+
       {/* Header */}
       <div>
         <p className="text-xs font-medium text-text-tertiary uppercase tracking-wider mb-1">

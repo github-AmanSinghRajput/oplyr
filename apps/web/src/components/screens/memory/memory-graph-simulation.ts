@@ -57,6 +57,9 @@ export interface MemorySimulationOptions {
   anchorOf: (id: string) => { x: number; y: number };
   /** Prior positions to keep the layout stable across graph updates; new atoms seed at their anchor. */
   seed?: Map<string, { x: number; y: number }>;
+  /** Starting energy. A cold first layout runs hot (0.9); a live re-layout starts low so the existing
+   *  map barely shifts while new atoms settle — no full reshuffle on every import event. */
+  alpha?: number;
 }
 
 /**
@@ -109,11 +112,12 @@ export function createMemorySimulation(
         .distance((link) => 150 - Math.min(70, link.weight * 90))
         .strength((link) => Math.min(0.5, 0.12 + link.weight * 0.3))
     )
-    // Type-clustering: gently pull each atom toward its type's neighborhood anchor. Weaker than the
-    // links, so a strong shared-entity edge can still draw two different-type atoms together.
-    .force('cluster-x', forceX<GraphSimNode>((node) => options.anchorOf(node.id).x).strength(0.13))
-    .force('cluster-y', forceY<GraphSimNode>((node) => options.anchorOf(node.id).y).strength(0.13))
-    .alpha(0.9)
+    // Type-clustering: gently pull each atom toward its type's neighborhood anchor. Kept deliberately
+    // soft (≈ the codebase map's single center force) so it seeds the type neighborhoods without waging
+    // a tug-of-war against the links — the old 0.13 made cross-type edges oscillate and settle slowly.
+    .force('cluster-x', forceX<GraphSimNode>((node) => options.anchorOf(node.id).x).strength(0.08))
+    .force('cluster-y', forceY<GraphSimNode>((node) => options.anchorOf(node.id).y).strength(0.08))
+    .alpha(options.alpha ?? 0.9)
     .alphaDecay(0.028)
     // Higher friction = calmer settle, no perpetual drift (alphaTarget stays 0 unless dragging).
     .velocityDecay(0.55);

@@ -4,6 +4,8 @@
   "version": "0.3.1",
   "type": "module",
   "scripts": {
+    "ensure-native": "node scripts/ensure-native.mjs",
+    "predev": "node scripts/ensure-native.mjs",
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
     "build:pack": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist-pack/server.mjs --external:better-sqlite3 --external:@xenova/transformers --external:node-pty --banner:js=\"import { createRequire } from 'module'; const require = createRequire(import.meta.url);\"",
@@ -11,6 +13,7 @@
     "start": "node dist/index.js",
     "db:migrate": "node --import tsx src/scripts/db-migrate.ts",
     "db:ready": "node --import tsx src/scripts/db-ready.ts",
+    "pretest": "node scripts/ensure-native.mjs",
     "test": "node --import tsx --test $(find src -name '*.test.ts' -print)"
   },
   "dependencies": {

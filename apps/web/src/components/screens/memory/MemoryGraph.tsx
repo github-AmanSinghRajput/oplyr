@@ -1,16 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, type CSSProperties } from 'react';
 import {
   Background,
+  BaseEdge,
   Controls,
+  getBezierPath,
   Handle,
   Panel,
   Position,
   ReactFlow,
   ReactFlowProvider,
   useEdgesState,
+  useInternalNode,
   useNodesState,
   useReactFlow,
   type Edge,
+  type EdgeProps,
+  type InternalNode,
   type Node,
   type NodeProps
 } from '@xyflow/react';
@@ -42,6 +47,10 @@ const DRAG_ALPHA = 0.3;
 const MIN_GAP = 18;
 // Collision radius before React Flow has measured a node (corrected once measured).
 const FALLBACK_RADIUS = 48;
+// Render budget: React Flow mounts a DOM node per atom + an SVG path per edge. Past this we keep the
+// most-connected atoms (the shape of the brain) and summarise the rest, so a big import can't turn the
+// canvas into thousands of live elements. Mirrors how the codebase map truncates instead of drawing all.
+const MAX_RENDERED_NODES = 500;
 
 interface GraphNodeData {
   label: string;
@@ -92,6 +101,66 @@ function BrainDotNode({ data }: NodeProps<FlowNode>) {
 }
 
 const nodeTypes = { brainDot: BrainDotNode };
+
+/** Endpoints on each dot's rim, along the line joining the two orb centers, plus the side each end
+ *  faces — so every edge leaves a node from the side facing its neighbour AND curves naturally out of
+ *  that side. Fixes edges exiting the fixed bottom handle regardless of where the connected atom sits
+ *  (the orb is a `size`×`size` box at the node's top-left). */
+function rimEndpoints(source: InternalNode<FlowNode>, target: InternalNode<FlowNode>) {
+  const ds = source.data.size;
+  const dt = target.data.size;
+  const scx = source.internals.positionAbsolute.x + ds / 2;
+  const scy = source.internals.positionAbsolute.y + ds / 2;
+  const tcx = target.internals.positionAbsolute.x + dt / 2;
+  const tcy = target.internals.positionAbsolute.y + dt / 2;
+  const dx = tcx - scx;
+  const dy = tcy - scy;
+  const dist = Math.hypot(dx, dy) || 1;
+  const ux = dx / dist;
+  const uy = dy / dist;
+  // The dominant axis decides which side the curve leaves/enters, so the bezier bows out toward the
+  // neighbour instead of always from top/bottom.
+  const horizontal = Math.abs(ux) >= Math.abs(uy);
+  return {
+    sx: scx + ux * (ds / 2),
+    sy: scy + uy * (ds / 2),
+    tx: tcx - ux * (dt / 2),
+    ty: tcy - uy * (dt / 2),
+    sourcePosition: horizontal
+      ? ux >= 0
+        ? Position.Right
+        : Position.Left
+      : uy >= 0
+        ? Position.Bottom
+        : Position.Top,
+    targetPosition: horizontal
+      ? ux >= 0
+        ? Position.Left
+        : Position.Right
+      : uy >= 0
+        ? Position.Top
+        : Position.Bottom
+  };
+}
+
+/** Custom edge whose curved path is derived from the two nodes' live positions (not fixed handles). */
+function FloatingBrainEdge({ id, source, target, markerEnd, style }: EdgeProps) {
+  const sourceNode = useInternalNode<FlowNode>(source);
+  const targetNode = useInternalNode<FlowNode>(target);
+  if (!sourceNode || !targetNode) return null;
+  const { sx, sy, tx, ty, sourcePosition, targetPosition } = rimEndpoints(sourceNode, targetNode);
+  const [path] = getBezierPath({
+    sourceX: sx,
+    sourceY: sy,
+    sourcePosition,
+    targetX: tx,
+    targetY: ty,
+    targetPosition
+  });
+  return <BaseEdge id={id} path={path} markerEnd={markerEnd} style={style} />;
+}
+
+const edgeTypes = { floating: FloatingBrainEdge };
 
 const CLUSTER_LABELS: Record<BrainAtomType, string> = {
   decision: 'Decisions',
@@ -159,8 +228,8 @@ function ClusterLegend() {
 }
 
 function GraphCanvas({
-  nodes: graphNodes,
-  edges: graphEdges,
+  nodes: allNodes,
+  edges: allEdges,
   selectedId,
   selectedEdgeId,
   onSelectNode,
@@ -185,6 +254,24 @@ function GraphCanvas({
   const draggingIdRef = useRef<string | null>(null);
   const { fitView } = useReactFlow();
 
+  // Render budget: mount only the most-connected atoms so a large brain stays smooth; the rest are
+  // summarised in a corner note. Everything below derives from these capped sets.
+  const { graphNodes, graphEdges, hiddenCount } = useMemo(() => {
+    if (allNodes.length <= MAX_RENDERED_NODES) {
+      return { graphNodes: allNodes, graphEdges: allEdges, hiddenCount: 0 };
+    }
+    const deg = computeDegrees(allEdges);
+    const kept = [...allNodes]
+      .sort((a, b) => (deg.get(b.id) ?? 0) - (deg.get(a.id) ?? 0))
+      .slice(0, MAX_RENDERED_NODES);
+    const keepIds = new Set(kept.map((node) => node.id));
+    return {
+      graphNodes: kept,
+      graphEdges: allEdges.filter((edge) => keepIds.has(edge.source) && keepIds.has(edge.target)),
+      hiddenCount: allNodes.length - kept.length
+    };
+  }, [allNodes, allEdges]);
+
   const degrees = useMemo(() => computeDegrees(graphEdges), [graphEdges]);
   const maxDegree = useMemo(() => {
     let max = 0;
@@ -208,10 +295,14 @@ function GraphCanvas({
 
   // Build the flow nodes/edges and run the force sim whenever the backend graph changes.
   useEffect(() => {
+    // A cold first layout runs hot; a live re-layout (an import event added atoms) starts gentle so
+    // the settled map barely shifts while just the new atoms find their place.
+    const isReheat = posRef.current.size > 0;
     const { simulation, simNodes } = createMemorySimulation(graphNodes, graphEdges, {
       radiusOf,
       anchorOf,
-      seed: posRef.current
+      seed: posRef.current,
+      alpha: isReheat ? 0.35 : 0.9
     });
     const byId = new Map(simNodes.map((simNode) => [simNode.id, simNode]));
     simById.current = byId;
@@ -239,6 +330,7 @@ function GraphCanvas({
     setEdges(
       graphEdges.map((edge) => ({
         id: edge.id,
+        type: 'floating' as const,
         source: edge.source,
         target: edge.target,
         // Edges are first-class, clickable objects (the rail shows the shared-entity link).
@@ -407,6 +499,7 @@ function GraphCanvas({
       onNodesChange={handleNodesChange}
       onEdgesChange={onEdgesChange}
       nodeTypes={nodeTypes}
+      edgeTypes={edgeTypes}
       onNodeClick={(_event, node) => onSelectNode(node.id)}
       onNodeDragStart={onNodeDragStart}
       onNodeDrag={onNodeDrag}
@@ -426,6 +519,24 @@ function GraphCanvas({
       <Panel position="top-left" style={{ marginTop: '3.6rem' }}>
         <ClusterLegend />
       </Panel>
+      {hiddenCount > 0 && (
+        <Panel position="top-right">
+          <div
+            style={{
+              padding: '6px 10px',
+              borderRadius: 10,
+              border: '1px solid var(--color-border)',
+              background: 'rgba(15, 17, 23, 0.66)',
+              backdropFilter: 'blur(8px)',
+              WebkitBackdropFilter: 'blur(8px)',
+              fontSize: 11,
+              color: 'rgba(255, 255, 255, 0.72)'
+            }}
+          >
+            Showing {graphNodes.length} of {graphNodes.length + hiddenCount} most-connected memories
+          </div>
+        </Panel>
+      )}
     </ReactFlow>
   );
 }

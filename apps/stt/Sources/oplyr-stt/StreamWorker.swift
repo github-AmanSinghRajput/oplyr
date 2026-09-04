@@ -5,8 +5,10 @@ import FluidAudio
 func runStreamWorker() async throws {
   let models = try await AsrModels.downloadAndLoad(version: .v3)
 
-  // Streaming engine for live partials (coarse, reuses v3 — per Phase B decision).
-  let streamer = SlidingWindowAsrManager(config: .default)
+  // Streaming engine for live partials. `.streaming` (hypothesisChunkSeconds 1.0s vs `.default`'s
+  // 2.0s) refreshes the live "quick hypothesis" text ~2× as often, so it lands smoothly instead of in
+  // ~2s bursts. Trade-off: partials are slightly more volatile (a word may rewrite before it confirms).
+  let streamer = SlidingWindowAsrManager(config: .streaming)
   try await streamer.loadModels(models)
   // `.microphone` is only a label: the audio genuinely is microphone audio captured
   // upstream, but it arrives here via `streamAudio(_:)` from framed stdin, not from a

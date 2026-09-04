@@ -24,6 +24,10 @@ import type {
   WorkspaceReposResponse,
   CodebaseFileSummaryResponse,
   CodebaseFileSymbolsResponse,
+  ImportManifest,
+  ImportProgressEvent,
+  ImportRunSummary,
+  ImportSelector,
   LogsResponse,
   MarkdownContentResponse,
   MarkdownListResponse,
@@ -126,6 +130,92 @@ export class OperatorConsoleApiService extends BaseApiService {
       },
       body: JSON.stringify({ query })
     });
+  }
+
+  /** Read-only scan of the user's existing agent memory files (paths + byte counts, never bodies). */
+  scanMemoryImport() {
+    return this.request<ImportManifest>('/api/brain/import/scan', {
+      cache: 'no-store'
+    });
+  }
+
+  /**
+   * Import selected agent memory files into the Brain. POSTs the selectors and reads the NDJSON
+   * progress stream line-by-line (mirrors `streamMessage`'s reader), invoking `onEvent` for every
+   * progress line and the final summary line.
+   */
+  async runMemoryImport(
+    body: { selectors: ImportSelector[]; includeProjectScope: boolean },
+    onEvent: (event: ImportProgressEvent | ImportRunSummary) => void
+  ) {
+    const response = await fetch(`${this.baseUrl}/api/brain/import/run`, {
+      method: 'POST',
+      headers: {
+        ...Object.fromEntries(this.createHeaders().entries()),
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+      const raw = await response.text();
+      let parsed: { error?: string } = {};
+      if (raw) {
+        try {
+          parsed = JSON.parse(raw) as typeof parsed;
+        } catch {
+          parsed = { error: raw.slice(0, 200) };
+        }
+      }
+      throw new Error(normalizeApiErrorText(parsed.error ?? 'Unable to import memory.'));
+    }
+
+    if (!response.body) {
+      throw new Error('Memory import response body was unavailable.');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
+
+      let newlineIndex = buffer.indexOf('\n');
+      while (newlineIndex >= 0) {
+        const line = buffer.slice(0, newlineIndex).trim();
+        buffer = buffer.slice(newlineIndex + 1);
+        if (line) {
+          try {
+            onEvent(JSON.parse(line) as ImportProgressEvent | ImportRunSummary);
+          } catch (parseError) {
+            if (parseError instanceof SyntaxError) {
+              console.warn('[import] skipping malformed NDJSON line', line.slice(0, 120));
+            } else {
+              throw parseError;
+            }
+          }
+        }
+        newlineIndex = buffer.indexOf('\n');
+      }
+
+      if (done) {
+        const tail = buffer.trim();
+        if (tail) {
+          try {
+            onEvent(JSON.parse(tail) as ImportProgressEvent | ImportRunSummary);
+          } catch (parseError) {
+            if (parseError instanceof SyntaxError) {
+              console.warn('[import] skipping malformed NDJSON tail', tail.slice(0, 120));
+            } else {
+              throw parseError;
+            }
+          }
+        }
+        break;
+      }
+    }
   }
 
   updateBrainProjectSettings(

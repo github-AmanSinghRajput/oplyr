@@ -877,6 +877,7 @@ export function AppShell() {
             onProviderSwitch={(id) =>
               guardWhileBusy('agent', () => void settings.handleProviderSwitch(id))
             }
+            onProviderConnect={(id) => void settings.handleProviderConnect(id)}
             codexSettings={settings.codexSettings}
             claudeSettings={settings.claudeSettings}
             geminiSettings={settings.geminiSettings}

@@ -186,6 +186,14 @@ export function createPendingApproval(input: Omit<PendingApproval, 'id' | 'creat
   return approval;
 }
 
+/** Strip server-only fields (the working-tree baseline — repo refs, paths, untracked blob hashes)
+ *  before an approval crosses to the client. The baseline is only used server-side for review/reject. */
+export function toClientApproval(approval: PendingApproval): PendingApproval {
+  const clientApproval = { ...approval };
+  delete clientApproval.baseline;
+  return clientApproval;
+}
+
 export function getPendingApproval() {
   return runtimeState.pendingApproval;
 }

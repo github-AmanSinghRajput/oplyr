@@ -5,7 +5,8 @@ import {
   getPendingApproval,
   getRuntimeState,
   getWorkspaceState,
-  setLastDiff
+  setLastDiff,
+  toClientApproval
 } from '../../runtime.js';
 import {
   collectGitDiff,
@@ -23,13 +24,13 @@ import {
 import { AppError } from '../../lib/errors.js';
 import type {
   AssistantProviderId,
-  BaselineUntrackedSnapshot,
   ChatAttachment,
   ChatMemoryUsage,
   ChatMessage,
   ChatSource,
   DiffSummary,
-  PendingApproval
+  PendingApproval,
+  WorkspaceBaseline
 } from '../../types.js';
 import { ApprovalRepository } from '../approvals/approval.repository.js';
 import { ChatAttachmentRepository } from './chat-attachment.repository.js';
@@ -403,10 +404,7 @@ export class ChatService {
 
     // Snapshot the working tree BEFORE applying, so a reject reverts ONLY the assistant's edits
     // (restored to this point) without disturbing the user's other uncommitted work.
-    const baseline = await this.assistant.snapshotWorkingTree?.(workspace.projectRoot);
-    const baselineRef = baseline?.ref ?? null;
-    const baselineUntracked = baseline?.untracked ?? [];
-    const baselineUntrackedSnapshots = baseline?.untrackedSnapshots ?? [];
+    const baseline = (await this.assistant.snapshotWorkingTree?.(workspace.projectRoot)) ?? null;
 
     const approval = this.runtime.createPendingApproval({
       projectRoot: workspace.projectRoot,
@@ -415,9 +413,7 @@ export class ChatService {
       summary: decision.proposal_summary || decision.assistant_text || '',
       tasks: Array.isArray(decision.tasks) ? decision.tasks : [],
       agents: Array.isArray(decision.agents) ? decision.agents : [],
-      baselineRef,
-      baselineUntracked,
-      baselineUntrackedSnapshots
+      baseline
     });
 
     // Apply the change now (working tree only) so the user reviews the real diff before deciding.
@@ -433,18 +429,11 @@ export class ChatService {
       });
       approval.executionSummary = writeResult.text.trim() || undefined;
     } catch (error) {
-      if (baselineRef && this.assistant.revertWorkingTree) {
-        const partial = await this.collectTurnDiff(
-          workspace.projectRoot,
-          baselineRef,
-          baselineUntracked,
-          baselineUntrackedSnapshots
-        );
+      if (baseline && this.assistant.revertWorkingTree) {
+        const partial = await this.collectTurnDiff(workspace.projectRoot, baseline);
         await this.assistant.revertWorkingTree(
-          workspace.projectRoot,
-          baselineRef,
-          partial.files.map((file) => ({ filePath: file.filePath, status: file.status })),
-          baselineUntrackedSnapshots
+          baseline,
+          partial.files.map((file) => ({ filePath: file.filePath, status: file.status }))
         );
       }
       this.runtime.clearPendingApproval();
@@ -453,20 +442,10 @@ export class ChatService {
     }
 
     onActivity?.('Preparing the diff for your review');
-    let diff = await this.collectTurnDiff(
-      workspace.projectRoot,
-      baselineRef,
-      baselineUntracked,
-      baselineUntrackedSnapshots
-    );
+    let diff = await this.collectTurnDiff(workspace.projectRoot, baseline);
     if (diff.redactedFiles && diff.redactedFiles.length > 0) {
       await this.assistant.revertProtectedGitChanges?.(workspace.projectRoot, diff.redactedFiles);
-      diff = await this.collectTurnDiff(
-        workspace.projectRoot,
-        baselineRef,
-        baselineUntracked,
-        baselineUntrackedSnapshots
-      );
+      diff = await this.collectTurnDiff(workspace.projectRoot, baseline);
     }
     this.runtime.setLastDiff(diff);
     logger.info('chat.write_intent.applied', {
@@ -488,26 +467,16 @@ export class ChatService {
       type: 'approval_required',
       userMessage,
       assistantMessage,
-      pendingApproval: approval
+      pendingApproval: toClientApproval(approval)
     };
   }
 
   // Diff scoped to a single assistant turn: only the changes since the pre-edit snapshot, so the
   // Review screen never shows the user's other uncommitted files. Falls back to the full diff when
   // there is no snapshot (e.g. tests, or a non-git workspace).
-  private async collectTurnDiff(
-    projectRoot: string,
-    baselineRef: string | null,
-    baselineUntracked: string[],
-    baselineUntrackedSnapshots: BaselineUntrackedSnapshot[] = []
-  ) {
-    if (baselineRef && this.assistant.collectGitDiffSince) {
-      return this.assistant.collectGitDiffSince(
-        projectRoot,
-        baselineRef,
-        baselineUntracked,
-        baselineUntrackedSnapshots
-      );
+  private async collectTurnDiff(projectRoot: string, baseline: WorkspaceBaseline | null) {
+    if (baseline && baseline.repos.length > 0 && this.assistant.collectGitDiffSince) {
+      return this.assistant.collectGitDiffSince(baseline);
     }
     return this.assistant.collectGitDiff(projectRoot);
   }
@@ -528,12 +497,7 @@ export class ChatService {
     }
 
     // The change was already applied to the working tree for review; approving simply keeps it.
-    const diff = await this.collectTurnDiff(
-      approval.projectRoot,
-      approval.baselineRef ?? null,
-      approval.baselineUntracked ?? [],
-      approval.baselineUntrackedSnapshots ?? []
-    );
+    const diff = await this.collectTurnDiff(approval.projectRoot, approval.baseline ?? null);
     // Prefer the assistant's own post-edit summary (captured when the change was applied) so the
     // approved turn reads like a real coding agent. Fall back to the templated diff summary.
     const approvedText = approval.executionSummary?.trim()
@@ -566,18 +530,11 @@ export class ChatService {
 
     // The proposed change was already applied for review — revert it back to the snapshot taken
     // before the edit, scoped to the assistant's files so the user's other work stays intact.
-    if (workspace.projectRoot && approval.baselineRef && this.assistant.revertWorkingTree) {
-      appliedDiff = await this.collectTurnDiff(
-        workspace.projectRoot,
-        approval.baselineRef,
-        approval.baselineUntracked ?? [],
-        approval.baselineUntrackedSnapshots ?? []
-      );
+    if (workspace.projectRoot && approval.baseline && this.assistant.revertWorkingTree) {
+      appliedDiff = await this.collectTurnDiff(workspace.projectRoot, approval.baseline);
       await this.assistant.revertWorkingTree(
-        workspace.projectRoot,
-        approval.baselineRef,
-        appliedDiff.files.map((file) => ({ filePath: file.filePath, status: file.status })),
-        approval.baselineUntrackedSnapshots ?? []
+        approval.baseline,
+        appliedDiff.files.map((file) => ({ filePath: file.filePath, status: file.status }))
       );
     }
 

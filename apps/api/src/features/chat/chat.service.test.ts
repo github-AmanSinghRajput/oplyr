@@ -246,8 +246,17 @@ test('ChatService.rejectPending clears lastDiff so the review screen is not stal
     summary: 'Update UI styles.',
     tasks: ['Edit CSS'],
     agents: ['frontend'],
-    baselineRef: 'HEAD',
-    baselineUntracked: []
+    baseline: {
+      repos: [
+        {
+          relativePath: '',
+          root: '/tmp/project',
+          ref: 'HEAD',
+          untracked: [],
+          untrackedSnapshots: []
+        }
+      ]
+    }
   });
 
   let collectCalled = false;

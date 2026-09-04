@@ -7,7 +7,7 @@ These come AFTER the first notarized DMG ships (see `docs/DISTRIBUTION.md`). The
 1. **Guided connect flow** (Feature A) — build first; it's a prerequisite for a useful room (you need ≥2 agents actually connected before "agents talk to each other" means anything).
 2. **Multi-agent room — conducted @mention** (Feature B1). ✅ SHIPPED (backend + UI; 2026-07-22).
 3. **Multi-agent room — capped debate** (Feature B2) — opt-in, guarded, fast-follow.
-4. **Import existing agent memory** (Feature C) — onboarding wedge; deferred, documented below.
+4. **Import existing agent memory** (Feature C) — onboarding wedge; **re-prioritized 2026-08-03 as a quick user win**, flow confirmed, documented below.
 5. **Local-network team collaboration** (Feature D) — shared room over LAN; flagship-sized, deferred, documented below.
 
 Each gets its own short spec → plan → build when we start.
@@ -53,9 +53,11 @@ Each gets its own short spec → plan → build when we start.
 ---
 
 ## Feature C — Import existing agent memory (onboarding wedge)
-**Status:** deferred, documented 2026-07-22. Pick up after the current round of testing.
+**Status:** documented 2026-07-22; **re-prioritized 2026-08-03** — the user's "quick user winner." Turns the #1 switching fear ("I'll lose the context I've built in Claude/Codex") into "Oplyr already knows my projects on day one." Onboarding flow + guardrails confirmed with the user (below).
 
-**Idea:** on connect, import a user's EXISTING Claude Code / Codex memory into the Oplyr Brain so they never start from scratch. Kills the cold-start feeling and leans on our two real differentiators — the Brain + local-first.
+**Idea:** on connect, import a user's EXISTING Claude Code / Codex memory into the Oplyr Brain so they never start from scratch. Kills the cold-start feeling and leans on our two real differentiators — the Brain + local-first. **Scope note:** real on-disk memory exists for **Claude Code, Codex, and (best-effort) Gemini CLI** (`GEMINI.md`) — model providers like Kimi/Groq keep nothing local, so they're out unless reached *through* one of those CLIs. Marketing copy should name Claude/Codex/Gemini, not kimi/groq.
+
+**Onboarding flow (confirmed 2026-08-03):** connect an agent → Oplyr **scans and reports what it found** (e.g. "Found Claude Code memory across 6 projects + your global CLAUDE.md") → user **approves the preview** → **progress bar** writes into the Brain, **grouped by project** so they can jump straight back into the one they were on. Offered at the connect step; re-runnable from Settings.
 
 **Where the source data lives (verified on-disk 2026-07-22):**
 - **Claude — curated:** `<repo>/CLAUDE.md` (+ subdir `CLAUDE.md`, `@imports`) and global `~/.claude/CLAUDE.md`. **History:** `~/.claude/projects/<slugified-cwd>/<session-id>.jsonl` (one dir per project; path `/`→`-`) + `~/.claude/history.jsonl`. Config: `~/.claude.json`.
@@ -66,7 +68,7 @@ Each gets its own short spec → plan → build when we start.
 - **Tier 2 (deeper, opt-in):** distill recent `.jsonl` transcripts (Claude `projects/` + Codex sessions) into durable memories, selective by recency. Optionally read Codex's `memories_1.sqlite` directly.
 
 **Must-haves / caveats:**
-- **100% local** — read local files → distill locally → write local `brain.db`; never upload. On-brand; say it in the UI.
+- **100% local** — read local files → distill locally → write local `brain.db`; **never upload.** Tier-2 summarization runs **on-device or through the user's OWN connected agent** (their account, their machine), never our cloud. On-brand; say it in the UI.
 - **Provenance** — tag imported atoms (`source: claude-md | codex-agents | imported-transcript`) so recall can say "learned from your existing setup."
 - **Consent + preview** before writing to the Brain (show which files + how many memories will be added).
 - **Brittleness** — undocumented internal paths/formats; start with the stable MD files, treat transcripts/SQLite as best-effort.
