@@ -185,7 +185,7 @@ function VoiceBootstrapScreen({
 
           {phase === 'failed' && (
             <button
-              className="mt-6 inline-flex h-10 items-center justify-center rounded-radius-control bg-accent px-5 py-2 text-sm font-medium text-background transition-colors hover:bg-accent/90"
+              className="mt-6 inline-flex h-10 items-center justify-center rounded-control bg-accent px-5 py-2 text-sm font-medium text-background transition-colors hover:bg-accent/90"
               onClick={onRetry}
               type="button"
             >
@@ -626,6 +626,12 @@ export function AppShell() {
           }}
           onConnectProject={(path) => void settings.handleSaveProject(path)}
           onSkipProject={() => settings.dismissOnboardingProject()}
+          onBackToProject={() => {
+            // Clearing the skip flag re-derives the step machine back to the project step; the
+            // explicit set covers the case where a project was already connected (no dep change).
+            settings.restoreOnboardingProject();
+            settings.setOnboardingStep(4);
+          }}
           currentPet={status?.appSettings.deskPet ?? 'duck'}
           onChoosePet={(pet) => {
             void settings.handleAppSettingChange('deskPet', pet);
@@ -765,7 +771,7 @@ export function AppShell() {
               guardWhileBusy('agent', () => void settings.handleProviderSwitch(id))
             }
             onUpdateCli={(id) => void settings.handleUpdateCli(id)}
-            onRefreshProviderUsage={() => void settings.loadProviderUsage()}
+            onRefreshProviderUsage={() => void settings.loadProviderUsage({ force: true })}
             onSaveCodexSettings={() => void settings.handleSaveCodexSettings()}
             onSaveClaudeSettings={() => void settings.handleSaveClaudeSettings()}
             onSaveGeminiSettings={() => void settings.handleSaveGeminiSettings()}

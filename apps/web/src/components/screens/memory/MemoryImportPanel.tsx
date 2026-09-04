@@ -7,6 +7,7 @@ import {
   FolderGit2,
   Loader2,
   MessageSquare,
+  RefreshCw,
   Sparkles,
   X
 } from 'lucide-react';
@@ -81,18 +82,13 @@ export function MemoryImportPanel({
     startImport,
     dismissDone,
     dismissed,
-    dismiss
+    dismiss,
+    undismiss
   } = useMemoryImport();
   const [showAdded, setShowAdded] = useState(false);
 
   const running = run.status === 'running';
   const done = run.status === 'done';
-
-  // Dismissed (session-level, from the shared provider) → hide entirely while idle, so it doesn't
-  // reappear on tab switches. A running/finished import still shows its progress/summary.
-  if (dismissible && dismissed && !running && !done) {
-    return null;
-  }
 
   // Slim placeholder while the first scan runs, so nothing tall flashes in tight contexts.
   if (scanState === 'scanning' && !manifest) {
@@ -139,7 +135,43 @@ export function MemoryImportPanel({
   const agents = manifest?.agents ?? [];
   const caughtUp = pendingCount === 0 && !running && !done;
 
-  // On nudge surfaces, don't linger as an "all caught up" card — appear only when there's work.
+  // Collapsed state for dismissible surfaces (Workspace): either the user dismissed the card, or
+  // there's nothing new to offer. Render a slim, always-recoverable row — expand + re-scan — instead
+  // of vanishing. Dismissing must never lose the feature, and the user needs a way to check for newly
+  // written agent memory without restarting the app.
+  if (dismissible && !running && !done && (dismissed || (hideWhenCaughtUp && caughtUp))) {
+    return (
+      <div
+        className={cn(
+          'flex items-center gap-2 rounded-[var(--radius-panel)] border border-border bg-surface-1 px-4 py-2.5 text-xs',
+          className
+        )}
+      >
+        <Sparkles size={13} className="shrink-0 text-accent" />
+        <button
+          type="button"
+          onClick={undismiss}
+          className="min-w-0 flex-1 truncate text-left text-text-secondary transition-colors hover:text-text-primary"
+        >
+          {pendingCount > 0
+            ? `${pendingCount} new memory ${pendingCount === 1 ? 'source' : 'sources'} to import`
+            : 'Agent memory is up to date'}
+        </button>
+        <button
+          type="button"
+          onClick={() => void rescan()}
+          disabled={scanState === 'scanning'}
+          aria-label="Check for new agent memory"
+          title="Check for new agent memory"
+          className="shrink-0 text-text-tertiary transition-colors hover:text-text-primary disabled:opacity-50"
+        >
+          <RefreshCw size={13} className={cn(scanState === 'scanning' && 'animate-spin')} />
+        </button>
+      </div>
+    );
+  }
+
+  // Non-dismissible surfaces (onboarding) still vanish when there's nothing new to bring in.
   if (hideWhenCaughtUp && caughtUp) {
     return null;
   }
@@ -186,12 +218,25 @@ export function MemoryImportPanel({
             {subtitle}
           </p>
         </div>
+        {!running && (
+          <button
+            type="button"
+            onClick={() => void rescan()}
+            disabled={scanState === 'scanning'}
+            className="shrink-0 text-text-tertiary transition-colors hover:text-text-primary disabled:opacity-50"
+            aria-label="Check for new agent memory"
+            title="Check for new agent memory"
+          >
+            <RefreshCw size={14} className={cn(scanState === 'scanning' && 'animate-spin')} />
+          </button>
+        )}
         {dismissible && !running && (
           <button
             type="button"
             className="shrink-0 text-text-tertiary transition-colors hover:text-text-primary"
             onClick={dismiss}
-            aria-label="Dismiss"
+            aria-label="Collapse"
+            title="Collapse"
           >
             <X size={16} />
           </button>

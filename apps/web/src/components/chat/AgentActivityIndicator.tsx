@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { TypingDots } from '@/components/voice/TypingDots';
+import { ThinkingPulse } from '@/components/voice/ThinkingPulse';
+import { useStatus } from '@/providers/StatusProvider';
+import { agentAccent } from '@/lib/agents';
 import { cn } from '@/lib/cn';
 import { getFallbackPhrase } from '@/containers/voice-console/lib/agent-phrases';
 
@@ -30,6 +32,10 @@ export function AgentActivityIndicator({
 }: AgentActivityIndicatorProps) {
   const [tick, setTick] = useState(0);
   const trimmed = activity?.trim() ?? '';
+  // Tint the pulse with whichever agent is actually working, so the indicator identifies the agent
+  // rather than being one anonymous animation shared by all of them.
+  const { status } = useStatus();
+  const activeAgent = status?.assistantProviders.activeProviderId ?? null;
 
   // Adjust state when the activity prop changes — React's recommended render-phase pattern for
   // deriving state from props (no setState-in-effect cascade). When a fresh real activity arrives,
@@ -72,7 +78,7 @@ export function AgentActivityIndicator({
           {label}
         </motion.span>
       </AnimatePresence>
-      <TypingDots size="sm" />
+      <ThinkingPulse size="sm" accent={activeAgent ? agentAccent(activeAgent) : undefined} />
     </span>
   );
 }

@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Mic, Square, Send, Check, StopCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { VoiceWaveform } from '@/components/voice/VoiceWaveform';
-import { TypingDots } from '@/components/voice/TypingDots';
 import { MessageBubble } from '@/components/chat/MessageBubble';
 import { AgentActivityTimeline } from '@/components/chat/AgentActivityTimeline';
 import { ProviderLogo } from '@/components/providers/ProviderLogo';
@@ -97,6 +96,27 @@ export function VoiceScreen({
   const replyText = aiReply?.text?.trim() ?? '';
   const showResponseBlock = Boolean(aiReply && replyText) || isWorking;
 
+  // A turn is "in flight" from the moment the mic opens until the agent finishes. The send mode is
+  // locked for that window so it can't change out from under an in-flight transcript.
+  const turnInFlight = isRecording || isWorking;
+
+  // The headline must describe what Oplyr is ACTUALLY doing. `voiceSession.phase` stays 'listening'
+  // while the session is merely open, so keying the label off it announced "Listening…" with a cold
+  // mic — misleading, and a privacy smell (it reads as "always listening"). `isRecording` is the real
+  // mic-capture signal, so only that may claim we're listening.
+  const headline =
+    voiceState === 'error'
+      ? STATUS.error
+      : isRecording
+        ? STATUS.listening
+        : agentWorking
+          ? 'Working…'
+          : reviewing
+            ? 'Review what I heard'
+            : voiceState === 'speaking'
+              ? STATUS.speaking
+              : STATUS.idle;
+
   return (
     <div className="flex w-full flex-col items-center gap-6 py-8">
       <div className="text-center">
@@ -106,22 +126,26 @@ export function VoiceScreen({
         <p className="text-xs font-medium text-text-tertiary uppercase tracking-wider mb-1">
           Voice · {audio?.transcriptionEngine ?? 'On-device speech'}
         </p>
-        <h2 className="text-xl font-semibold text-text-primary">
-          {agentWorking && voiceState !== 'listening' ? 'Working…' : STATUS[voiceState]}
-        </h2>
+        <h2 className="text-xl font-semibold text-text-primary">{headline}</h2>
       </div>
 
+      {/* The send mode is locked for the duration of a turn: flipping it mid-utterance changed how the
+          in-flight transcript was handled and could strand the turn in a transcription error. The mode
+          a turn started with is the mode it finishes with. */}
       <button
         type="button"
         data-tour="voice-autosend"
         onClick={onToggleAutoSend}
+        disabled={turnInFlight}
         aria-pressed={autoSend}
         title={
-          autoSend
-            ? 'Auto-send on — your transcript is sent immediately'
-            : 'Auto-send off — review and edit your transcript before sending'
+          turnInFlight
+            ? 'Finish this turn to change auto-send'
+            : autoSend
+              ? 'Auto-send on — your transcript is sent immediately'
+              : 'Auto-send off — review and edit your transcript before sending'
         }
-        className="flex items-center gap-2 rounded-radius-pill border border-border bg-surface-1 px-3 py-1.5 text-xs text-text-secondary transition-colors hover:text-text-primary"
+        className="flex items-center gap-2 rounded-pill border border-border bg-surface-1 px-3 py-1.5 text-xs text-text-secondary transition-colors hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-text-secondary"
       >
         <span
           className={cn(
@@ -246,7 +270,8 @@ export function VoiceScreen({
                 Assistant
               </span>
             )}
-            {isWorking && !replyText && <TypingDots size="sm" className="ml-1" />}
+            {/* No dots here: the AgentActivityTimeline below already renders the live indicator (the
+                action label + its own dots). Showing both played the same animation twice. */}
           </div>
           {aiReply && replyText ? (
             <MessageBubble

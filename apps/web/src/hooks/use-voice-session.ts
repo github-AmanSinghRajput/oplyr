@@ -74,6 +74,10 @@ export function useVoiceSession({
   useEffect(() => {
     autoSendRef.current = autoSend;
   }, [autoSend]);
+  // The send mode a turn STARTED with, snapshotted when capture begins. The voice UI locks the toggle
+  // during a turn, but the same preference is also reachable from Settings — so pinning it here means
+  // an in-flight transcript can never be rerouted mid-turn (which stranded the turn in an error).
+  const turnAutoSendRef = useRef(autoSend);
 
   // Streaming capture refs
   const wsRef = useRef<WebSocket | null>(null);
@@ -267,7 +271,8 @@ export function useVoiceSession({
       isFinalizingRef.current = false;
 
       // Auto-send OFF: stash the transcript for the user to review/edit, return to idle, don't send.
-      if (!autoSendRef.current) {
+      // Uses the mode this turn STARTED with, not whatever it is now.
+      if (!turnAutoSendRef.current) {
         setPendingTranscript(transcript);
         processingTurnRef.current = false;
         sessionActiveRef.current = false;
@@ -360,6 +365,9 @@ export function useVoiceSession({
     if (processingTurnRef.current || stopRequestedRef.current) {
       return;
     }
+
+    // Pin the send mode for this turn (see turnAutoSendRef).
+    turnAutoSendRef.current = autoSendRef.current;
 
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     micStreamRef.current = stream;

@@ -13,6 +13,8 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { AttachmentChip } from './AttachmentChip';
 import { ProviderLogo } from '@/components/providers/ProviderLogo';
+import { PetCompanion } from '@/components/pets/PetCompanion';
+import { useStatus } from '@/providers/StatusProvider';
 import type { AssistantProviderId, ChatAttachment } from '@/containers/voice-console/lib/types';
 
 // The composer grows with its content up to this height, then scrolls internally.
@@ -55,6 +57,9 @@ export function ChatComposer({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [isDragActive, setIsDragActive] = useState(false);
+  // Crabby honours the same "show desk pet" preference as the topbar companion.
+  const { status } = useStatus();
+  const showDeskPet = status?.appSettings.showDeskPet !== false;
 
   // @mention autocomplete: `mention` tracks the token being typed (query + its start index).
   const [mention, setMention] = useState<{ query: string; start: number } | null>(null);
@@ -169,7 +174,7 @@ export function ChatComposer({
     <TooltipProvider delayDuration={300}>
       <form
         className={cn(
-          'border-t border-border bg-background/60 backdrop-blur-sm px-4 py-3 transition-colors',
+          'relative border-t border-border bg-background/60 backdrop-blur-sm px-4 py-3 transition-colors',
           isDragActive && 'bg-accent-muted/30'
         )}
         onDragLeave={handleDragLeave}
@@ -177,6 +182,9 @@ export function ChatComposer({
         onDrop={handleDrop}
         onSubmit={onSubmit}
       >
+        {/* Crabby scuttles along the composer's top edge, using the border as its floor. */}
+        {showDeskPet && <PetCompanion pet="crab" className="pet-lane-top" />}
+
         {draftAttachments.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mb-2">
             {draftAttachments.map((att) => (

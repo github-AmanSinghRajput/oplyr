@@ -6,8 +6,10 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/cn';
 import { ProviderLogo } from '@/components/providers/ProviderLogo';
 import { MemoryImportPanel } from '@/components/screens/memory/MemoryImportPanel';
+import { useMemoryImport } from '@/providers/MemoryImportProvider';
 import { OplyrLogoMark } from '@/components/branding/OplyrLogoMark';
-import { PetPreview } from '@/components/layout/TopbarPet';
+import { PetPreview } from '@/components/pets/PetCompanion';
+import { PET_LABELS } from '@/components/pets/pet-art';
 import {
   DESK_PETS,
   type AppSettings,
@@ -15,14 +17,6 @@ import {
   type AssistantProviderStatus,
   type DeskPet
 } from '@/containers/voice-console/lib/types';
-
-const PET_LABELS: Record<DeskPet, string> = {
-  duck: 'Duck',
-  bird: 'Bird',
-  frog: 'Frog',
-  cat: 'Cat',
-  dog: 'Dog'
-};
 
 interface OnboardingScreenProps {
   appSettings: AppSettings | null;
@@ -42,6 +36,8 @@ interface OnboardingScreenProps {
   onBrowseProjectFolder: () => Promise<string | null>;
   onConnectProject: (path: string) => void;
   onSkipProject: () => void;
+  /** Step back from the pet step to the project + memory-import step (easy to click past by accident). */
+  onBackToProject: () => void;
   currentPet: DeskPet;
   onChoosePet: (pet: DeskPet) => void;
   onSkipPet: () => void;
@@ -65,10 +61,26 @@ export function OnboardingScreen({
   onBrowseProjectFolder,
   onConnectProject,
   onSkipProject,
+  onBackToProject,
   currentPet,
   onChoosePet,
   onSkipPet
 }: OnboardingScreenProps) {
+  // Leaving the project step also leaves the memory-import card behind — and it's easy to click past
+  // by accident. If un-imported agent memory is still sitting there, confirm before advancing.
+  const { pendingCount } = useMemoryImport();
+  type Advance = { kind: 'skip' } | { kind: 'connect'; path: string };
+  const [pendingAdvance, setPendingAdvance] = useState<Advance | null>(null);
+  const runAdvance = (action: Advance) => {
+    setPendingAdvance(null);
+    if (action.kind === 'skip') onSkipProject();
+    else onConnectProject(action.path);
+  };
+  const requestAdvance = (action: Advance) => {
+    if (pendingCount > 0) setPendingAdvance(action);
+    else runAdvance(action);
+  };
+
   const [displayNameInput, setDisplayNameInput] = useState(appSettings?.displayName ?? '');
   const [projectInput, setProjectInput] = useState('');
   const [petChoice, setPetChoice] = useState<DeskPet>(currentPet);
@@ -479,17 +491,42 @@ export function OnboardingScreen({
                     )}
                   </div>
 
-                  <div className="flex items-center justify-center gap-3">
-                    <Button variant="ghost" onClick={onSkipProject}>
-                      Skip for now
-                    </Button>
-                    <Button
-                      disabled={!projectInput.trim()}
-                      onClick={() => onConnectProject(projectInput)}
-                    >
-                      Connect project
-                    </Button>
-                  </div>
+                  {pendingAdvance ? (
+                    <div className="mx-auto max-w-xl rounded-[var(--radius-panel)] border border-accent-border/40 bg-accent-muted/20 p-4 text-left">
+                      <p className="text-sm font-medium text-text-primary">
+                        Import your agent memory first?
+                      </p>
+                      <p className="mt-1 text-xs text-text-secondary">
+                        We found {pendingCount} {pendingCount === 1 ? 'source' : 'sources'} from
+                        your Claude / Codex setup that aren&apos;t in your brain yet. You can always
+                        do this later from the Workspace screen.
+                      </p>
+                      <div className="mt-3 flex items-center gap-2">
+                        <Button size="sm" onClick={() => setPendingAdvance(null)}>
+                          Let me import
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => runAdvance(pendingAdvance)}
+                        >
+                          Continue without importing
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center gap-3">
+                      <Button variant="ghost" onClick={() => requestAdvance({ kind: 'skip' })}>
+                        Skip for now
+                      </Button>
+                      <Button
+                        disabled={!projectInput.trim()}
+                        onClick={() => requestAdvance({ kind: 'connect', path: projectInput })}
+                      >
+                        Connect project
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -505,7 +542,7 @@ export function OnboardingScreen({
                   you can change it or turn it off anytime in Settings.
                 </p>
 
-                <div className="mx-auto mb-8 grid max-w-xl grid-cols-5 gap-3">
+                <div className="mx-auto mb-8 grid max-w-xl grid-cols-3 gap-3 sm:grid-cols-6">
                   {DESK_PETS.map((pet) => (
                     <button
                       key={pet}
@@ -529,6 +566,9 @@ export function OnboardingScreen({
                 </div>
 
                 <div className="flex items-center justify-center gap-3">
+                  <Button variant="ghost" onClick={onBackToProject}>
+                    ← Back
+                  </Button>
                   <Button variant="ghost" onClick={onSkipPet}>
                     Skip — I&apos;ll pick later
                   </Button>

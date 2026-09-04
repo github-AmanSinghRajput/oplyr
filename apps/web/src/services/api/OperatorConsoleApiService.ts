@@ -292,8 +292,10 @@ export class OperatorConsoleApiService extends BaseApiService {
     });
   }
 
-  getAssistantUsage() {
-    return this.request<ProviderUsageResponse>('/api/assistant/usage', {
+  /** `force` bypasses the server's snapshot cache — used by the Refresh button so a user who just
+   *  fixed the underlying problem (reconnected, re-logged-in) isn't served a cached failure. */
+  getAssistantUsage(force = false) {
+    return this.request<ProviderUsageResponse>(`/api/assistant/usage${force ? '?force=1' : ''}`, {
       cache: 'no-store'
     });
   }

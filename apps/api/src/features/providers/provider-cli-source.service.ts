@@ -555,7 +555,13 @@ async function captureCodexStatus(): Promise<string | null> {
   let trustAnswered = false;
 
   const stripped = () => stripAnsi(out);
-  const rendered = () => /Weekly limit|5h limit|Account:/i.test(stripped());
+  // The panel is only useful once the LIMIT lines are on it — `parseCodexStatus` yields nothing
+  // without them. Treating "Account:" as done was the bug: codex defers limits on the first
+  // /status after launch ("Limits: refresh requested; run /status again shortly"), so the panel
+  // rendered, the scrape stopped, and the parse came back empty.
+  const panelSeen = () => /Account:/i.test(stripped());
+  const rendered = () => /(5h limit|Weekly limit)\s*:/i.test(stripped());
+  const limitsDeferred = () => /refresh requested|run \/status again/i.test(stripped());
   const kill = () => {
     try {
       term?.kill();
@@ -627,6 +633,12 @@ async function captureCodexStatus(): Promise<string | null> {
       await delay(700); // let the slash popup appear
       write('\r'); // select + run
       await delay(1900); // let the panel draw
+      // Codex answers the first /status after launch with "Limits: refresh requested; run /status
+      // again shortly" — it kicks off the fetch and expects a second ask. Give that fetch time to
+      // land before re-running, otherwise we just collect the same placeholder again.
+      if (!rendered() && limitsDeferred()) {
+        await delay(2200);
+      }
     }
 
     const ok = rendered();
@@ -640,6 +652,8 @@ async function captureCodexStatus(): Promise<string | null> {
       event: 'codex.status',
       ok,
       composerSeen,
+      panelSeen: panelSeen(),
+      limitsDeferred: limitsDeferred(),
       attempts,
       exitCode,
       elapsedMs: Date.now() - startedAt,

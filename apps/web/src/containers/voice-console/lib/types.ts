@@ -199,8 +199,8 @@ export interface TranscriptionModelOption {
 
 export type AppTheme = 'dark' | 'light';
 
-export type DeskPet = 'duck' | 'bird' | 'frog' | 'cat' | 'dog';
-export const DESK_PETS: readonly DeskPet[] = ['duck', 'bird', 'frog', 'cat', 'dog'];
+export type DeskPet = 'duck' | 'bird' | 'frog' | 'cat' | 'dog' | 'crab';
+export const DESK_PETS: readonly DeskPet[] = ['duck', 'bird', 'frog', 'cat', 'dog', 'crab'];
 
 export interface AppSettings {
   displayName: string | null;

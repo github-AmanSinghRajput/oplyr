@@ -135,7 +135,7 @@ export function ModelPicker({
                   setOpen(false);
                 }}
                 className={cn(
-                  'flex w-full items-start gap-2 rounded-radius-sm px-2 py-1.5 text-xs transition-colors',
+                  'flex w-full items-start gap-2 rounded-sm px-2 py-1.5 text-xs transition-colors',
                   isActive
                     ? 'bg-accent-muted text-accent'
                     : 'text-text-secondary hover:bg-surface-2 hover:text-text-primary'
@@ -163,7 +163,7 @@ export function ModelPicker({
               if (activeProviderId) onRefreshModels(activeProviderId);
             }}
             disabled={refreshing || !activeProviderId}
-            className="flex w-full items-center gap-2 rounded-radius-sm px-2 py-1.5 text-xs text-text-secondary transition-colors hover:bg-surface-2 hover:text-text-primary disabled:opacity-60"
+            className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs text-text-secondary transition-colors hover:bg-surface-2 hover:text-text-primary disabled:opacity-60"
             title="Fetch the latest models from this agent's CLI"
           >
             <RefreshCw size={13} className={cn('shrink-0', refreshing && 'animate-spin')} />
@@ -315,7 +315,7 @@ export function EffortPicker({
                   setOpen(false);
                 }}
                 className={cn(
-                  'flex w-full flex-col items-start gap-0.5 rounded-radius-sm px-2 py-1.5 text-xs transition-colors',
+                  'flex w-full flex-col items-start gap-0.5 rounded-sm px-2 py-1.5 text-xs transition-colors',
                   isActive
                     ? 'bg-accent-muted text-accent'
                     : 'text-text-secondary hover:bg-surface-2 hover:text-text-primary'

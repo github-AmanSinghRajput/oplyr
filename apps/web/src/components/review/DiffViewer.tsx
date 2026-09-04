@@ -120,7 +120,7 @@ export function DiffViewer({ filePath, diff, mode }: DiffViewerProps) {
         <button
           type="button"
           onClick={() => setForceShowLarge(true)}
-          className="rounded-radius-sm border border-border bg-surface-2 px-3 py-1.5 text-xs font-medium text-text-primary transition-colors hover:bg-surface-3"
+          className="rounded-sm border border-border bg-surface-2 px-3 py-1.5 text-xs font-medium text-text-primary transition-colors hover:bg-surface-3"
         >
           Show diff anyway
         </button>

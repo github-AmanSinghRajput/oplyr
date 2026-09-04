@@ -4,20 +4,24 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
+import { AGENTS, agentAccent } from '@/lib/agents';
+import { ProviderLogo } from '@/components/providers/ProviderLogo';
+import { PET_EMOJI, PET_LABELS } from '@/components/pets/pet-art';
 import { useTour } from '@/providers/TourProvider';
 import { useTheme } from '@/providers/ThemeProvider';
 import { formatReasoningEffort } from '@/containers/voice-console/lib/helpers';
-import type {
-  AppSettings,
-  AssistantProviderId,
-  DeskPet,
-  ClaudeSettingsResponse,
-  CodexSettingsResponse,
-  ConsolePreferences,
-  GeminiSettingsResponse,
-  ProviderUsageSnapshot,
-  StatusResponse,
-  VoiceSettingsResponse
+import {
+  DESK_PETS,
+  type AppSettings,
+  type AssistantProviderId,
+  type DeskPet,
+  type ClaudeSettingsResponse,
+  type CodexSettingsResponse,
+  type ConsolePreferences,
+  type GeminiSettingsResponse,
+  type ProviderUsageSnapshot,
+  type StatusResponse,
+  type VoiceSettingsResponse
 } from '@/containers/voice-console/lib/types';
 
 interface SettingsScreenProps {
@@ -130,19 +134,35 @@ function SettingInfo({ label, value }: { label: string; value: string }) {
 function SectionCard({
   title,
   subtitle,
+  icon,
+  accent,
   children
 }: {
   title: string;
   subtitle: string;
+  /** Optional leading mark — agent cards pass a ProviderLogo so they are identifiable at a glance. */
+  icon?: React.ReactNode;
+  /** Tints the card's eyebrow and its top hairline to the owning agent's brand color. */
+  accent?: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="rounded-[var(--radius-panel)] border border-border bg-surface-1 overflow-hidden">
-      <div className="px-4 py-3 border-b border-border">
-        <span className="text-xs font-medium text-text-tertiary uppercase tracking-wider">
-          {title}
-        </span>
-        <p className="text-sm font-medium text-text-primary mt-0.5">{subtitle}</p>
+      {accent ? <div className="h-0.5 w-full" style={{ backgroundColor: accent }} /> : null}
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
+        {icon}
+        <div className="min-w-0">
+          <span
+            className={cn(
+              'text-xs font-medium uppercase tracking-wider',
+              accent ? undefined : 'text-text-tertiary'
+            )}
+            style={accent ? { color: accent } : undefined}
+          >
+            {title}
+          </span>
+          <p className="text-sm font-medium text-text-primary mt-0.5">{subtitle}</p>
+        </div>
       </div>
       <div className="px-4 py-2 divide-y divide-border/50">{children}</div>
     </div>
@@ -185,14 +205,36 @@ function UsageMeter({
 }
 
 function ProviderUsageSection({
+  providerId,
+  activeProviderId,
   providerUsage,
   loading,
   onRefresh
 }: {
+  providerId: AssistantProviderId;
+  activeProviderId: AssistantProviderId | null;
   providerUsage: ProviderUsageSnapshot | null;
   loading: boolean;
   onRefresh: () => void;
 }) {
+  // There is ONE live usage snapshot and it belongs to the ACTIVE agent's CLI — not one per agent.
+  // Rendering it inside every agent's section meant Claude's card displayed Codex's numbers and
+  // Codex's errors ("Claude Code → Could not read Codex usage"). A non-active agent gets an
+  // explanation instead of somebody else's data.
+  if (providerId !== activeProviderId) {
+    return (
+      <SectionCard title="Provider usage" subtitle="Live CLI usage and limits">
+        <p className="py-3 text-sm text-text-tertiary">
+          Usage is read live from whichever agent is active
+          {activeProviderId
+            ? ` (right now that's ${AGENTS[activeProviderId]?.label ?? activeProviderId})`
+            : ''}
+          . Make {AGENTS[providerId]?.label ?? providerId} active to see its usage and limits.
+        </p>
+      </SectionCard>
+    );
+  }
+
   // Usage is captured live from the CLI. Always render the section (so it never looks "missing"):
   // it shows a loading state while the scrape runs, the meters when they land, or a hint/error
   // otherwise. Codex's scrape can take ~15–25s cold.
@@ -482,11 +524,11 @@ export function SettingsScreen({
                   value={appSettings?.deskPet ?? 'duck'}
                   onChange={(e) => onAppSettingChange('deskPet', e.target.value as DeskPet)}
                 >
-                  <option value="duck">🦆 Duck</option>
-                  <option value="bird">🐦 Bird</option>
-                  <option value="frog">🐸 Frog</option>
-                  <option value="cat">🐱 Cat</option>
-                  <option value="dog">🐶 Dog</option>
+                  {DESK_PETS.map((pet) => (
+                    <option key={pet} value={pet}>
+                      {PET_EMOJI[pet]} {PET_LABELS[pet]}
+                    </option>
+                  ))}
                 </select>
               </SettingRow>
             )}
@@ -496,14 +538,35 @@ export function SettingsScreen({
             title="Assistant providers"
             subtitle="Connect agents and switch the active one on demand"
           >
-            <SettingInfo
-              label="Active provider"
-              value={activeProvider?.name ?? 'No provider connected in Oplyr'}
-            />
+            <div className="flex items-center justify-between gap-4 py-2">
+              <span className="text-sm text-text-secondary">Active agent</span>
+              {activeProvider ? (
+                <span className="flex min-w-0 items-center gap-2">
+                  <ProviderLogo providerId={activeProvider.id} size="sm" />
+                  <span className="truncate text-sm font-medium text-text-primary">
+                    {activeProvider.name}
+                  </span>
+                </span>
+              ) : (
+                <span className="text-sm font-medium text-text-primary">
+                  No agent connected yet
+                </span>
+              )}
+            </div>
             {connectedProviders.length > 0 ? (
               connectedProviders.map((provider) => (
-                <div key={provider.id} className="flex items-center justify-between gap-4 py-2">
-                  <span className="text-sm text-text-secondary">{provider.name}</span>
+                <div key={provider.id} className="flex items-center justify-between gap-4 py-2.5">
+                  <span className="flex min-w-0 items-center gap-2.5">
+                    <ProviderLogo providerId={provider.id} size="sm" />
+                    <span className="flex min-w-0 flex-col">
+                      <span className="truncate text-sm font-medium text-text-primary">
+                        {provider.name}
+                      </span>
+                      <span className="text-xs text-text-tertiary">
+                        {AGENTS[provider.id]?.vendor ?? 'Agent'}
+                      </span>
+                    </span>
+                  </span>
                   <div className="flex items-center gap-2">
                     <ActiveStateControl
                       providerId={provider.id}
@@ -543,10 +606,13 @@ export function SettingsScreen({
                   key={provider.id}
                   className="flex items-center justify-between gap-4 border-t border-border/50 py-2"
                 >
-                  <span className="flex min-w-0 flex-col">
-                    <span className="text-sm text-text-secondary">{provider.name}</span>
-                    <span className="text-xs text-text-tertiary">
-                      {provider.id === 'gemini' ? 'Coming soon' : 'Signed in to CLI · ready'}
+                  <span className="flex min-w-0 items-center gap-2.5">
+                    <ProviderLogo providerId={provider.id} size="sm" className="opacity-60" />
+                    <span className="flex min-w-0 flex-col">
+                      <span className="truncate text-sm text-text-secondary">{provider.name}</span>
+                      <span className="text-xs text-text-tertiary">
+                        {provider.id === 'gemini' ? 'Coming soon' : 'Signed in to CLI · ready'}
+                      </span>
                     </span>
                   </span>
                   {provider.id === 'gemini' ? (
@@ -627,7 +693,12 @@ export function SettingsScreen({
         <TabsContent value="assistant" className="flex flex-col gap-4">
           {codexConnected && (
             <>
-              <SectionCard title="OpenAI Codex" subtitle="Execution preferences">
+              <SectionCard
+                title="OpenAI Codex"
+                subtitle="Execution preferences"
+                icon={<ProviderLogo providerId="codex" size="sm" />}
+                accent={agentAccent('codex')}
+              >
                 <SettingRow label="Model">
                   <select
                     className={selectClass}
@@ -708,6 +779,8 @@ export function SettingsScreen({
                 </div>
               </SectionCard>
               <ProviderUsageSection
+                providerId="codex"
+                activeProviderId={activeProviderId}
                 providerUsage={providerUsage}
                 loading={providerUsageLoading}
                 onRefresh={onRefreshProviderUsage}
@@ -717,7 +790,12 @@ export function SettingsScreen({
 
           {claudeConnected && (
             <>
-              <SectionCard title="Claude Code" subtitle="Execution preferences">
+              <SectionCard
+                title="Claude Code"
+                subtitle="Execution preferences"
+                icon={<ProviderLogo providerId="claude" size="sm" />}
+                accent={agentAccent('claude')}
+              >
                 <SettingRow label="Model">
                   <select
                     className={selectClass}
@@ -795,6 +873,8 @@ export function SettingsScreen({
                 </div>
               </SectionCard>
               <ProviderUsageSection
+                providerId="claude"
+                activeProviderId={activeProviderId}
                 providerUsage={providerUsage}
                 loading={providerUsageLoading}
                 onRefresh={onRefreshProviderUsage}
@@ -804,7 +884,12 @@ export function SettingsScreen({
 
           {geminiConnected && (
             <>
-              <SectionCard title="Google Gemini CLI" subtitle="Execution preferences">
+              <SectionCard
+                title="Google Gemini CLI"
+                subtitle="Execution preferences"
+                icon={<ProviderLogo providerId="gemini" size="sm" />}
+                accent={agentAccent('gemini')}
+              >
                 <SettingRow label="Model">
                   <select
                     className={selectClass}
@@ -861,6 +946,8 @@ export function SettingsScreen({
                 </div>
               </SectionCard>
               <ProviderUsageSection
+                providerId="gemini"
+                activeProviderId={activeProviderId}
                 providerUsage={providerUsage}
                 loading={providerUsageLoading}
                 onRefresh={onRefreshProviderUsage}

@@ -62,9 +62,11 @@ interface MemoryImportContextValue {
   run: ImportRunState;
   startImport: () => Promise<void>;
   dismissDone: () => void;
-  /** Session-level "hide the import card" — lives here (not in a screen) so it survives tab switches. */
+  /** Session-level "hide the import card" — lives here (not in a screen) so it survives tab switches.
+   *  Dismissing collapses the card to a slim row rather than removing it, so it's always recoverable. */
   dismissed: boolean;
   dismiss: () => void;
+  undismiss: () => void;
 }
 
 const MemoryImportContext = createContext<MemoryImportContextValue | null>(null);
@@ -213,6 +215,7 @@ export function MemoryImportProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const dismiss = useCallback(() => setDismissed(true), []);
+  const undismiss = useCallback(() => setDismissed(false), []);
 
   const value = useMemo<MemoryImportContextValue>(() => {
     const files = eachFile(manifest);
@@ -233,7 +236,8 @@ export function MemoryImportProvider({ children }: { children: ReactNode }) {
       startImport,
       dismissDone,
       dismissed,
-      dismiss
+      dismiss,
+      undismiss
     };
   }, [
     scanState,
@@ -246,7 +250,8 @@ export function MemoryImportProvider({ children }: { children: ReactNode }) {
     startImport,
     dismissDone,
     dismissed,
-    dismiss
+    dismiss,
+    undismiss
   ]);
 
   return <MemoryImportContext value={value}>{children}</MemoryImportContext>;

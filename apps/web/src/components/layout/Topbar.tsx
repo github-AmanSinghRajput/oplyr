@@ -11,7 +11,7 @@ import { ProviderLogo } from '@/components/providers/ProviderLogo';
 import { ModelPicker, EffortPicker } from '@/components/providers/ModelPicker';
 import { TopbarUsageMeters } from '@/components/providers/TopbarUsageMeters';
 import { ConnectAgentModal } from '@/components/providers/ConnectAgentModal';
-import { TopbarPet } from '@/components/layout/TopbarPet';
+import { PetCompanion } from '@/components/pets/PetCompanion';
 import { MemoryImportPill } from '@/components/layout/MemoryImportPill';
 import type {
   AssistantProviderId,
@@ -90,7 +90,7 @@ export function Topbar({
         style={{ left: sidebarLeft, '--sidebar-left': `${sidebarLeft}px` } as CSSProperties}
       >
         {/* Desk pet waddling on the bottom border (behind everything, click-through). */}
-        {showDeskPet && <TopbarPet pet={deskPet} />}
+        {showDeskPet && <PetCompanion pet={deskPet} reservedRight={540} />}
 
         {/* Left: workspace info */}
         <div className="flex items-center gap-3 min-w-0">
@@ -297,7 +297,7 @@ function ProviderSwitcher({
           <ProviderLogo
             providerId={active.id}
             size="sm"
-            className="h-4 w-4 rounded-radius-sm border-0 p-0.5 shadow-none"
+            className="h-4 w-4 rounded-sm border-0 p-0.5 shadow-none"
           />
         ) : null}
         <span className={cn('h-1.5 w-1.5 rounded-full', reachable ? 'bg-success' : 'bg-danger')} />
@@ -323,7 +323,7 @@ function ProviderSwitcher({
                   setOpen(false);
                 }}
                 className={cn(
-                  'flex w-full items-center gap-2 rounded-radius-sm px-2 py-1.5 text-xs transition-colors',
+                  'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs transition-colors',
                   isActive
                     ? 'bg-accent-muted text-accent'
                     : 'text-text-secondary hover:bg-surface-2 hover:text-text-primary'
@@ -332,7 +332,7 @@ function ProviderSwitcher({
                 <ProviderLogo
                   providerId={provider.id}
                   size="sm"
-                  className="h-4 w-4 rounded-radius-sm border-0 p-0.5 shadow-none"
+                  className="h-4 w-4 rounded-sm border-0 p-0.5 shadow-none"
                 />
                 <span className="flex-1 text-left font-medium">{provider.name}</span>
                 {isActive && <Check size={13} />}
@@ -347,7 +347,7 @@ function ProviderSwitcher({
               onConnectNew();
               setOpen(false);
             }}
-            className="flex w-full items-center gap-2 rounded-radius-sm px-2 py-1.5 text-xs text-text-secondary transition-colors hover:bg-surface-2 hover:text-text-primary"
+            className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs text-text-secondary transition-colors hover:bg-surface-2 hover:text-text-primary"
           >
             <Plus size={13} />
             <span className="flex-1 text-left font-medium">Connect new agent</span>

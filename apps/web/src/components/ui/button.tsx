@@ -30,7 +30,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     return (
       <Comp
         className={cn(
-          'inline-flex items-center justify-center whitespace-nowrap rounded-radius-control text-sm font-medium',
+          'inline-flex items-center justify-center whitespace-nowrap rounded-control text-sm font-medium',
           'transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent',
           'disabled:pointer-events-none disabled:opacity-50',
           variantClasses[variant],

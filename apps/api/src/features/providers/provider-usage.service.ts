@@ -41,6 +41,8 @@ const codexFieldLabels = [
 // Live usage is captured by spawning the CLI (seconds), so cache each provider's snapshot briefly
 // so repeated GETs (topbar + settings, provider switches) don't re-spawn on every read.
 const USAGE_TTL_MS = 2 * 60 * 1000;
+/** Failed/unavailable captures are retried far sooner so a transient outage recovers on its own. */
+const USAGE_FAILURE_TTL_MS = 15 * 1000;
 const usageCache = new Map<AssistantProviderId, { snapshot: ProviderUsageSnapshot; at: number }>();
 // A single in-flight capture per provider. Spawning two CLI scrapes for the same provider at once
 // (React StrictMode double-invoking the fetch, or rapid provider switches) makes them corrupt each
@@ -55,8 +57,12 @@ export class ProviderUsageService {
   ): Promise<ProviderUsageSnapshot> {
     void workspace;
 
+    // A FAILED capture (offline, CLI hiccup) must not stick around for the full success TTL, or the
+    // next Refresh just replays a stale error long after the problem cleared. Cache failures briefly
+    // — enough to avoid hammering the CLI, short enough to self-heal.
     const cached = usageCache.get(providerId);
-    if (!options?.force && cached && Date.now() - cached.at < USAGE_TTL_MS) {
+    const ttl = cached?.snapshot.available ? USAGE_TTL_MS : USAGE_FAILURE_TTL_MS;
+    if (!options?.force && cached && Date.now() - cached.at < ttl) {
       return cached.snapshot;
     }
 

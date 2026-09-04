@@ -27,12 +27,17 @@ function tryLoad() {
   }
 }
 
-/** An ABI mismatch is the one failure a rebuild fixes — anything else we surface instead of masking. */
-function isAbiMismatch(error) {
+/**
+ * The two failures a rebuild actually fixes: the binary was built for a different ABI, or it isn't
+ * there at all (an interrupted `npm rebuild` deletes the old binding before writing the new one, so
+ * a killed install leaves the tree with no binding). Anything else we surface instead of masking.
+ */
+function isRecoverable(error) {
   const message = error?.message ?? String(error ?? '');
   return (
     error?.code === 'ERR_DLOPEN_FAILED' ||
-    /NODE_MODULE_VERSION|different Node\.js version|was compiled against/i.test(message)
+    /NODE_MODULE_VERSION|different Node\.js version|was compiled against/i.test(message) ||
+    /Could not locate the bindings file/i.test(message)
   );
 }
 
@@ -41,9 +46,9 @@ if (!initial) {
   process.exit(0); // healthy — no-op
 }
 
-if (!isAbiMismatch(initial)) {
+if (!isRecoverable(initial)) {
   console.error('[ensure-native] better-sqlite3 failed to load:', initial?.message ?? initial);
-  console.error('[ensure-native] this is not an ABI mismatch — a rebuild will not help. Try: npm install');
+  console.error('[ensure-native] a rebuild will not fix this. Try: npm install');
   process.exit(1);
 }
 
@@ -55,14 +60,34 @@ const repoRoot = path.resolve(
   '..'
 );
 console.log(
-  `[ensure-native] better-sqlite3 was built for a different Node ABI than this one ` +
+  `[ensure-native] better-sqlite3's native binding is missing or built for a different Node ABI ` +
     `(now Node ${process.version}, ABI ${process.versions.modules}). Rebuilding — this happens once ` +
     `after a Node or packaged-build switch…`
 );
+// This runs as a `pretest`/`predev` lifecycle script, so npm has exported its own config into the
+// environment — including any `--workspace` filter from the outer command. The nested rebuild must
+// operate on the hoisted root tree that actually owns better-sqlite3, so drop that scoping rather
+// than letting the outer invocation redirect it.
+const rebuildEnv = Object.fromEntries(
+  Object.entries(process.env).filter(
+    ([key]) => !/^npm_config_(workspaces?|include_workspace_root)$/i.test(key)
+  )
+);
 try {
-  execFileSync('npm', ['rebuild', 'better-sqlite3'], { cwd: repoRoot, stdio: 'inherit' });
+  execFileSync('npm', ['rebuild', 'better-sqlite3'], {
+    cwd: repoRoot,
+    stdio: 'inherit',
+    env: rebuildEnv
+  });
 } catch {
   console.error('[ensure-native] automatic rebuild failed. Run it by hand: npm rebuild better-sqlite3');
+  // A rebuild normally lands the prebuilt binary and never invokes a compiler. If it does fall
+  // through to node-gyp, node-gyp 9's bundled gyp imports distutils, which Python 3.12 removed —
+  // so a machine whose default python3 is newer needs to be pointed at an older one.
+  console.error(
+    '[ensure-native] if that fails in node-gyp with "No module named \'distutils\'", build against ' +
+      'Python 3.11: npm_config_python=$(command -v python3.11) npm rebuild better-sqlite3'
+  );
   process.exit(1);
 }
 

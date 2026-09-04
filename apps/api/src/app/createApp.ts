@@ -973,7 +973,7 @@ export function createApp(options?: { apiAuthToken?: string }) {
 
   app.get(
     '/api/assistant/usage',
-    asyncHandler(async (_request: Request, response: Response) => {
+    asyncHandler(async (request: Request, response: Response) => {
       response.set('Cache-Control', 'no-store');
       const assistantState = await getAssistantState();
       const activeProviderId = assistantState.activeProviderId;
@@ -998,8 +998,13 @@ export function createApp(options?: { apiAuthToken?: string }) {
         return;
       }
 
+      // `?force=1` bypasses the snapshot cache — this is what the Refresh button sends, so a user who
+      // just fixed the underlying problem (e.g. reconnected) isn't served the cached failure.
+      const force = request.query.force === '1' || request.query.force === 'true';
       response.json({
-        usage: await providerUsageService.getUsage(activeProviderId, getRuntimeState().workspace)
+        usage: await providerUsageService.getUsage(activeProviderId, getRuntimeState().workspace, {
+          force
+        })
       });
     })
   );

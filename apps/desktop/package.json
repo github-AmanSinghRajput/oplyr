@@ -1,7 +1,7 @@
 {
   "name": "@oplyr/desktop",
   "private": true,
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Oplyr — a desktop cockpit for AI coding agents. Direct them by voice or text and review every change, on your Mac.",
   "author": "Oplyr <hello@oplyr.com>",
   "type": "module",

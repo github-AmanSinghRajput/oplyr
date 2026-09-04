@@ -396,7 +396,7 @@ export function CodebaseMapScreen({ projectRoot }: CodebaseMapScreenProps) {
                 type="button"
                 onClick={() => setView('tree')}
                 className={cn(
-                  'flex items-center gap-1.5 rounded-radius-sm px-2.5 py-1 text-xs font-medium transition-colors',
+                  'flex items-center gap-1.5 rounded-sm px-2.5 py-1 text-xs font-medium transition-colors',
                   view === 'tree'
                     ? 'bg-accent-muted text-accent'
                     : 'text-text-tertiary hover:text-text-primary'
@@ -408,7 +408,7 @@ export function CodebaseMapScreen({ projectRoot }: CodebaseMapScreenProps) {
                 type="button"
                 onClick={() => setView('force')}
                 className={cn(
-                  'flex items-center gap-1.5 rounded-radius-sm px-2.5 py-1 text-xs font-medium transition-colors',
+                  'flex items-center gap-1.5 rounded-sm px-2.5 py-1 text-xs font-medium transition-colors',
                   view === 'force'
                     ? 'bg-accent-muted text-accent'
                     : 'text-text-tertiary hover:text-text-primary'
@@ -443,7 +443,7 @@ export function CodebaseMapScreen({ projectRoot }: CodebaseMapScreenProps) {
 
           {/* Supported-languages banner — sets expectations, and flags any unmapped languages present. */}
           {map ? (
-            <div className="flex items-start gap-2 rounded-radius-sm border border-accent-border/30 bg-accent-muted/30 px-3 py-2">
+            <div className="flex items-start gap-2 rounded-sm border border-accent-border/30 bg-accent-muted/30 px-3 py-2">
               <Info size={14} className="mt-0.5 shrink-0 text-accent" />
               <p className="text-xs leading-relaxed text-text-secondary">
                 Oplyr currently maps{' '}
@@ -524,7 +524,7 @@ export function CodebaseMapScreen({ projectRoot }: CodebaseMapScreenProps) {
                   <button
                     type="button"
                     onClick={() => setSelectedId(null)}
-                    className="rounded-radius-sm p-1 text-text-tertiary transition-colors hover:text-text-primary"
+                    className="rounded-sm p-1 text-text-tertiary transition-colors hover:text-text-primary"
                     aria-label="Close details"
                   >
                     <X size={15} />
@@ -536,7 +536,7 @@ export function CodebaseMapScreen({ projectRoot }: CodebaseMapScreenProps) {
                   <Badge variant="secondary">{selectedNode.degree} connections</Badge>
                 </div>
 
-                <div className="rounded-radius-sm border border-accent-border/30 bg-background p-3">
+                <div className="rounded-sm border border-accent-border/30 bg-background p-3">
                   <div className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-text-tertiary">
                     <Sparkles size={12} className="text-accent" />
                     AI summary
@@ -552,7 +552,7 @@ export function CodebaseMapScreen({ projectRoot }: CodebaseMapScreenProps) {
                     </p>
                   ) : selectedSummary?.errorKind === 'rate_limit' ? (
                     <div className="flex flex-col gap-2">
-                      <div className="flex items-start gap-2 rounded-radius-sm border border-amber-500/30 bg-amber-500/10 p-2.5">
+                      <div className="flex items-start gap-2 rounded-sm border border-amber-500/30 bg-amber-500/10 p-2.5">
                         <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-500" />
                         <div>
                           <p className="text-xs font-semibold text-amber-500">AI limit reached</p>
@@ -599,7 +599,7 @@ export function CodebaseMapScreen({ projectRoot }: CodebaseMapScreenProps) {
                       {symbolsByPath[selectedNode.id].items.map((symbol) => {
                         const fn = fnSummaries[selectedNode.id]?.[symbol.name];
                         return (
-                          <div key={symbol.name} className="rounded-radius-sm border border-border">
+                          <div key={symbol.name} className="rounded-sm border border-border">
                             <button
                               type="button"
                               onClick={() => void requestFnSummary(selectedNode.id, symbol.name)}

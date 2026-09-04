@@ -108,7 +108,7 @@ export function Sidebar({ badges }: SidebarProps) {
                   type="button"
                   onClick={() => setSidebarPinned(!sidebarPinned)}
                   className={cn(
-                    'ml-auto rounded-radius-sm p-1.5 transition-colors',
+                    'ml-auto rounded-sm p-1.5 transition-colors',
                     sidebarPinned
                       ? 'text-accent bg-accent-muted'
                       : 'text-text-tertiary hover:text-text-primary'
