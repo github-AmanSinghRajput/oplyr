@@ -58,6 +58,8 @@ interface MemoryImportContextValue {
   selected: Set<string>;
   selectedCount: number;
   toggle: (path: string) => void;
+  selectAll: () => void;
+  clearSelection: () => void;
   rescan: () => Promise<void>;
   run: ImportRunState;
   startImport: () => Promise<void>;
@@ -121,10 +123,12 @@ export function MemoryImportProvider({ children }: { children: ReactNode }) {
       const result = await service.scanMemoryImport();
       if (!mountedRef.current) return;
       setManifest(result);
-      // Pre-select every pending source; already-added ones are excluded from selection.
-      const next = new Set<string>();
-      for (const { file } of eachFile(result)) if (isPendingSource(file)) next.add(file.path);
-      setSelected(next);
+      // Select NOTHING. Pre-selecting every pending source meant a non-empty selection was never
+      // evidence the user had chosen anything — so onboarding's "proceed also starts the import"
+      // silently imported every source the moment you connected a folder, and the panel's own
+      // promise ("Nothing is added until you press the button") was false. Importing someone's
+      // agent history is their call, so it stays empty until they say so.
+      setSelected(new Set());
       setScanState('ready');
     } catch (err) {
       if (!mountedRef.current) return;
@@ -137,6 +141,17 @@ export function MemoryImportProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (assistantReady && scanState === 'idle') void rescan();
   }, [assistantReady, scanState, rescan]);
+
+  /** Tick every pending source at once — the convenience the pre-selection was reaching for,
+   *  without pretending the choice was already made. */
+  const selectAll = useCallback(() => {
+    if (!manifest) return;
+    const next = new Set<string>();
+    for (const { file } of eachFile(manifest)) if (isPendingSource(file)) next.add(file.path);
+    setSelected(next);
+  }, [manifest]);
+
+  const clearSelection = useCallback(() => setSelected(new Set()), []);
 
   const toggle = useCallback((path: string) => {
     setSelected((current) => {
@@ -234,6 +249,8 @@ export function MemoryImportProvider({ children }: { children: ReactNode }) {
       rescan,
       run,
       startImport,
+      selectAll,
+      clearSelection,
       dismissDone,
       dismissed,
       dismiss,
@@ -246,6 +263,8 @@ export function MemoryImportProvider({ children }: { children: ReactNode }) {
     selected,
     run,
     toggle,
+    selectAll,
+    clearSelection,
     rescan,
     startImport,
     dismissDone,

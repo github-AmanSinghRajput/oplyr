@@ -21,10 +21,11 @@ principals are:
 ## Findings
 
 ### ✅ Fixed this pass
+
 - **[CRITICAL→fixed] Voice WebSocket was unauthenticated in the default config.** `voice-stream.gateway.ts`
   gated on `env.localApiAuthToken` (empty by default) with a non-timing-safe `!==` and **no Origin
   check** — so any web page could open `ws://127.0.0.1:8787/api/voice/stream` and **spawn unbounded
-  native STT workers** (DoS), inheriting full `process.env`. Fixed: authenticate against the *resolved*
+  native STT workers** (DoS), inheriting full `process.env`. Fixed: authenticate against the _resolved_
   API token (the same secret HTTP uses) with `timingSafeEqual`, **fail closed**, add an Origin
   allowlist (trusted renderer / packaged `file://` only), cap concurrent workers (3), and strip
   `LOCAL_API_AUTH_TOKEN` from the worker env. Regression test added (unauthenticated connect → 1008).
@@ -48,8 +49,9 @@ principals are:
   `http(s)` URLs, blocking `file:`/custom-scheme launches from renderer-originated opens.
 
 ### 🔎 Verified — not the vuln it looked like
+
 - **HTTP "auth off by default / any website drives the API"** — actually mitigated: `resolveLocalApiAuthToken`
-  *always* returns a non-empty token (generates + persists `0o600` if unset) and both entrypoints pass
+  _always_ returns a non-empty token (generates + persists `0o600` if unset) and both entrypoints pass
   it to `createApp`, so every `/api/*` route requires the header token a cross-origin page can't obtain.
   The `if (!expectedToken) next()` branch only triggers in tests (no token passed). Left as-is;
   consider a `production`-env assertion later.
@@ -79,6 +81,7 @@ write-enabled turns, and surface a one-time warning when a write turn runs on Cl
 stripping, DB/attachment `0o600`, model-slug allowlist, `openExternal` scheme allowlist.**
 
 **P2 — mostly fixed this pass:**
+
 - ✅ **Generic 500 error bodies.** Both the global handler and the NDJSON stream now return a generic
   message for unclassified errors (only `AppError` / assistant friendly messages surface); the real
   error stays in the server log.
@@ -96,13 +99,14 @@ stripping, DB/attachment `0o600`, model-slug allowlist, `openExternal` scheme al
   fragile (461 MB / 23 files incl. compiled CoreML → false-reject risk). **Pre-GA:** pin the HF repo
   revision (needs a FluidAudio API/feature) so the model version can't be swapped upstream.
 - 📋 **CSP notes.** `style-src 'unsafe-inline'` is retained by necessity (React inline `style={…}` +
-  framer-motion set style attributes at runtime; there's no nonce mechanism for style *attributes*).
+  framer-motion set style attributes at runtime; there's no nonce mechanism for style _attributes_).
   `script-src`/`worker-src` allow `blob:` so the AudioWorklet (mic capture) can load its module from an
   app-created Blob URL under `file://` — a standard, low-risk worklet concession. The security-critical
   parts hold: **no `unsafe-inline`/`unsafe-eval` for scripts**, `object-src 'none'`, `base-uri 'self'`.
   Delivered via `<meta>` (correct for the packaged `file://` renderer). Accepted trade-offs.
 
 ## Solid (defenses that already hold)
+
 Electron `contextIsolation:true` + `nodeIntegration:false` + `sandbox:true`, strict `script-src 'self'`
 CSP (no unsafe-eval), IPC sender-URL validation on every handler, loopback bind, 256-bit `0o600`
 API token with timing-safe HTTP compare, realpath+symlink+`..` workspace-boundary enforcement, secret

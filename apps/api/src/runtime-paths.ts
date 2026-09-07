@@ -177,3 +177,10 @@ export function getDefaultSttProvisionCommand() {
   const bin = resolveSttBinary();
   return bin ? `${shellEscape(bin)} --provision` : '';
 }
+
+/** Fetches ONLY the speech-refinement model (keyterm biasing). Runs in the background — see
+ *  provisionSpeechRefinement. */
+export function getDefaultSttRefinementProvisionCommand() {
+  const bin = resolveSttBinary();
+  return bin ? `${shellEscape(bin)} --provision-refinement` : '';
+}

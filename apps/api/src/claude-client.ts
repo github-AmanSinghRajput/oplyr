@@ -156,6 +156,11 @@ async function getExecutionOverrides(context?: {
   );
 }
 
+/** A trimmed string, or null — for reading optional fields off parsed CLI JSON. */
+function readString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
 function normalizeStatusText(output: string) {
   return output
     .split('\n')
@@ -493,48 +498,97 @@ async function assertClaudeReady() {
   }
 }
 
-export async function getClaudeStatus() {
-  try {
-    const { stdout, stderr } = await execClaudeCommand(['auth', 'status'], getRootDir());
-    const raw = [stdout, stderr].filter(Boolean).join('\n');
-    const normalized = normalizeStatusText(raw);
-    const parsed = tryParseJson(normalized);
-    const authMode =
-      parsed && typeof parsed === 'object' && 'authType' in parsed
-        ? String((parsed as { authType?: unknown }).authType ?? '')
-        : null;
+export interface ClaudeAuthStatus {
+  installed: boolean;
+  loggedIn: boolean;
+  accountLabel: string | null;
+  authMode: string | null;
+  statusText: string;
+}
 
-    const loggedIn = !/not authenticated|not logged in|no account/i.test(normalized);
-    return {
-      installed: true,
-      loggedIn,
-      accountLabel: loggedIn ? extractAccountLabel(normalized, parsed) : null,
-      authMode: loggedIn ? authMode || 'configured' : null,
-      statusText: loggedIn
-        ? normalized || 'Claude Code connected.'
-        : 'Claude Code is installed but not logged in.'
-    };
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : 'Unable to determine Claude Code login status.';
-    if (/ENOENT/.test(message)) {
-      return {
-        installed: false,
-        loggedIn: false,
-        accountLabel: null,
-        authMode: null,
-        statusText: 'Claude Code CLI is not installed on this machine.'
-      };
-    }
+/**
+ * Interpret the output of a SUCCESSFUL `claude auth status`. Pure, and exported because every bug
+ * in login detection has lived here rather than in the spawn.
+ */
+export function interpretClaudeAuthStatus(raw: string): ClaudeAuthStatus {
+  const normalized = normalizeStatusText(raw);
+  const parsed = tryParseJson(normalized);
+  const record = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
 
-    const isAuthFailure = /not logged in|not authenticated|unauthorized|auth/i.test(message);
+  // The CLI answers with JSON carrying an explicit boolean, e.g.
+  //   {"loggedIn": true, "authMethod": "claude.ai", "email": "…", "subscriptionType": "team"}
+  // Trust that field. The previous check ignored it and inferred login by NOT matching
+  // /not logged in|not authenticated|no account/ against the prose, which is wrong in both
+  // directions: a logged-OUT machine (whose JSON reads `"loggedIn": false`) contains none of
+  // those phrases and was reported as signed in, and any rewording flips the answer.
+  const declared = typeof record?.loggedIn === 'boolean' ? record.loggedIn : null;
+  const loggedIn = declared ?? !/not authenticated|not logged in|no account/i.test(normalized);
+
+  // The field has gone by both names across CLI versions.
+  const authMode = readString(record?.authMethod) ?? readString(record?.authType);
+
+  return {
+    installed: true,
+    loggedIn,
+    accountLabel: loggedIn ? extractAccountLabel(normalized, parsed) : null,
+    authMode: loggedIn ? authMode || 'configured' : null,
+    statusText: loggedIn
+      ? normalized || 'Claude Code connected.'
+      : 'Claude Code is installed but not logged in.'
+  };
+}
+
+/**
+ * Interpret a FAILED `claude auth status`. Pure, and exported for the same reason.
+ *
+ * Only an explicit statement counts as "logged out" — everything else means we could not DETERMINE
+ * the state, which is not the same thing. This mattered: the old test was /…|auth/i against the
+ * error text, so a CLI whose `auth status` behaves differently ("unknown command 'auth'") matched
+ * on the word "auth" and got reported as logged out, hard-blocking a user who was signed in
+ * perfectly well — `assistant-client` refuses every turn while `loggedIn` is false.
+ *
+ * So fail OPEN on an indeterminate read. If they genuinely aren't signed in, the next call surfaces
+ * the CLI's own precise auth error, which beats a dead end during onboarding.
+ */
+export function interpretClaudeAuthFailure(message: string): ClaudeAuthStatus {
+  if (/ENOENT/.test(message)) {
     return {
-      installed: !/ENOENT|EACCES|permission denied/i.test(message),
+      installed: false,
       loggedIn: false,
       accountLabel: null,
       authMode: null,
-      statusText: isAuthFailure ? 'Ready to connect Claude Code.' : message
+      statusText: 'Claude Code CLI is not installed on this machine.'
     };
+  }
+
+  if (/not logged in|not authenticated|no account|session expired/i.test(message)) {
+    return {
+      installed: true,
+      loggedIn: false,
+      accountLabel: null,
+      authMode: null,
+      statusText: 'Claude Code is installed but not logged in.'
+    };
+  }
+
+  return {
+    installed: !/EACCES|permission denied/i.test(message),
+    loggedIn: true,
+    accountLabel: null,
+    authMode: null,
+    statusText:
+      'Claude Code is installed. Oplyr could not read its login status — if a turn fails, run `claude auth login`.'
+  };
+}
+
+export async function getClaudeStatus(): Promise<ClaudeAuthStatus> {
+  try {
+    const { stdout, stderr } = await execClaudeCommand(['auth', 'status'], getRootDir());
+    return interpretClaudeAuthStatus([stdout, stderr].filter(Boolean).join('\n'));
+  } catch (error) {
+    return interpretClaudeAuthFailure(
+      error instanceof Error ? error.message : 'Unable to determine Claude Code login status.'
+    );
   }
 }
 

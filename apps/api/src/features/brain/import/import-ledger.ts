@@ -8,10 +8,11 @@ export function sha256(text: string): string {
 }
 
 /**
- * Durable-content hash for an import source. Curated docs hash the whole file; sessions hash the
- * read TAIL only (`readTail`, the same bytes the distiller consumes) — so hashing stays cheap even
- * for hundred-MB transcripts, and appended turns change the hash. Returns null when unreadable, in
- * which case the caller treats the source as `new` (nothing to compare against).
+ * Durable-content hash for an import source. Curated docs hash the whole file; sessions hash a
+ * small TAIL only, so hashing stays cheap even for hundred-MB transcripts. The distiller reads far
+ * more than this (see `readSessionMessages`), but sessions are append-only: any new turn lands in
+ * the tail and changes the hash, which is all the ledger needs to spot a delta. Returns null when
+ * unreadable, in which case the caller treats the source as `new` (nothing to compare against).
  */
 export async function computeSourceHash(
   file: Pick<ImportFile, 'path' | 'kind'>

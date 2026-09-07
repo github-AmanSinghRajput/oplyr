@@ -98,7 +98,7 @@ export function ConnectAgentModal({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md overflow-hidden rounded-[var(--radius-panel)] border border-border bg-surface-1 shadow-2xl"
+        className="w-full max-w-md overflow-hidden rounded-[var(--radius-panel)] border border-border bg-surface-1 shadow-float"
         role="dialog"
         aria-modal="true"
         aria-label="Connect an agent"

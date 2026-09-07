@@ -19,7 +19,7 @@ import {
   type DistillMemoryFileInput
 } from './import/import-distiller.js';
 import { computeSourceHash, sha256 } from './import/import-ledger.js';
-import { readTail, extractMessages, buildSessionText } from './import/session-transcripts.js';
+import { readSessionMessages, buildSessionChunks } from './import/session-transcripts.js';
 import type { ImportManifest, ImportSelector } from './import/import.types.js';
 import type {
   BrainAtomRecord,
@@ -53,6 +53,34 @@ export function setBrainEventEmitter(emitter: (event: BrainUpdateEvent) => void)
 // clears the same low bar as this project's memory (the "recall it like a human" case).
 const EXPLICIT_RECALL_RE =
   /\b(recall|previously|earlier|used to|(?:other|another|previous|past|last|earlier)\s+project)\b/i;
+
+/**
+ * "Where were we?" questions. These ask about TIME, not topic — and they carry almost no words to
+ * match on semantically ("last", "thing", "doing", "off"), so ranking them by relevance answers a
+ * recency question with whatever happened to be most salient, which is usually something old.
+ *
+ * Matching one of these makes recency the deciding factor instead (see `recencyFirst`).
+ */
+/** Backfill pacing: small batches with a pause, so re-embedding never competes with a live turn. */
+const EMBEDDING_BACKFILL_BATCH = 32;
+const EMBEDDING_BACKFILL_PAUSE_MS = 250;
+
+/**
+ * Session import budget.
+ *
+ * A session used to be distilled as ONE 9,000-character blob — roughly the last two exchanges — so
+ * the brain's picture of a day's work was whatever happened in the final few minutes. These slice
+ * it instead: ~120,000 characters of conversation, oldest slice first, one agent call each.
+ *
+ * Only the NEWEST session per project per agent is imported (see import-scanner.ts), so a connect
+ * costs at most `MAX_SESSION_CHUNKS` calls per project per agent. Raising the chunk count buys more
+ * history at a linear cost in the user's own agent quota.
+ */
+const SESSION_CHUNK_CHARS = 12_000;
+const MAX_SESSION_CHUNKS = 10;
+
+const RECENCY_QUERY_RE =
+  /\b(?:where (?:did|do|were) we|left off|leave off|pick(?:ing)? up where|last (?:thing|time|session|worked|working|doing)|what were we|were we (?:doing|working)|continue (?:where|from where|our)|catch me up|what did we (?:do|finish|last)|since last time|resume(?: our)? (?:work|session))\b/i;
 
 /** Human label for a project key (its last path segment), used to match the query against it. */
 function projectLabel(projectKey: string): string {
@@ -132,7 +160,11 @@ export class BrainService {
       stats,
       recentAtoms,
       project: { key: projectKey, ...projectSettings },
-      embeddingsModel: this.embeddings.model
+      embeddingsModel: this.embeddings.model,
+      // Semantic recall is the whole point of the brain — say plainly when it isn't running rather
+      // than letting keyword-only recall pass for the real thing.
+      embeddingsAvailable: this.embeddings.available !== false,
+      embeddingsUnavailableReason: this.embeddings.unavailableReason ?? null
     };
   }
 
@@ -189,7 +221,11 @@ export class BrainService {
         namedProjectKeys.add(key);
       }
     }
-    const explicitRecall = namedProjectKeys.size > 0 || EXPLICIT_RECALL_RE.test(input.query);
+    const recencyFirst = RECENCY_QUERY_RE.test(input.query);
+    // A continuation question is also an explicit request to look back, so it clears the same
+    // cross-project bar.
+    const explicitRecall =
+      namedProjectKeys.size > 0 || recencyFirst || EXPLICIT_RECALL_RE.test(input.query);
 
     return buildBrainRecallBundle(input.query, candidates, settings, {
       currentProjectKey: projectKey,
@@ -198,6 +234,7 @@ export class BrainService {
       isolatedProjectKeys: new Set(isolatedKeys),
       currentProjectIsolated: projectSettings.isolate,
       explicitRecall,
+      recencyFirst,
       namedProjectKeys
     });
   }
@@ -456,12 +493,16 @@ export class BrainService {
       selectors: ImportSelector[];
       workspace: WorkspaceState;
       includeProjectScope: boolean;
+      /** Re-distill sources the ledger says are unchanged. Off by default — see below. */
+      reimportUnchanged?: boolean;
     },
     onProgress?: (event: ImportProgressEvent) => void
   ) {
     const settings = await this.settingsService.getSettings();
     const manifest = await this.scanImport();
     const tasks: ImportTask[] = [];
+    /** Selected but byte-identical to the last import — reported back, never re-distilled. */
+    const alreadyCurrent: string[] = [];
 
     for (const sel of input.selectors) {
       const group = manifest.agents.find((a) => a.providerId === sel.providerId);
@@ -477,6 +518,18 @@ export class BrainService {
         // Everything but the global file is project-scoped → gated behind the project-scope opt-in.
         if (file.kind !== 'global' && !input.includeProjectScope) continue;
 
+        // Never re-distill a source the ledger says is byte-identical to what we already consumed.
+        //
+        // This invariant used to live only in the UI (the panel hides `added` sources). But
+        // distillation is LLM-driven and therefore NOT deterministic: re-running it on the same file
+        // yields differently-worded atoms, which hash differently, which INSERT as new rows. One
+        // stray re-import and the brain carries two copies of every fact, and the Memory canvas —
+        // whose edges are derived from atoms — doubles with it. So the rule belongs here.
+        if (file.status === 'added' && !input.reimportUnchanged) {
+          alreadyCurrent.push(file.path);
+          continue;
+        }
+
         if (file.kind === 'session') {
           const projectKey = file.projectRoot;
           if (!projectKey) continue;
@@ -491,13 +544,19 @@ export class BrainService {
             kind: 'session',
             contentHash: await computeSourceHash(file),
             distill: async () => {
-              const tail = await readTail(file.path);
-              const sessionText = buildSessionText(extractMessages(tail, format));
-              if (!sessionText) return [];
+              const messages = await readSessionMessages(file.path, format, {
+                enoughChars: SESSION_CHUNK_CHARS * MAX_SESSION_CHUNKS
+              });
+              const sessionChunks = buildSessionChunks(
+                messages,
+                SESSION_CHUNK_CHARS,
+                MAX_SESSION_CHUNKS
+              );
+              if (sessionChunks.length === 0) return [];
               return distillSession(
                 {
                   providerId,
-                  sessionText,
+                  sessionChunks,
                   projectKey,
                   projectName: file.projectName,
                   workspace: input.workspace
@@ -544,7 +603,12 @@ export class BrainService {
         }
       }
     }
-    return this.runImportTasks(tasks, onProgress);
+    if (alreadyCurrent.length > 0) {
+      logger.info('brain.import.already_current', { sources: alreadyCurrent.length });
+    }
+
+    const result = await this.runImportTasks(tasks, onProgress);
+    return { ...result, alreadyCurrent };
   }
 
   async deleteAtom(atomId: string) {
@@ -555,19 +619,77 @@ export class BrainService {
     await this.repository.resetAll();
   }
 
+  /**
+   * Embed memories that were stored without a vector.
+   *
+   * Packaged builds through 0.4.1 shipped without `onnxruntime-node`, so the embedding path failed
+   * at load and every memory written by them has no vector — for those users recall is keyword-only
+   * across their entire history, and fixing the packaging alone would not have changed that. Runs
+   * once in the background at boot.
+   *
+   * Deliberately unhurried: batches are small and yield between rounds, because this competes with
+   * a user who may be mid-turn. Never throws — a brain that cannot embed is the state we are
+   * already recovering from.
+   */
+  async backfillEmbeddings(): Promise<{ embedded: number }> {
+    // `available` is optional on the provider, so only an explicit false means "don't bother";
+    // undefined is "unknown", and the embed call itself reports failure.
+    if (this.embeddings.available === false) {
+      return { embedded: 0 };
+    }
+
+    let embedded = 0;
+    for (;;) {
+      let batch: Array<{ id: string; text: string }>;
+      try {
+        batch = await this.repository.listAtomsMissingEmbedding(
+          this.embeddings.model,
+          EMBEDDING_BACKFILL_BATCH
+        );
+      } catch {
+        break;
+      }
+      if (batch.length === 0) break;
+
+      let stored: number;
+      try {
+        stored = await this.embedAtoms(batch);
+      } catch {
+        // Embeddings went away mid-run; the next launch picks up where this stopped.
+        break;
+      }
+
+      // Progress must be measured in atoms actually embedded. `embedAtoms` reports 0 rather than
+      // throwing when the runtime is gone, and the query re-returns the same unembedded page every
+      // round — so treating a handed-off page as progress spins forever.
+      if (stored === 0) break;
+      embedded += stored;
+      // A short page means the table is drained.
+      if (batch.length < EMBEDDING_BACKFILL_BATCH) break;
+      await new Promise((resolve) => setTimeout(resolve, EMBEDDING_BACKFILL_PAUSE_MS));
+    }
+
+    if (embedded > 0) {
+      logger.info('brain.embeddings.backfilled', { count: embedded });
+    }
+    return { embedded };
+  }
+
   private async embedOne(text: string): Promise<Float32Array | null> {
     const vectors = await this.embeddings.embed([text]);
     return vectors?.[0] ?? null;
   }
 
-  private async embedAtoms(atoms: BrainAtomRecord[]) {
+  /** Returns how many atoms actually got a vector — 0 when the embedding runtime is unavailable. */
+  private async embedAtoms(atoms: Array<{ id: string; text: string }>): Promise<number> {
     if (atoms.length === 0) {
-      return;
+      return 0;
     }
     const vectors = await this.embeddings.embed(atoms.map((atom) => atom.text));
     if (!vectors) {
-      return;
+      return 0;
     }
+    let stored = 0;
     for (let i = 0; i < atoms.length; i += 1) {
       const vector = vectors[i];
       if (!vector) {
@@ -578,7 +700,9 @@ export class BrainService {
         dim: vector.length,
         vector
       });
+      stored += 1;
     }
+    return stored;
   }
 }
 

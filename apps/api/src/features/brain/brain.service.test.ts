@@ -315,3 +315,89 @@ test('raw archive is unredacted in local_god with sensitive capture', async () =
     /sk-12345678901234567890abcdef/
   );
 });
+
+/** Repository holding N un-embedded atoms, draining as the backfill embeds them. */
+class BackfillRepositoryStub {
+  readonly embedded: string[] = [];
+  private pending: Array<{ id: string; text: string }>;
+
+  constructor(count: number) {
+    this.pending = Array.from({ length: count }, (_, i) => ({
+      id: `atom-${i}`,
+      text: `memory ${i}`
+    }));
+  }
+
+  async listAtomsMissingEmbedding(_model: string, limit: number) {
+    return this.pending.slice(0, limit);
+  }
+
+  async upsertEmbedding(atomId: string) {
+    this.embedded.push(atomId);
+    this.pending = this.pending.filter((atom) => atom.id !== atomId);
+  }
+}
+
+/** Embedding provider that always succeeds, so the backfill's own loop is what's under test. */
+const workingEmbeddings = {
+  model: 'test-model',
+  available: true,
+  unavailableReason: null,
+  embed: async (texts: string[]) => texts.map(() => new Float32Array([1, 0, 0]))
+};
+
+function makeBackfillService(repository: BackfillRepositoryStub, embeddings: unknown) {
+  return new BrainService(
+    repository as never,
+    new BrainSettingsServiceStub(getDefaultBrainSettings()) as never,
+    { complete: async () => '', embeddings: embeddings as never }
+  );
+}
+
+test('backfillEmbeddings re-embeds every memory left without a vector', async () => {
+  // 70 atoms across a batch size of 32 — it must page rather than stop after the first round.
+  const repository = new BackfillRepositoryStub(70);
+  const service = makeBackfillService(repository, workingEmbeddings);
+
+  const result = await service.backfillEmbeddings();
+
+  assert.equal(result.embedded, 70);
+  assert.equal(repository.embedded.length, 70);
+  assert.equal(new Set(repository.embedded).size, 70, 'no atom embedded twice');
+});
+
+test('backfillEmbeddings does nothing when embeddings are known unavailable', async () => {
+  const repository = new BackfillRepositoryStub(10);
+  const service = makeBackfillService(repository, {
+    model: 'test-model',
+    available: false,
+    unavailableReason: "Cannot find package 'onnxruntime-node'",
+    embed: async () => {
+      throw new Error('embeddings should not be called');
+    }
+  });
+
+  assert.deepEqual(await service.backfillEmbeddings(), { embedded: 0 });
+  assert.equal(repository.embedded.length, 0);
+});
+
+test('backfillEmbeddings stops instead of spinning when embedding fails mid-run', async () => {
+  const repository = new BackfillRepositoryStub(70);
+  let call = 0;
+  const service = makeBackfillService(repository, {
+    model: 'test-model',
+    available: true,
+    unavailableReason: null,
+    // Succeeds once, then the runtime goes away — the loop must exit, not retry the same page.
+    embed: async (texts: string[]) => {
+      call += 1;
+      if (call > 1) return null;
+      return texts.map(() => new Float32Array([1, 0, 0]));
+    }
+  });
+
+  const result = await service.backfillEmbeddings();
+
+  assert.equal(result.embedded, 32, 'kept the page that worked');
+  assert.equal(call, 2, 'stopped after the failing page rather than looping on it');
+});

@@ -22,7 +22,8 @@ export function VoiceWaveform({ mode, analyserRef, height = 96 }: VoiceWaveformP
   const smoothRef = useRef<Float32Array>(new Float32Array(POINTS));
   const timeDataRef = useRef<Uint8Array<ArrayBuffer>>(new Uint8Array(2048));
   const phaseRef = useRef(0);
-  const accentRef = useRef('#00d4f5');
+  // Fallback only — replaced with the live --color-accent on the first frame (see below).
+  const accentRef = useRef('#c882b4');
   const frameRef = useRef(0);
   const lastDrawRef = useRef(0);
 

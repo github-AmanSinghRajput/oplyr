@@ -5,6 +5,11 @@ import { isSecretRelativePath } from '../../lib/path-security.js';
 import type { CodebaseTreeNode, ScannedFile } from './codebase-map.types.js';
 
 // Directories that never belong in a code map (build output, deps, VCS, caches).
+/** Files that are never worth a node: OS droppings and build bookkeeping. `.DS_Store` was showing
+ *  up on the canvas as a first-class file. */
+const IGNORED_FILES = new Set(['.DS_Store', 'Thumbs.db', 'desktop.ini', '.localized']);
+const IGNORED_FILE_EXTS = new Set(['.tsbuildinfo', '.log']);
+
 const IGNORED_DIRS = new Set([
   'node_modules',
   'dist',
@@ -24,7 +29,32 @@ const IGNORED_DIRS = new Set([
   '__pycache__',
   'target',
   '.gradle',
-  'Pods'
+  'Pods',
+  // Installed dependencies, by ecosystem. Every dot-directory is skipped separately, which already
+  // covers .venv/.tox/.mypy_cache/.pytest_cache/.ruff_cache — these are the ones without a dot.
+  'site-packages',
+  'bower_components',
+  'jspm_packages',
+  'third_party',
+  'storybook-static',
+  'eggs'
+]);
+
+/** Directory name suffixes that mean "installed/generated", e.g. `mypkg.egg-info`. */
+const IGNORED_DIR_SUFFIXES = ['.egg-info', '.dist-info'];
+
+/** Generated dependency manifests — real files, but thousands of lines nobody reads on a canvas. */
+const GENERATED_FILES = new Set([
+  'package-lock.json',
+  'pnpm-lock.yaml',
+  'yarn.lock',
+  'npm-shrinkwrap.json',
+  'poetry.lock',
+  'Pipfile.lock',
+  'Cargo.lock',
+  'Gemfile.lock',
+  'composer.lock',
+  'uv.lock'
 ]);
 
 // Safety cap so an enormous monorepo can't make a scan run unbounded.
@@ -214,12 +244,35 @@ export function isPythonFile(ext: string): boolean {
  * except known binary/media/generated files and minified bundles. This is why a Python repo's
  * .yml / .txt / .json / lockfiles / Dockerfiles all appear on the canvas, not just .py sources.
  */
+/**
+ * Whether a file earns a node on the canvas.
+ *
+ * This is deliberately stricter than what `scanWorkspace` returns. The tree view is a file
+ * explorer and should show what is actually on disk, but the canvas is a picture of the codebase —
+ * so dotfiles, generated manifests and minified output are excluded there. Anything a dependency
+ * installed, or a tool generated, is noise on a graph of "how this project fits together".
+ */
 export function isMappableFile(name: string, ext: string): boolean {
   if (NON_MAPPABLE_EXTENSIONS.has(ext)) {
     return false;
   }
+  // Hidden files: config for tooling, not part of the codebase's shape.
+  if (name.startsWith('.')) {
+    return false;
+  }
+  if (GENERATED_FILES.has(name)) {
+    return false;
+  }
   const lower = name.toLowerCase();
-  if (lower.endsWith('.min.js') || lower.endsWith('.min.css') || lower.endsWith('.map')) {
+  if (
+    lower.endsWith('.min.js') ||
+    lower.endsWith('.min.css') ||
+    lower.endsWith('.map') ||
+    lower.endsWith('.bundle.js') ||
+    lower.endsWith('.generated.ts') ||
+    lower.endsWith('_pb.js') ||
+    lower.endsWith('_pb2.py')
+  ) {
     return false;
   }
   return true;
@@ -262,15 +315,22 @@ export async function scanWorkspace(rootPath: string): Promise<ScannedFile[]> {
       const rel = relDir ? `${relDir}/${name}` : name;
 
       if (entry.isDirectory()) {
-        if (IGNORED_DIRS.has(name) || name.startsWith('.')) {
+        if (
+          IGNORED_DIRS.has(name) ||
+          name.startsWith('.') ||
+          IGNORED_DIR_SUFFIXES.some((suffix) => name.endsWith(suffix))
+        ) {
           continue;
         }
         await walk(path.join(absDir, name), rel);
       } else if (entry.isFile()) {
-        if (isSecretRelativePath(rel)) {
+        if (isSecretRelativePath(rel) || IGNORED_FILES.has(name)) {
           continue;
         }
         const ext = path.extname(name).toLowerCase();
+        if (IGNORED_FILE_EXTS.has(ext)) {
+          continue;
+        }
         files.push({
           path: rel,
           name,

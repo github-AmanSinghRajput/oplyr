@@ -8,24 +8,37 @@ It exists to answer one question clearly:
 
 If a milestone or feature is not useful for deciding product direction or execution priority, it should not live here.
 
+## Where we actually are
+
+**Shipping 0.5.0 (2026-09-08).** Signed + notarized DMG, auto-update via electron-updater, invite-gated
+download. The 0.1 and 0.2 phases below are complete — packaging, signing, distribution, the website
+and the download flow are all live and have carried five releases (0.2.x → 0.3.x → 0.4.x → 0.5.0).
+
+Since those phases were written, these also shipped and are **not** reflected in the checklists below:
+Agentic Chat (the `@mention` multi-agent room, 0.3.0), live per-agent usage limits, the Brain with
+semantic recall + import of existing agent context files (0.4.0), nested-repo review diffs (0.4.0),
+the codebase map, and — in 0.5.0 — the Plum × Linen redesign, keyterm-biased voice, rich markdown
+with Mermaid, and the Brain repair (semantic recall had never run in a packaged build).
+
+> The 0.1/0.2 checklists are kept as a record of what the beta bar was. Treat **0.4.x → 1.0** as the
+> live scope; anything still unchecked in 0.1/0.2 that matters has been carried into it.
+
 ## Versioning stance
 
-Current release posture:
-
-- `0.1.0-beta.x` = invite-only beta
-- `0.2.x` = launch hardening and public-beta readiness
-- `1.0.0` = first serious public Oplyr release
+- `0.x` = early access: shipping, auto-updating, invite-gated, free
+- `1.0.0` = first serious public Oplyr release, and the first paid tier (see `MONETIZATION_PLAN.md`)
 
 ## Product phases
 
 The current product sequence is:
 
-1. `0.1 beta`: reliable invite-only desktop beta
-2. `0.2`: public-beta readiness and packaging/distribution hardening
-3. `1.0`: trustworthy voice-first coding desktop launch
-4. `1.1`: note-taker foundation and meeting memory
-5. `1.2`: Granola-level developer meeting note-taker
-6. `2.0`: vibe music and immersive coding ambience
+1. ✅ `0.1 beta`: reliable invite-only desktop beta
+2. ✅ `0.2`: public-beta readiness and packaging/distribution hardening
+3. ◻ `0.3–0.4`: multi-agent room, shared brain, usage metering _(shipped)_
+4. ◻ `1.0`: trustworthy voice-first coding desktop launch
+5. ◻ `1.1`: note-taker foundation and meeting memory
+6. ◻ `1.2`: Granola-level developer meeting note-taker
+7. ◻ `2.0`: vibe music and immersive coding ambience
 
 ---
 
@@ -70,16 +83,16 @@ Current hard floor: **Apple Silicon (M1+) + macOS 14 Sonoma** — gated by the S
 (`apps/stt/Package.swift` → `.macOS(.v14)`, FluidAudio/CoreML on the Neural Engine, no fallback).
 
 - [x] **investigated lowering the floor to macOS 13 — not possible with the current engine.**
-  FluidAudio itself declares `platforms: [.macOS(.v14)]`, so our Swift package can't target Ventura
-  without dropping/replacing FluidAudio (same effort as cross-platform STT). Floor stays macOS 14.
+      FluidAudio itself declares `platforms: [.macOS(.v14)]`, so our Swift package can't target Ventura
+      without dropping/replacing FluidAudio (same effort as cross-platform STT). Floor stays macOS 14.
 - [x] **graceful non-supported path** — voice availability now checks Apple Silicon + macOS 14
-  precisely (`apps/api/src/platform.ts` → `resolveVoicePlatformSupport()`), so an Intel or pre-Sonoma
-  Mac gets a clear reason (surfaced via `audio.error`) instead of a failed STT launch; `start()`
-  refuses cleanly without spawning the worker.
+      precisely (`apps/api/src/platform.ts` → `resolveVoicePlatformSupport()`), so an Intel or pre-Sonoma
+      Mac gets a clear reason (surfaced via `audio.error`) instead of a failed STT launch; `start()`
+      refuses cleanly without spawning the worker.
 - [ ] test on the oldest Apple Silicon we can (M1, 2020) to confirm the real minimum
 - [ ] document the true minimum in-app and on the site once validated on real old hardware
 - [ ] (only if we want Intel / macOS ≤13) replace FluidAudio with a cross-platform STT engine —
-  tracked with the Windows-voice work; a major sub-project, deliberately out of 0.1
+      tracked with the Windows-voice work; a major sub-project, deliberately out of 0.1
 
 ### UI and UX
 
@@ -93,8 +106,8 @@ Current hard floor: **Apple Silicon (M1+) + macOS 14 Sonoma** — gated by the S
 - [ ] final full-app visual QA in light theme
 - [ ] final pass on spacing, copy, and consistency across every screen
 - [ ] **first-time UX + product tour** — a per-screen guided walkthrough that fires the first time a
-  user opens each screen (Agentic Chat, Voice, Review, Codebase Map, Markdown, Settings…): short,
-  dismissible, shown once per screen, with a "reset tour" control. Ties into onboarding completion.
+      user opens each screen (Agentic Chat, Voice, Review, Codebase Map, Markdown, Settings…): short,
+      dismissible, shown once per screen, with a "reset tour" control. Ties into onboarding completion.
 
 ### Security baseline
 
@@ -107,27 +120,30 @@ Current hard floor: **Apple Silicon (M1+) + macOS 14 Sonoma** — gated by the S
 - [x] CSP baseline
 - [ ] dedicated security review after beta stabilization
 - [ ] **pentest / external-audit readiness (HIGH PRIORITY).** Harden so that an Apple notarization/app
-  review, a future Microsoft store review, or a hostile security run finds nothing to question.
-  Scope: written threat model; dependency + supply-chain audit (`npm audit`, pinned/verified native
-  binaries); IPC/preload boundary review (contextIsolation, no `nodeIntegration`, channel allowlist);
-  CSP + no remote code execution in the renderer; secret-handling + local-API-token review; no
-  telemetry/PII egress; signed + notarized artifacts; documented data-flow ("nothing leaves the Mac").
+      review, a future Microsoft store review, or a hostile security run finds nothing to question.
+      Scope: written threat model; dependency + supply-chain audit (`npm audit`, pinned/verified native
+      binaries); IPC/preload boundary review (contextIsolation, no `nodeIntegration`, channel allowlist);
+      CSP + no remote code execution in the renderer; secret-handling + local-API-token review; no
+      telemetry/PII egress; signed + notarized artifacts; documented data-flow ("nothing leaves the Mac").
 
 ### Distribution baseline
 
 Full step-by-step guide: **`docs/DISTRIBUTION.md`** (Apple account → packaged runtime → DMG → sign +
 notarize → hosting → website/email → post-public Homebrew & Mac App Store).
 
-- [ ] wire the packaged runtime (bundle + start the API, bundle STT binary + models) — the real gate
-- [ ] DMG packaging path (electron-builder) + app/DMG icon from the Oplyr logo (`apps/desktop/scripts/make-icon.sh`)
-- [ ] sign + notarize + staple (requires the paid Apple Developer Program)
-- [ ] first-launch dependency/model setup experience
-- [ ] host the DMG (GitHub Releases) + wire `content/releases.ts` / `/download`
-- [ ] invite-approval email with the download link
-- [x] beta QA checklist documented in `docs/BETA_QA_CHECKLIST.md`
+- [x] wire the packaged runtime (bundle + start the API, bundle STT binary + models)
+- [x] DMG packaging path (electron-builder) + app/DMG icon from the Oplyr logo (`apps/desktop/scripts/make-icon.sh`)
+- [x] sign + notarize + staple — **the `.app` by electron-builder, the DMG by hand.** See the
+      [release runbook](./DISTRIBUTION.md#release-runbook); skipping the DMG codesign ships an
+      artifact that fails `spctl`
+- [x] first-launch dependency/model setup experience
+- [x] host the DMG (private R2, invite-gated) + auto-update zip feed on GitHub releases
+- [x] invite-approval email with the download link
+- [x] beta QA checklist documented (retired after 0.4.x — see git history for the original)
 - [x] voice runtime bootstrap policy documented in `docs/VOICE_RUNTIME_BOOTSTRAP.md`
 
 Post-public distribution (documented in `docs/DISTRIBUTION.md`, build after public launch):
+
 - [ ] Homebrew cask via own tap (`brew install --cask oplyr`)
 - [ ] Mac App Store submission (separate cert + App Sandbox entitlements + review)
 
@@ -140,14 +156,14 @@ Turn the private beta into something that can be downloaded and tested by broade
 
 ### Required scope
 
-- [ ] stable DMG generation
-- [ ] signing/notarization plan
-- [ ] simple install flow for local runtimes/models
-- [ ] first-run health checks inside the app
-- [ ] better failure recovery when local models/providers are missing
-- [ ] provider/account/session messaging polished for real users
-- [ ] version display and update strategy
-- [ ] public-facing website for product messaging and download
+- [x] stable DMG generation
+- [x] signing/notarization plan
+- [x] simple install flow for local runtimes/models
+- [x] first-run health checks inside the app
+- [x] better failure recovery when local models/providers are missing
+- [x] provider/account/session messaging polished for real users
+- [x] version display and update strategy — electron-updater against the GitHub zip feed
+- [x] public-facing website for product messaging and download
 
 ### Non-goals
 
@@ -264,21 +280,21 @@ This should only be pushed hard after the core coding and note-taking product is
 Not required for the 0.1 beta; revisit after launch.
 
 - [ ] **Voice control for the assistant model** — let the user, by voice, (a) switch the active AI
-  provider, (b) choose from that provider's available models, and (c) set the model's reasoning
-  strength. The manual Topbar picker (agent dropdown + model picker) already covers this by click;
-  this adds the hands-free voice path on top of the same apply-path.
+      provider, (b) choose from that provider's available models, and (c) set the model's reasoning
+      strength. The manual Topbar picker (agent dropdown + model picker) already covers this by click;
+      this adds the hands-free voice path on top of the same apply-path.
 
 - [ ] **STT accuracy on technical terms + accented speech (HIGH BAR — "Claude mic-button" quality).**
-  **Problem:** Parakeet v3 runs with `config: .default` and a *general* English LM, so rare/domain words
-  lose to common ones — "Claude" → "God", "auth" → "earth", "Codex" → "codecs", "repo" → "depot" — and
-  Indian/non-US accents widen the gap. **It is NOT a mic, locale, or sample-rate bug.** FluidAudio's
-  Parakeet API exposes **no hotword/biasing/custom-vocab hook**, so the model can't be told to expect
-  our terms — the fix must be a correction layer (and/or a better engine).
-  **Target (explicit owner ask):** match the accuracy of Claude's web/desktop mic button — speak any
-  word (incl. tool names, code identifiers, abbreviations) → it transcribes accurately → fills the
-  message input box → the user reviews and sends. **No constraint on time / tokens / compute for
-  accuracy — do it properly.**
-  **Approach — go beyond the minimum (the chosen "best possible"):**
+      **Problem:** Parakeet v3 runs with `config: .default` and a _general_ English LM, so rare/domain words
+      lose to common ones — "Claude" → "God", "auth" → "earth", "Codex" → "codecs", "repo" → "depot" — and
+      Indian/non-US accents widen the gap. **It is NOT a mic, locale, or sample-rate bug.** FluidAudio's
+      Parakeet API exposes **no hotword/biasing/custom-vocab hook**, so the model can't be told to expect
+      our terms — the fix must be a correction layer (and/or a better engine).
+      **Target (explicit owner ask):** match the accuracy of Claude's web/desktop mic button — speak any
+      word (incl. tool names, code identifiers, abbreviations) → it transcribes accurately → fills the
+      message input box → the user reviews and sends. **No constraint on time / tokens / compute for
+      accuracy — do it properly.**
+      **Approach — go beyond the minimum (the chosen "best possible"):**
   1. **LLM cleanup pass** after STT: rewrite the raw transcript in coding context, fixing mis-heard
      tool names + technical terms without changing meaning (use a fast model; accuracy over latency).
   2. **Guarded domain dictionary** for high-frequency safe fixes (agent names when addressing one,

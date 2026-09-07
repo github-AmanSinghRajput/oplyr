@@ -17,8 +17,15 @@ development, but it is not the intended public product surface.
 
 - **Switch agents on the fly.** Connect multiple agents (Codex and Claude Code
   today, Gemini soon) at once and switch the active one — and its model — mid-session
-  from the topbar. Each turn runs on the agent you've selected. (A full multi-agent
-  room where several agents collaborate in one conversation is on the way — see below.)
+  from the topbar. Each turn runs on the agent you've selected.
+- **Agentic Chat — a multi-agent room.** `@mention` several connected agents in one
+  conversation (`@codex`, `@claude`) and they reply in sequence, each seeing the
+  replies before it. Room turns are reply-only; file writes go through the
+  single-agent approval flow.
+- **Shared memory (the "brain").** A local-first SQLite store every agent reads from
+  and writes to, with semantic recall over on-device embeddings, so decisions and
+  context carry across sessions and between agents. Import the context files you already keep (`AGENTS.md`,
+  `CLAUDE.md`) to start it off, and browse it as a graph on the Memory screen.
 - **Voice-native, text-mandatory.** Speak naturally and see the conversation as
   live text. Switch to typing whenever you prefer.
 - **Multi-provider, your accounts.** Run against OpenAI Codex or Anthropic Claude
@@ -43,13 +50,6 @@ development, but it is not the intended public product surface.
 
 ## Coming soon
 
-- **Agentic Chat — a true multi-agent room.** `@mention` several agents in one
-  conversation, have them reply in turn and hand work between each other, all over
-  shared memory. (Today you connect multiple agents and switch the active one; the
-  collaborative room is designed and on the way.)
-- **Shared memory ("brain").** A unified, local-first graph + vector memory every
-  agent reads from and writes to — so your context, decisions, and codebase
-  history persist across sessions and carry between agents.
 - **Meetings & Notes.** Connect your calendar to see meetings while you work, join
   with one click, and get a heads-up alert before a call starts.
 - **Developer note-taker.** A Granola-level meeting/thinking companion built for
@@ -110,14 +110,14 @@ binary does not download it.
 
 ## Architecture
 
-Oplyr is an npm-workspaces monorepo. Five workspaces under `apps/`:
+Oplyr is an npm-workspaces monorepo. Four workspaces under `apps/`:
 
-| Workspace | Path | Role |
-| --- | --- | --- |
-| `@oplyr/runtime` | `apps/api` | Local Express runtime: provider execution, voice orchestration, approvals/diffs, SQLite persistence. |
-| `@oplyr/web` | `apps/web` | React 19 + Vite operator console (renderer). |
-| `@oplyr/desktop` | `apps/desktop` | Electron shell for the packaged macOS app. |
-| `oplyr-stt` | `apps/stt` | Native Swift / CoreML speech-to-text engine. |
+| Workspace        | Path           | Role                                                                                                 |
+| ---------------- | -------------- | ---------------------------------------------------------------------------------------------------- |
+| `@oplyr/runtime` | `apps/api`     | Local Express runtime: provider execution, voice orchestration, approvals/diffs, SQLite persistence. |
+| `@oplyr/web`     | `apps/web`     | React 19 + Vite operator console (renderer).                                                         |
+| `@oplyr/desktop` | `apps/desktop` | Electron shell for the packaged macOS app.                                                           |
+| `oplyr-stt`      | `apps/stt`     | Native Swift / CoreML speech-to-text engine.                                                         |
 
 The **local runtime** runs on the user's Mac and owns provider execution,
 file/workspace access, voice capture, approvals, and the desktop UI — it is
@@ -186,7 +186,7 @@ Notable variables:
 
 ## Contributing
 
-Oplyr is beta software under active hardening. Before contributing, read:
+Oplyr is early-access software under active hardening. Before contributing, read:
 
 - [`AGENTS.md`](AGENTS.md) — repository guidelines, structure, and conventions.
 - [`CLAUDE.md`](CLAUDE.md) — architecture overview and key patterns.

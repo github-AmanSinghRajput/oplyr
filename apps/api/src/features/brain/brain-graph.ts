@@ -1,7 +1,9 @@
 import type { AssistantProviderId } from '../../types.js';
 import type { BrainAtomRecord } from './brain.types.js';
 
-// Builds the Memory graph shown in the UI. Nodes are memories; an edge connects two memories that
+// Builds the Memory graph shown in the UI. Edges are computed HERE, per request, and never stored —
+// the `brain_edges` table is reserved for deferred supersedes/contradicts reasoning and stays empty.
+// Nodes are memories; an edge connects two memories that
 // share a named entity (a file, tool, project, or person the distiller tagged). The edges are a
 // deterministic function of REAL stored entities — not frontend text-similarity guesswork — so the
 // picture reflects how the brain actually relates things.

@@ -77,6 +77,8 @@ export function MemoryImportPanel({
     selected,
     selectedCount,
     toggle,
+    selectAll,
+    clearSelection,
     rescan,
     run,
     startImport,
@@ -354,7 +356,7 @@ export function MemoryImportPanel({
                   Nothing is added until you press the button. Your own connected agent reads these
                   and stores the gist locally.
                 </p>
-                <div className="mt-3 flex items-center gap-3">
+                <div className="mt-3 flex flex-wrap items-center gap-3">
                   <Button
                     size={compact ? 'sm' : 'default'}
                     disabled={selectedCount === 0}
@@ -362,6 +364,14 @@ export function MemoryImportPanel({
                   >
                     {selectedCount > 0 ? `Add ${selectedCount} to your brain` : 'Add to your brain'}
                   </Button>
+                  {/* Nothing is selected by default, so wanting everything must still be one click. */}
+                  <button
+                    type="button"
+                    className="text-xs text-text-tertiary underline-offset-2 transition-colors hover:text-text-secondary hover:underline"
+                    onClick={selectedCount > 0 ? clearSelection : selectAll}
+                  >
+                    {selectedCount > 0 ? 'Clear selection' : `Select all ${pendingCount}`}
+                  </button>
                 </div>
               </>
             )
@@ -437,23 +447,32 @@ function AgentGroup({
         {files.map((file) => {
           const Icon = kindIcon(file.kind);
           const liveState = perSource[file.path];
+          // A run only covers what was selected when it started. Everything else is a bystander:
+          // it used to be given the run treatment too and fall through to "queued", telling the
+          // user that sources they had deliberately left unticked were about to be imported.
+          const inRun = running && selected.has(file.path);
+          const bystander = running && !inRun;
           const rowClass = cn(
             'flex items-center gap-2.5 rounded-[var(--radius-control)] px-2 py-1.5',
             compact ? 'text-xs' : 'text-sm',
-            !resolved && !running && 'cursor-pointer transition-colors hover:bg-surface-1'
+            !resolved && !running && 'cursor-pointer transition-colors hover:bg-surface-1',
+            bystander && 'opacity-45'
           );
           const body = (
             <>
               {resolved ? (
                 <Check size={14} className="shrink-0 text-success" />
-              ) : running ? (
+              ) : inRun ? (
                 liveState === 'added' ? (
                   <Check size={14} className="shrink-0 text-success" />
                 ) : liveState === 'adding' ? (
                   <Loader2 size={14} className="shrink-0 animate-spin text-accent" />
                 ) : (
-                  <span className="h-3.5 w-3.5 shrink-0 rounded-full border border-border" />
+                  <span className="h-3.5 w-3.5 shrink-0 rounded-full border border-accent-border" />
                 )
+              ) : bystander ? (
+                // Left unticked — show an empty box, not a queue marker.
+                <span className="h-3.5 w-3.5 shrink-0 rounded-[3px] border border-border" />
               ) : (
                 <input
                   type="checkbox"
@@ -468,10 +487,12 @@ function AgentGroup({
               </span>
               {resolved ? (
                 <span className="shrink-0 text-[10px] text-text-tertiary">in your brain</span>
-              ) : running ? (
+              ) : inRun ? (
                 <span className="shrink-0 text-[10px] text-text-tertiary">
                   {liveState === 'added' ? 'added' : liveState === 'adding' ? 'adding…' : 'queued'}
                 </span>
+              ) : bystander ? (
+                <span className="shrink-0 text-[10px] text-text-tertiary">not selected</span>
               ) : (
                 statusChip(file)
               )}

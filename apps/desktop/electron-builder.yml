@@ -72,12 +72,27 @@ extraResources:
     to: stt/oplyr-stt
   # Brain semantic-recall embeddings, shipped so they run fully OFFLINE. @xenova/transformers is kept
   # external in the API bundle, so it + its ONNX runtime + the MiniLM model must ship next to
-  # server.mjs. WASM runtime (onnxruntime-web) → no native ABI rebuild; transformers auto-falls-back
-  # to it when onnxruntime-node isn't present.
+  # server.mjs.
   - from: ../api/models/Xenova
     to: api/models/Xenova
   - from: ../../node_modules/@xenova/transformers
     to: api/node_modules/@xenova/transformers
+  # onnxruntime-node is NOT optional, despite the WASM runtime also shipping. transformers'
+  # backends/onnx.js has a STATIC `import * as ONNX_NODE from 'onnxruntime-node'`, so the module has
+  # to RESOLVE even when the WASM backend is the one that ends up being used. Leaving it out did not
+  # "fall back" — it failed the whole embedding path at load with
+  #   Cannot find package 'onnxruntime-node' imported from .../backends/onnx.js
+  # which meant every brain atom was stored with no vector and semantic recall silently degraded to
+  # keyword overlap. That shipped in every build through 0.4.1.
+  # Filtered to darwin/arm64, the only platform we ship: 92MB of prebuilt binaries → ~20MB.
+  # napi-v3 is ABI-stable, so unlike better-sqlite3/node-pty this needs NO Electron rebuild.
+  - from: ../../node_modules/onnxruntime-node
+    to: api/node_modules/onnxruntime-node
+    filter:
+      - "**/*"
+      - "!bin/napi-v3/linux/**"
+      - "!bin/napi-v3/win32/**"
+      - "!bin/napi-v3/darwin/x64/**"
   - from: ../../node_modules/onnxruntime-web
     to: api/node_modules/onnxruntime-web
   - from: ../../node_modules/onnxruntime-common

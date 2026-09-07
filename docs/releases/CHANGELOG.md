@@ -9,15 +9,174 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/): **Added 
 
 ---
 
+## 0.5.0 — 2026-09-08
+
+The Brain release. Semantic recall has been in the product since 0.3.0 and has never actually run in
+a shipped build — this fixes that, and then makes the memory around it worth recalling.
+
+**Added**
+
+- **Voice knows your project's vocabulary.** Names from the repo you have open — files, exported
+  symbols, the current branch — are passed to the recogniser as keyterms, so `brain-recall.ts` and
+  `sqlite-vec` come back spelled the way you wrote them instead of phonetically. The speech
+  refinement model this needs downloads in the background on first launch with visible progress;
+  dictation works the whole time, and an interrupted download resumes by itself.
+- **Agent replies render like a real markdown client.** Tables, task lists, footnotes, block and
+  inline math (KaTeX), and syntax-highlighted code, on par with the Claude and Codex desktop apps.
+- **Mermaid diagrams render inline**, in chat and in the docs browser — flowcharts, sequence
+  diagrams, state charts. Invalid diagram source falls back to a code block instead of breaking the
+  message.
+- **The empty chat offers somewhere to start** rather than a blank panel.
+
+**Changed**
+
+- **A new look — "Plum × Linen", shared with the website.** Warm near-black with a single plum
+  accent replaces the cool blue-black and cyan of earlier releases; cyan-on-blue is the default "AI
+  tool" palette and shared nothing with the brand. Light mode now uses the site's tokens verbatim,
+  so the two halves are one language instead of two.
+- **The app no longer reads as zoomed in.** Corner radii are tighter (panels 20 → 12px, controls
+  14 → 8px), elevation comes from three shared shadow tokens instead of ad-hoc shadows, all motion
+  uses one curve, and a surface is now either filled or outlined rather than both. Welcome and
+  empty-state headings are set in the site's serif.
+- **Sessions import about 13× more of your history.** A session used to be distilled from one
+  9,000-character excerpt — roughly the final two exchanges — so the Brain's picture of a day's work
+  was whatever happened in the last few minutes. It now reads up to 120,000 characters in slices,
+  distilling each one and merging the results.
+- **Voice auto-send is off by default.** Having it on by default meant a stray noise could dispatch
+  a half-formed instruction to an agent that writes files.
+
+**Fixed**
+
+- **Semantic recall never worked in any shipped build.** `@xenova/transformers` has a static
+  `import` of `onnxruntime-node`, so the module must resolve even when the WASM backend is the one
+  that runs. It was excluded from the DMG on the assumption that transformers would fall back; it
+  did not — the embedding path failed at load, every memory was stored with no vector, and recall
+  silently degraded to keyword overlap. Packaged builds now ship it (filtered to darwin/arm64,
+  92MB → ~20MB). **Memories written by an older build have no vectors and are re-embedded on
+  first launch.**
+- **"Where did we leave off?" returns recent work.** Continuation questions share no vocabulary with
+  the work they're asking about, so they scored below the relevance threshold and returned older,
+  wordier memories. Such questions are now recognised and ranked by recency first.
+- **Claude Code no longer reports you as signed out while you are signed in.** The check matched the
+  word "auth" anywhere in the CLI's output, so a CLI that didn't recognise `auth status` produced an
+  error containing "auth" and hard-blocked every turn. It now reads the JSON payload, and an
+  unreadable status fails open instead of locking you out.
+- **Onboarding's last step is no longer a dead end**, and the flow was rebuilt around it.
+- **"Reset Oplyr" resets everything.** It named seven tables explicitly and left behind your user
+  record, codebase maps, file summaries, notes, and every attachment and cache on disk. It now
+  clears everything Oplyr put on the Mac, discovered dynamically, so the app is genuinely
+  as-installed.
+- **"Clear chat" is scoped to the connected workspace, and keeps your memories.** It cleared every
+  workspace's history, and took the Brain memories distilled from those conversations with it.
+  Memories now survive; only the conversation goes.
+- **Connecting a project no longer imports your agent history without asking.** Every pending source
+  arrived pre-ticked, which made "proceed" import all of them and made the panel's own promise
+  ("nothing is added until you press the button") false. Nothing is selected until you select it,
+  and there's a Select all for when you want it.
+- **Re-importing a source no longer duplicates memories.** The content-hash ledger is enforced on
+  the write path, and near-identical restatements collapse to a single memory.
+- **The codebase map shows your code, not your dependencies.** `node_modules`, `.next`, virtualenvs
+  and installed Python packages, lockfiles, minified and generated output, and dotfiles and secret
+  files are all excluded.
+- **Root files appear in the codebase map.** The 600-node trim ranked by connectedness, and
+  top-level files have few imports, so they were the first thing cut from their own repo.
+- **The logo on a reply is the agent that wrote it.** Switching the active agent from the topbar
+  restamped past replies with the new agent's logo.
+- **Refresh refreshes everything**, not a subset of the panels.
+- **The Memory screen says when recall is keyword-only** instead of leaving semantic search quietly
+  degraded.
+- **Quitting the app does not reset the Brain.**
+
+**Internal**
+
+- Docs pass over everything published on GitHub: stale context removed, superseded plans deleted,
+  the rest brought up to date (~1,400 lines removed). Markdown is now covered by `format`/`check`.
+- New tests for Claude auth interpretation, codebase-map filtering, keyterm extraction, session
+  transcript reading and chunked distillation, and recency-first recall.
+- `brain_edges` is documented as reserved: Memory-graph edges are computed per request from stored
+  entities and never persisted.
+
+---
+
+## 0.4.1 — 2026-09-07
+
+**Fixed**
+
+- **Codex usage reads its limits.** Codex defers the rate-limit numbers on the first `/status` after
+  launch ("refresh requested; run /status again shortly"); the scrape treated the panel as complete
+  and reported "Could not read Codex usage". It now waits for the limit lines and asks again.
+- **Usage is scoped to the active agent.** Every agent's card was handed the same snapshot, so
+  Claude Code's section displayed Codex's numbers — and Codex's errors. A non-active agent now
+  explains where usage comes from instead of showing another agent's data.
+- **Usage recovers after a network drop.** Refresh forces a fresh capture, and a failed read is
+  retried after 15s instead of being cached for two minutes.
+- **Rounded corners across the app.** Panels, tabs, buttons and the workspace controls rendered
+  square — every one used an invalid `rounded-radius-*` class that Tailwind emitted nothing for.
+- **Onboarding** has a Back step, and confirms before skipping a memory import that has pending
+  sources.
+- **The workspace memory-import card is recoverable.** Dismissing it collapses it to a one-line row
+  with a re-scan button rather than hiding it for good.
+- **Toggling auto-send mid-recording** no longer fails the turn — the setting is pinned when capture
+  starts and the toggle is disabled while a turn is in flight.
+- **The voice heading reflects what Oplyr is actually doing.** It no longer reads "Listening…" when
+  the mic is closed, which looked like an always-on microphone.
+- **The working animation is only rendered once** on the voice screen.
+
+**Changed**
+
+- **Agents are identifiable.** Vendor logos and brand accents in Settings, with the vendor named
+  under each agent; the active agent's logo appears on its row.
+- **New working indicator** — a signal travelling across linked nodes, tinted with the working
+  agent's accent, replacing the generic bouncing dots.
+- **Desk pets rebuilt.** Six characters (duck, bird, frog, cat, dog, and Crabby the crab), each
+  redrawn and given its own gait and idle behaviours — foraging, croaking, grooming, digging,
+  snapping — instead of pacing on a loop. Crabby also scuttles along the top of the chat composer.
+
+**Internal**
+
+- `parseCodexStatus` gained its first tests, including the deferred-limits transcript.
+- The native-module preflight now self-heals a missing `better-sqlite3` binding (not just an ABI
+  mismatch), and no longer inherits an outer `--workspace` filter into its rebuild.
+
+---
+
+## 0.4.0 — 2026-09-04
+
+**Added**
+
+- **Import your existing agent memory into the Brain.** Oplyr finds the context files you already
+  keep (`AGENTS.md`, `CLAUDE.md`, and friends) and imports them as memories, so the Brain starts
+  with what you've already written down instead of empty.
+- **Import ledger** — each source is tracked by content hash, so Oplyr knows what is new, what
+  changed since last time, and what is already in the Brain. Progress is shared across screens and
+  survives navigating away mid-import.
+
+**Changed**
+
+- **Brain canvas** — faster on large graphs, with a render cap, curved floating edges that leave and
+  enter nodes on the correct side, and calmer physics on re-layout.
+- **Voice streaming** is smoother — the speech engine runs with its streaming window configuration
+  rather than the batch default.
+
+**Fixed**
+
+- **Review diffs work in nested repositories.** A workspace containing more than one Git repo
+  produced an empty or partial diff; diff, snapshot and revert are now repo-aware and aggregate
+  across every repo under the workspace.
+
+---
+
 ## 0.3.1 — 2026-07-27
 
 **Fixed**
+
 - **Provider usage loads with a single agent connected.** Codex on its own no longer shows "failed to
   fetch" — the first cold `/status` read is retried so the meters land, so you don't need to connect a
   second agent to see usage.
 - **Usage meters sit centered** in the top bar instead of overlapping the provider dropdown.
 
 **Changed**
+
 - **Packaging:** native build intermediates (`*.o` / `*.a`) are excluded from the app bundle — fixes a
   codesign timestamp failure during the zip step and trims the download by a few MB.
 
@@ -26,6 +185,7 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/): **Added 
 ## 0.3.0 — 2026-07-26
 
 **Added**
+
 - **Agentic Chat — multi-agent room (B1).** `@mention` connected agents (`@codex`, `@claude`) to
   address them in one turn; they reply in sequence, each seeing the prior replies so they can agree
   or flag issues. Human-conducted. `@`-autocomplete in the composer; every reply is labeled with its
@@ -36,7 +196,8 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/): **Added 
 - **Clear chat** (keeps the Brain) on the Workspace screen.
 
 **Changed**
-- **Agent responses now render like a proper chat UI** (chat *and* voice) — automatic language
+
+- **Agent responses now render like a proper chat UI** (chat _and_ voice) — automatic language
   detection with full syntax highlighting for every language, one clean code card (language label +
   copy button), colored `diff` blocks, and consistent spacing. Fixes a doubled code box, a stray
   "hljs" language label, and colorless code.
@@ -44,6 +205,7 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/): **Added 
   easier to read at a glance.
 
 **Fixed**
+
 - **Stop actually aborts the agent** — the write/edit path now receives the abort signal and kills the
   running codex/claude process (previously only the streaming reply path stopped). Voice gained a stop
   control too.
@@ -59,6 +221,7 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/): **Added 
 ## 0.2.2 — 2026-07-18
 
 **Added**
+
 - Welcome greeting on every fresh app start — a warm, randomly-chosen multilingual "hello" (28
   languages) inked on in a handwriting animation, then it fades. Also doubles as a boot cover.
 - Selectable desk pets — duck, bird, frog, cat, dog — chosen in onboarding and changeable in Settings.
@@ -66,12 +229,14 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/): **Added 
   Map lets you pick which repo to view.
 
 **Changed**
+
 - Codebase Map: centered title + project picker; when a workspace has multiple repos and none is
   selected, it shows a "choose a project" prompt instead of a blank canvas.
 - Voice screen: consolidated to a single waveform visualizer (removed the redundant frequency strip).
 - Cat and dog desk pets redrawn as proper four-legged walkers.
 
 **Fixed**
+
 - "Oplyr quit unexpectedly" crash on deliberate quit — the forked API is now shut down cleanly before
   the app exits (SIGTERM + wait, SIGKILL fallback).
 - Brief onboarding / model-download flash when reopening the app (a boot cover holds until the app
@@ -85,13 +250,16 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/): **Added 
 ## 0.2.1 — 2026-07-16
 
 **Added**
+
 - One-tap full refresh in the top bar — re-pulls status, chats, brain/memory, and usage together.
 
 **Changed**
+
 - Default model is highlighted in the model picker; per-model reasoning effort.
 - Nicer markdown rendering across chat and the docs browser.
 
 **Fixed**
+
 - Brain now records memories reliably (removed the missing-project gate; skip reasons are logged).
 - Stale model lists after switching agents; models auto-refresh per provider.
 - Packaged-app startup crash (`node-pty` was missing from the bundled resources).

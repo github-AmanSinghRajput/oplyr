@@ -392,6 +392,11 @@ export interface VoiceBootstrapStatus {
   installRoot: string;
   seedRoot: string | null;
   steps: VoiceBootstrapStep[];
+  /** Background fetch of the speech-refinement model that improves recognition of project-specific
+   *  words. Never gates voice — dictation works while it downloads. */
+  speechRefinement: 'idle' | 'downloading' | 'ready' | 'unavailable';
+  /** 0-99 while downloading, else null. */
+  speechRefinementPercent: number | null;
   updatedAt: string;
 }
 
@@ -495,6 +500,9 @@ export interface BrainStatusResponse {
     captureEnabled: boolean;
   };
   embeddingsModel: string;
+  /** Whether semantic recall is actually running. False → recall is keyword-only. */
+  embeddingsAvailable: boolean;
+  embeddingsUnavailableReason: string | null;
 }
 
 // ── Knowledge graph (real, backend-computed edges — never derived on the frontend) ──────────────

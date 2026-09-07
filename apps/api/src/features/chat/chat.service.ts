@@ -207,8 +207,18 @@ export class ChatService {
     });
 
     if (willPropose) {
-      const stubAssistant = this.toChatMessage('assistant', '', source);
+      // Stamp the author now. An unattributed reply has no agent identity to render, so the UI is
+      // left inferring one from whichever agent happens to be active later — which is how a reply
+      // ended up wearing another agent's logo after a switch.
+      const stubAssistant = this.toChatMessage(
+        'assistant',
+        '',
+        source,
+        [],
+        this.runtime.getActiveProviderId()
+      );
       callbacks?.onStarted?.({ userMessage, assistantMessage: stubAssistant });
+      // processTurnWithUserMessage does its own recall, so this is handed the raw request.
       return this.processTurnWithUserMessage(
         assistantInput,
         source,
@@ -330,7 +340,9 @@ export class ChatService {
     return {
       type: 'reply',
       userMessage,
-      assistantMessage: lastAssistant ?? this.toChatMessage('assistant', '', source)
+      assistantMessage:
+        lastAssistant ??
+        this.toChatMessage('assistant', '', source, [], this.runtime.getActiveProviderId())
     };
   }
 
@@ -598,8 +610,13 @@ export class ChatService {
     return this.repository.listRecentMessages(limit);
   }
 
+  /** Clear the chat for the CONNECTED workspace only — other workspaces keep their history and
+   *  their attachments. A full wipe of everything is the app reset, not this. */
   async clearConversationHistory() {
-    await this.attachments.clearAll();
+    const sessionId = await this.repository.getActiveSessionId();
+    if (sessionId) {
+      await this.attachments.clearForSession(sessionId);
+    }
     await this.repository.clearMessages();
   }
 

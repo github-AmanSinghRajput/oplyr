@@ -39,12 +39,54 @@ export function normalizeAtomText(value: string) {
     .trim();
 }
 
+/**
+ * Attribution phrases distillation swaps between runs — "We standardized on X" one time, "The team
+ * standardized on X" the next. Stripped BEFORE determiners, so the multi-word forms match.
+ */
+const LEADING_SUBJECT = /^(?:the team|our team|the user|we|i|you)\s+/;
+
+/**
+ * Bare determiners. Stripped SEPARATELY from the subjects above and never together with a following
+ * noun: an earlier version matched "the project" as one phrase, which deleted a MEANINGFUL noun and
+ * left "The project uses Tailwind" and "Project uses Tailwind" with different keys — the exact
+ * duplicate it was meant to collapse.
+ */
+const LEADING_DETERMINER = /^(?:the|a|an|this|that|it)\s+/;
+
+/**
+ * The dedup key for an atom. Two atoms with the same key are the same memory, and `source_hash` is
+ * built from it, so this decides what counts as a duplicate.
+ *
+ * Deliberately LEXICAL, not semantic. Embedding similarity looks like the obvious tool here and is
+ * unusable for it: measured on the bundled MiniLM, "Auto-send is off by default" and "Auto-send is
+ * on by default" score 0.953 cosine — higher than genuine paraphrases like "Never commit secrets to
+ * the repo" / "Do not commit secrets into the repository" at 0.847. The distributions overlap, so
+ * any threshold that catches real duplicates also merges facts with their own negations, silently
+ * destroying the correct memory. A duplicate is recoverable; a wrong merge is not.
+ *
+ * Normalising the text instead collapses the rewording that distillation actually produces, and
+ * cannot confuse a fact with its negation because "off" and "on" remain different strings.
+ */
 export function normalizeAtomKey(value: string) {
-  return normalizeAtomText(value)
+  let key = normalizeAtomText(value)
     .toLowerCase()
     .replace(/[`"'()[\]{}]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
+
+  // Subjects first (they contain determiners), then bare determiners. Each can stack, and neither
+  // may reduce the key to nothing.
+  for (const pattern of [LEADING_SUBJECT, LEADING_DETERMINER]) {
+    for (let pass = 0; pass < 2; pass += 1) {
+      const stripped = key.replace(pattern, '');
+      if (stripped === key || stripped.length === 0) {
+        break;
+      }
+      key = stripped;
+    }
+  }
+
+  return key.trim();
 }
 
 export function clipAtomText(value: string) {

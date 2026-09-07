@@ -114,6 +114,7 @@ export class ChatRepository {
     this.session = null;
   }
 
+  /** Id of the conversation for the connected workspace, or null when there isn't one yet. */
   async getActiveSessionId() {
     const session = await this.resolveSession();
     return session?.id ?? null;

@@ -5,6 +5,7 @@ import { VoiceWaveform } from '@/components/voice/VoiceWaveform';
 import { MessageBubble } from '@/components/chat/MessageBubble';
 import { AgentActivityTimeline } from '@/components/chat/AgentActivityTimeline';
 import { ProviderLogo } from '@/components/providers/ProviderLogo';
+import { AGENTS } from '@/lib/agents';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
 import { getGreeting } from '@/containers/voice-console/lib/helpers';
@@ -94,6 +95,18 @@ export function VoiceScreen({
   // lights up voice. While a turn runs the mic becomes a Stop button so you can abort the response.
   const isWorking = agentWorking;
   const replyText = aiReply?.text?.trim() ?? '';
+  // Attribute a COMPLETED reply to the agent that actually produced it. `assistant` is the LIVE
+  // active provider, so using it here relabelled past answers the moment the user switched agents
+  // in the topbar — a reply from Claude would suddenly show Codex's logo and name. Fall back to the
+  // live provider only while a turn is still in flight, when no author exists yet.
+  const replyAuthorId = aiReply?.authorProviderId ?? null;
+  const authorId = replyAuthorId ?? assistant?.id ?? null;
+  const authorName = replyAuthorId
+    ? (AGENTS[replyAuthorId]?.label ?? assistant?.name ?? 'Assistant')
+    : (assistant?.name ?? 'Assistant');
+  // The model shown is the one configured RIGHT NOW; only claim it when the reply came from the
+  // agent that is still active, since which model answered isn't recorded on the message.
+  const showModel = !replyAuthorId || replyAuthorId === assistant?.id;
   const showResponseBlock = Boolean(aiReply && replyText) || isWorking;
 
   // A turn is "in flight" from the moment the mic opens until the agent finishes. The send mode is
@@ -251,14 +264,14 @@ export function VoiceScreen({
       {showResponseBlock && (
         <div className="w-full">
           <div className="flex items-center gap-2 mb-2">
-            {assistant ? (
+            {authorId ? (
               <>
-                <ProviderLogo providerId={assistant.id} size="sm" />
+                <ProviderLogo providerId={authorId} size="sm" />
                 <div className="flex flex-col min-w-0">
                   <span className="text-xs font-semibold text-text-primary truncate">
-                    {assistant.name}
+                    {authorName}
                   </span>
-                  {assistant.model && (
+                  {showModel && assistant?.model && (
                     <span className="text-[11px] text-text-tertiary truncate">
                       {assistant.model}
                     </span>

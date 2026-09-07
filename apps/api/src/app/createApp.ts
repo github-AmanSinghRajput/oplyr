@@ -39,7 +39,10 @@ import { VoiceSessionService } from '../features/voice/voice-session.service.js'
 import { VoiceSettingsService } from '../features/voice/voice-settings.service.js';
 import { VoiceTranscriptionService } from '../features/voice/transcription.service.js';
 import { VoiceBootstrapService } from '../features/voice/voice-bootstrap.service.js';
-import { provisionSpeechModel } from '../features/voice/speech-model-provisioner.js';
+import {
+  provisionSpeechModel,
+  provisionSpeechRefinement
+} from '../features/voice/speech-model-provisioner.js';
 import { CodexSettingsService } from '../features/codex/codex-settings.service.js';
 import { ClaudeSettingsService } from '../features/claude/claude-settings.service.js';
 import { GeminiSettingsService } from '../features/gemini/gemini-settings.service.js';
@@ -196,6 +199,9 @@ export function createApp(options?: { apiAuthToken?: string }) {
   const appSettingsService = new AppSettingsService();
   const appResetService = new AppResetService();
   const brainService = new BrainService();
+  // Memories written by a build that shipped without onnxruntime-node have no vectors. Re-embed
+  // them in the background so the fix reaches an existing brain, not only new memories.
+  void brainService.backfillEmbeddings().catch(() => {});
   // Let the brain push live updates to the Memory UI over the existing SSE bus (subscribe, not poll).
   setBrainEventEmitter((event) => eventBus.emit(event));
   const voiceTranscriptionService = new VoiceTranscriptionService();
@@ -207,7 +213,8 @@ export function createApp(options?: { apiAuthToken?: string }) {
   });
   const voiceBootstrapService = new VoiceBootstrapService({
     voiceSessionService,
-    provisionSpeechModel
+    provisionSpeechModel,
+    provisionSpeechRefinement
   });
 
   app.set('etag', false);
@@ -458,13 +465,15 @@ export function createApp(options?: { apiAuthToken?: string }) {
         isGitRepo: false,
         writeAccessEnabled: false
       });
+      // resetPersistedData clears BOTH databases — every table in runtime.db and every brain_*
+      // table — so the brain needs no separate wipe here. It used to, back when the app reset only
+      // touched runtime.db and Oplyr "kept remembering" afterwards.
       await appResetService.resetPersistedData();
       const resetVoiceSettings = await voiceSettingsService.getResolvedSettings();
       resetVoiceSessionState('idle');
       setVoiceSessionState({
         silenceWindowMs: resetVoiceSettings.silenceWindowMs
       });
-      await brainService.resetAll();
 
       eventBus.emit({
         type: 'status_refresh',

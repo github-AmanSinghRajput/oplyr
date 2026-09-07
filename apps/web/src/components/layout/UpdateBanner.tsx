@@ -73,7 +73,7 @@ export function UpdateBanner() {
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -18 }}
           transition={{ type: 'spring', stiffness: 320, damping: 26 }}
-          className="fixed left-1/2 top-4 z-[60] flex max-w-[92vw] -translate-x-1/2 items-center gap-3 rounded-[var(--radius-control)] border border-border bg-surface-1 px-4 py-2.5 text-sm shadow-xl"
+          className="fixed left-1/2 top-4 z-[60] flex max-w-[92vw] -translate-x-1/2 items-center gap-3 rounded-[var(--radius-control)] border border-border bg-surface-1 px-4 py-2.5 text-sm shadow-2"
           role="status"
           aria-live="polite"
         >

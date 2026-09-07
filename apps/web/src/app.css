@@ -14,80 +14,123 @@
 
 @import 'tailwindcss';
 
+/* Palette: "Plum × Linen", shared with the marketing site (vocod-website). The site is the light
+   half and the app is the dark half of ONE language — warm ink, one plum accent, forest green
+   reserved for the logo and success. Values in the light block below are taken verbatim from the
+   site's tokens so the two never drift apart.
+
+   Dark mode used to be cool blue-black with a cyan accent, which is the default "AI tool" look and
+   shared nothing with the brand. */
 @theme {
-  /* ── Colors ── */
-  --color-background: #0e1015;
-  --color-background-elevated: #14171d;
-  --color-surface-1: #181c23;
-  --color-surface-2: #1e222b;
-  --color-surface-3: #262b36;
+  /* ── Colors — dark (default): warm near-black with a plum lean ── */
+  --color-background: #131017;
+  --color-background-elevated: #1a161f;
+  --color-surface-1: #201b26;
+  --color-surface-2: #27212e;
+  --color-surface-3: #322a3a;
 
-  --color-border: rgba(110, 125, 143, 0.15);
-  --color-border-strong: rgba(130, 146, 166, 0.28);
+  --color-border: rgba(233, 221, 237, 0.12);
+  --color-border-strong: rgba(233, 221, 237, 0.24);
 
-  --color-text-primary: #eaf0fa;
-  --color-text-secondary: #8a97ab;
-  --color-text-tertiary: #5a6578;
+  --color-text-primary: #f2ecf4;
+  --color-text-secondary: #a99fb0;
+  --color-text-tertiary: #7d7387;
 
-  --color-accent: #00d4f5;
-  --color-accent-muted: rgba(0, 212, 245, 0.12);
-  --color-accent-border: rgba(0, 212, 245, 0.24);
+  /* Orchid — the site's plum lifted until it reads on near-black (~6:1 on the background). */
+  --color-accent: #c882b4;
+  --color-accent-muted: rgba(200, 130, 180, 0.14);
+  --color-accent-border: rgba(200, 130, 180, 0.3);
 
-  --color-logo-track: #14241d;
+  --color-logo-track: #16261f;
   --color-logo-loop: #0b5d3b;
-  --color-logo-signal: #f2fcff;
+  --color-logo-signal: #f7f2f6;
 
-  --color-success: #6ffbbe;
-  --color-success-muted: rgba(111, 251, 190, 0.1);
-  --color-warning: #f2d070;
-  --color-warning-muted: rgba(242, 208, 112, 0.1);
-  --color-danger: #ff8e98;
-  --color-danger-muted: rgba(255, 142, 152, 0.1);
+  --color-success: #7ad6a4;
+  --color-success-muted: rgba(122, 214, 164, 0.12);
+  --color-warning: #e8bf7c;
+  --color-warning-muted: rgba(232, 191, 124, 0.12);
+  --color-danger: #f09a92;
+  --color-danger-muted: rgba(240, 154, 146, 0.12);
+
+  /* ── Elevation ── layered stacks, one per level, tinted rather than neutral black. Overridden
+     per theme below. Use `shadow-1` / `shadow-2` / `shadow-float`, not ad-hoc shadow utilities. */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 20px rgba(0, 0, 0, 0.26);
+  --shadow-2: 0 2px 6px rgba(0, 0, 0, 0.46), 0 18px 44px rgba(0, 0, 0, 0.34);
+  --shadow-float:
+    0 4px 10px rgba(0, 0, 0, 0.5), 0 24px 60px rgba(0, 0, 0, 0.4), 0 64px 128px rgba(0, 0, 0, 0.3);
+
+  /* ── Motion ── ONE curve for the whole product, same as the site. Reach for `ease-brand`
+     instead of inventing a cubic-bezier per animation. */
+  --ease-brand: cubic-bezier(0.22, 1, 0.36, 1);
 
   /* ── Layout ── */
   --sidebar-width-collapsed: 56px;
   --sidebar-width-expanded: 240px;
   --topbar-height: 44px;
 
-  /* ── Radius ── */
-  --radius-panel: 20px;
-  --radius-control: 14px;
-  --radius-sm: 10px;
+  /* ── Radius ──
+     Tightened from 20/14/10. The type scale is already small (text-xs and text-sm carry the app),
+     so the "zoomed in" feeling was never the font — it was 12px text inside 20px corners. A corner
+     radius reads relative to the element it is on: 20px on a panel looks like a consumer app, and
+     14px on a 32px-tall control is nearly a pill. Pro desktop tools sit around 6-10px. */
+  --radius-panel: 12px;
+  --radius-control: 8px;
+  --radius-sm: 6px;
   --radius-pill: 999px;
 
   /* ── Fonts ── */
   --font-sans: 'Geist Sans', system-ui, -apple-system, sans-serif;
   --font-mono: 'Geist Mono', ui-monospace, 'SFMono-Regular', monospace;
+  /* The site's editorial voice. System faces only — all present on macOS, nothing to download.
+     Reserved for welcome/onboarding/empty-state headings; never body copy or UI chrome. */
+  --font-serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
 
   /* ── Animations ── */
   --animate-voice-bar: voice-bar 1.2s ease-in-out infinite;
   --animate-spin-slow: spin-slow 8s linear infinite;
 }
 
-/* Light mode overrides */
+/* Light mode — the site's own palette, verbatim. Previously this mixed warm cream surfaces with
+   cool blue text, which is why it read as muddy rather than warm. */
 :root[data-theme='light'] {
-  --color-background: #f7efe4;
-  --color-background-elevated: #fff8ef;
-  --color-surface-1: #fffaf3;
-  --color-surface-2: #f1e6d8;
-  --color-surface-3: #e6d6c4;
-  --color-border: rgba(91, 64, 78, 0.16);
-  --color-border-strong: rgba(91, 64, 78, 0.3);
-  --color-text-primary: #0f1a28;
-  --color-text-secondary: #5a6a7e;
-  --color-text-tertiary: #8995a6;
-  --color-accent: #0891b2;
-  --color-accent-muted: rgba(8, 145, 178, 0.1);
-  --color-accent-border: rgba(8, 145, 178, 0.2);
+  --color-background: #f3f1ef; /* linen paper */
+  --color-background-elevated: #faf8f6;
+  --color-surface-1: #fdfcfb; /* raised card */
+  --color-surface-2: #ebe7e3; /* recessed band */
+  --color-surface-3: #ded8d3; /* deeper recess */
+
+  --color-border: rgba(28, 24, 32, 0.1); /* warm hairline */
+  --color-border-strong: rgba(122, 59, 107, 0.24); /* plum hairline */
+
+  --color-text-primary: #1c1820; /* warm near-black ink */
+  --color-text-secondary: #57505b;
+  --color-text-tertiary: #6e6772; /* the site's AA-measured value; #8a828c fails at 3.0–3.6:1 */
+
+  --color-accent: #7a3b6b; /* plum, exactly as on the site */
+  --color-accent-muted: rgba(122, 59, 107, 0.1);
+  --color-accent-border: rgba(122, 59, 107, 0.24);
+
   --color-logo-track: #dce8e1;
   --color-logo-loop: #004225;
   --color-logo-signal: #0b1820;
-  --color-success: #059669;
-  --color-success-muted: rgba(5, 150, 105, 0.1);
-  --color-warning: #b45309;
-  --color-warning-muted: rgba(180, 83, 9, 0.1);
-  --color-danger: #dc2626;
-  --color-danger-muted: rgba(220, 38, 38, 0.1);
+
+  --color-success: #2f6b4f; /* forest, reserved for logo + success */
+  --color-success-muted: rgba(47, 107, 79, 0.1);
+  --color-warning: #8a5713;
+  --color-warning-muted: rgba(138, 87, 19, 0.1);
+  --color-danger: #a62f22;
+  --color-danger-muted: rgba(166, 47, 34, 0.1);
+
+  /* Ink-tinted, never neutral black — this is most of why the site reads as expensive. */
+  --shadow-1:
+    0 1px 2px rgba(30, 22, 40, 0.06), 0 8px 20px rgba(30, 22, 40, 0.08),
+    0 28px 56px rgba(30, 22, 40, 0.08);
+  --shadow-2:
+    0 2px 6px rgba(30, 22, 40, 0.08), 0 18px 44px rgba(30, 22, 40, 0.12),
+    0 52px 104px rgba(30, 22, 40, 0.1);
+  --shadow-float:
+    0 4px 10px rgba(30, 22, 40, 0.1), 0 24px 60px rgba(30, 22, 40, 0.14),
+    0 64px 128px rgba(30, 22, 40, 0.12);
 }
 
 /* ── Base layer ── */

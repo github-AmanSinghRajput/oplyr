@@ -201,6 +201,10 @@ export interface BrainEmbeddingProvider {
   /** Embed texts to unit-length vectors, or return null if embeddings are unavailable (offline
    *  fallback to keyword scoring — never a hard failure, never a network call). */
   embed(texts: string[]): Promise<Float32Array[] | null>;
+  /** False once embeddings have failed to load. Optional so test doubles need not implement it. */
+  readonly available?: boolean;
+  /** Why embeddings are off, when they are. */
+  readonly unavailableReason?: string | null;
 }
 
 // ── Graph (entities + typed edges the distiller populates) ────────────────────────────────────

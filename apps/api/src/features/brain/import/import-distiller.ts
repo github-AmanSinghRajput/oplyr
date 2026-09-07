@@ -28,8 +28,9 @@ export interface DistillMemoryFileInput {
 
 export interface DistillSessionInput {
   providerId: 'claude' | 'codex' | 'gemini';
-  /** The recent, bounded tail of a session transcript (see session-transcripts.ts). */
-  sessionText: string;
+  /** Ordered slices of the session, oldest first (see session-transcripts.ts). Each costs one
+   *  agent call, so the chunk count is the cost dial. */
+  sessionChunks: string[];
   /** Sessions are always project-scoped, keyed by the absolute project root. */
   projectKey: string;
   projectName: string | null;
@@ -61,10 +62,24 @@ export function buildImportPrompt(
   ].join('\n');
 }
 
-export function buildSessionPrompt(sessionText: string, projectName: string | null): string {
+export function buildSessionPrompt(
+  sessionText: string,
+  projectName: string | null,
+  part?: { index: number; total: number }
+): string {
   const where = projectName ? ` in the project "${projectName}"` : '';
+  // A slice from the middle of a session is not "the recent tail", and saying so makes the agent
+  // report stale work as the current state. Only the last slice is the tail.
+  const which =
+    !part || part.total === 1
+      ? 'the RECENT tail of'
+      : part.index === part.total - 1
+        ? `the FINAL part (${part.index + 1} of ${part.total}) of`
+        : `part ${part.index + 1} of ${part.total} of`;
   return [
-    "You are Oplyr's memory importer. Below is the RECENT tail of a coding session" +
+    "You are Oplyr's memory importer. Below is " +
+      which +
+      ' a coding session' +
       where +
       ' with an AI agent.',
     'Extract durable, reusable memories AND the working state so the user can pick up where they left',
@@ -193,17 +208,28 @@ export async function distillSession(
   settings: BrainSettings,
   complete: BrainCompletionFn
 ): Promise<PreparedAtom[]> {
-  let atoms: DistilledAtom[];
-  try {
-    const raw = await complete({
-      providerId: input.providerId,
-      prompt: buildSessionPrompt(input.sessionText, input.projectName),
-      workspace: input.workspace
-    });
-    atoms = parseDistilledTurn(raw).atoms;
-  } catch {
-    return [];
+  // Distil each slice separately, then prepare the whole set in one pass — `prepareImportedAtoms`
+  // already dedupes by content hash, so a fact restated in three slices collapses to one atom.
+  // Sequential, not parallel: these run on the user's own agent and would otherwise burst its
+  // rate limit during an import of several sessions.
+  const atoms: DistilledAtom[] = [];
+  for (const [index, chunk] of input.sessionChunks.entries()) {
+    try {
+      const raw = await complete({
+        providerId: input.providerId,
+        prompt: buildSessionPrompt(chunk, input.projectName, {
+          index,
+          total: input.sessionChunks.length
+        }),
+        workspace: input.workspace
+      });
+      atoms.push(...parseDistilledTurn(raw).atoms);
+    } catch {
+      // One unreachable slice should not discard the slices that did come back.
+      continue;
+    }
   }
+  if (atoms.length === 0) return [];
 
   return prepareImportedAtoms(atoms, {
     providerId: input.providerId,

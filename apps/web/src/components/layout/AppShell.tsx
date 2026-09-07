@@ -15,6 +15,7 @@ import { ContentFrame } from './ContentFrame';
 import { ProductTourOverlay } from '@/components/tour/ProductTourOverlay';
 import { useNavigation } from '@/providers/NavigationProvider';
 import { useStatus } from '@/providers/StatusProvider';
+import { useMemoryImport } from '@/providers/MemoryImportProvider';
 import { useToast } from '@/providers/ToastProvider';
 import { useTheme } from '@/providers/ThemeProvider';
 import { useApproval } from '@/providers/ApprovalProvider';
@@ -75,6 +76,13 @@ const MemoryScreen = lazy(() =>
 
 function shouldPollVoiceBootstrap(status: VoiceBootstrapStatus | null) {
   if (!status) {
+    return true;
+  }
+
+  // The speech-refinement model starts downloading the instant the phase turns 'ready', so stopping
+  // at 'ready' froze its status on "Downloading…" forever — it never updated, not even to Active.
+  // Keep polling until that settles too.
+  if (status.speechRefinement === 'downloading') {
     return true;
   }
 
@@ -262,6 +270,11 @@ export function AppShell() {
   // one slow/failing fetch (e.g. the ~15s Codex usage scrape) never blocks the rest.
   const [fullRefreshing, setFullRefreshing] = useState(false);
   const [brainRefreshNonce, setBrainRefreshNonce] = useState(0);
+  const { rescan: rescanMemoryImport } = useMemoryImport();
+  // "Refresh everything" has to mean everything, or the button is a lie. Every source of truth the
+  // UI reads is re-fetched here, and anything cached server-side is re-fetched with the cache
+  // bypassed — otherwise pressing refresh could hand back exactly the stale value you pressed it to
+  // get rid of.
   const handleFullRefresh = useCallback(async () => {
     if (fullRefreshing) return;
     setFullRefreshing(true);
@@ -271,7 +284,17 @@ export function AppShell() {
         refreshStatus(),
         loadLogs(),
         settings.loadVoiceSettings(),
-        settings.loadProviderUsage(),
+        // force: the snapshot is cached for two minutes server-side, so an unforced read here
+        // returns the same stale numbers the user is trying to refresh away.
+        settings.loadProviderUsage({ force: true }),
+        // Re-scan the agent context files on disk, so a doc edited outside Oplyr flips to
+        // "update available" and a newly created one appears as "new".
+        rescanMemoryImport(),
+        // Voice runtime + the background speech-refinement fetch.
+        service
+          .getVoiceBootstrapStatus()
+          .then((next) => setVoiceBootstrap(next.bootstrap))
+          .catch(() => undefined),
         activeId === 'codex'
           ? settings.loadCodexSettings()
           : activeId === 'claude'
@@ -280,6 +303,7 @@ export function AppShell() {
               ? settings.loadGeminiSettings()
               : Promise.resolve()
       ]);
+      // Makes the Memory screen re-read the brain (atoms, graph, stats).
       setBrainRefreshNonce((nonce) => nonce + 1);
     } finally {
       setFullRefreshing(false);
@@ -289,6 +313,8 @@ export function AppShell() {
     status?.assistantProviders.activeProviderId,
     refreshStatus,
     loadLogs,
+    rescanMemoryImport,
+    service,
     settings
   ]);
 
@@ -488,7 +514,11 @@ export function AppShell() {
         if (next.bootstrap.phase === 'ready' && !statusRefreshedAfterBootstrapRef.current) {
           statusRefreshedAfterBootstrapRef.current = true;
           await refreshStatus();
-          return;
+          // Do NOT return unconditionally: this branch runs exactly once, at the moment the
+          // refinement download begins, so returning here is what stalled its progress.
+          if (!shouldPollVoiceBootstrap(next.bootstrap)) {
+            return;
+          }
         }
 
         if (shouldPollVoiceBootstrap(next.bootstrap)) {
@@ -501,6 +531,8 @@ export function AppShell() {
         setVoiceBootstrap((current) => ({
           phase: 'failed',
           progressPercent: current?.progressPercent ?? 0,
+          speechRefinement: current?.speechRefinement ?? 'idle',
+          speechRefinementPercent: current?.speechRefinementPercent ?? null,
           message: 'Oplyr could not read the voice bootstrap status.',
           error: error instanceof Error ? error.message : 'Unable to inspect local voice setup.',
           installRoot: current?.installRoot ?? '',
@@ -526,6 +558,8 @@ export function AppShell() {
             setVoiceBootstrap((current) => ({
               phase: 'failed',
               progressPercent: current?.progressPercent ?? 0,
+              speechRefinement: current?.speechRefinement ?? 'idle',
+              speechRefinementPercent: current?.speechRefinementPercent ?? null,
               message: 'Oplyr could not start local voice setup.',
               error:
                 error instanceof Error
@@ -751,6 +785,7 @@ export function AppShell() {
             providerUsageLoading={settings.providerUsageLoading}
             status={status}
             voiceSettings={settings.voiceSettings}
+            voiceBootstrap={voiceBootstrap}
             onAppSettingChange={(key, value) => void settings.handleAppSettingChange(key, value)}
             onPreferenceChange={setPreference}
             onVoiceSettingChange={(key, value) =>
@@ -846,6 +881,8 @@ export function AppShell() {
                 setVoiceBootstrap((current) => ({
                   phase: 'failed',
                   progressPercent: current?.progressPercent ?? 0,
+                  speechRefinement: current?.speechRefinement ?? 'idle',
+                  speechRefinementPercent: current?.speechRefinementPercent ?? null,
                   message: 'Oplyr could not retry local voice setup.',
                   error:
                     error instanceof Error

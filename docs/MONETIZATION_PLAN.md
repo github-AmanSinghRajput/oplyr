@@ -2,13 +2,13 @@
 
 **Date:** 2026-07-13
 **Status:** Plan only — applies to **v1.0 and later, NOT the beta.** No code yet. Beta stays 100% free.
-**Purpose:** capture the pricing + licensing design *and the ethics* so v1.0 monetization is deliberate and clean.
+**Purpose:** capture the pricing + licensing design _and the ethics_ so v1.0 monetization is deliberate and clean.
 
 ---
 
 ## 1. Is this ethical? Yes — and you've earned it.
 
-Charging for software you built is normal, fair, and necessary to keep building it. "Free beta → paid v1.0" is one of the most common and respected models in software. You are not doing anything wrong. A tiny sustainable price funds continued development, which is *good* for users.
+Charging for software you built is normal, fair, and necessary to keep building it. "Free beta → paid v1.0" is one of the most common and respected models in software. You are not doing anything wrong. A tiny sustainable price funds continued development, which is _good_ for users.
 
 The **one** thing that can feel like a "rug pull" is silently taking away a feature beta users had for free. So we do it the right way — these principles are non-negotiable in the plan:
 
@@ -24,12 +24,14 @@ The **one** thing that can feel like a "rug pull" is silently taking away a feat
 ## 2. Free vs Pro
 
 **Free — forever, no account, nothing leaves the Mac:**
+
 - Voice + text control of coding agents; one active agent at a time
 - **Project-scoped memory** (the this-project brain)
 - Codebase map, diff review + approvals, terminal, docs viewer
 - The whole everyday cockpit. No sign-up. No telemetry.
 
 **Pro — ~$5/mo, v1.0+:**
+
 - **Global / cross-project memory** (the headline brain magic — memory that follows you across every project)
 - **Multi-agent room + capped debate** (once built)
 - Candidates: raw-archive history, advanced recall tuning, priority support
@@ -40,10 +42,10 @@ The **one** thing that can feel like a "rug pull" is silently taking away a feat
 
 ## 3. Privacy reconciliation (this is the brand — get it right)
 
-The tension: Oplyr's identity is "local-first, no account, no telemetry." Monetization needs *some* license check. Resolve it cleanly:
+The tension: Oplyr's identity is "local-first, no account, no telemetry." Monetization needs _some_ license check. Resolve it cleanly:
 
 - **Free tier: unchanged.** No account, no telemetry, everything local. "Nothing leaves your Mac" stays 100% true.
-- **Pro tier:** the user **opts into** a paid relationship, so a lightweight license check is expected and acceptable. Mechanics: email + license key, validated online periodically with a **generous offline grace period** (e.g. 7–14 days). **Only the license *status* is ever checked online — memory and code never leave the Mac, even for Pro.** So "your memories stay local" remains true for everyone; only "is your subscription active?" pings a server.
+- **Pro tier:** the user **opts into** a paid relationship, so a lightweight license check is expected and acceptable. Mechanics: email + license key, validated online periodically with a **generous offline grace period** (e.g. 7–14 days). **Only the license _status_ is ever checked online — memory and code never leave the Mac, even for Pro.** So "your memories stay local" remains true for everyone; only "is your subscription active?" pings a server.
 
 State this explicitly on the pricing page and in-app so it's a feature, not a compromise.
 
@@ -51,7 +53,7 @@ State this explicitly on the pricing page and in-app so it's a feature, not a co
 
 ## 4. Licensing architecture
 
-- **Payments + tax: use a Merchant of Record — LemonSqueezy or Paddle** (not raw Stripe). They handle worldwide sales tax (VAT/GST), subscriptions, dunning, *and* issue license keys. For a solo founder this removes global tax liability entirely — worth the slightly higher cut.
+- **Payments + tax: use a Merchant of Record — LemonSqueezy or Paddle** (not raw Stripe). They handle worldwide sales tax (VAT/GST), subscriptions, dunning, _and_ issue license keys. For a solo founder this removes global tax liability entirely — worth the slightly higher cut.
 - **Flow:** user subscribes on the site → MoR issues a license key + fires a webhook → your backend (`vocod-website` + Postgres) records the license/subscription → the app validates the key (online, cached, offline-grace) → **entitlement** flips to Pro → feature flags unlock.
 - **In-app gating:** a single `entitlements` object (`{ tier: 'free' | 'pro' }`) drives everything; Pro features check `entitlements.tier === 'pro'` and otherwise render an Upgrade CTA.
 - **Reuse existing infra:** `vocod-website` already models leads / invite codes / status / admin / Resend email. Extend the same system with `licenses` / `subscriptions` / `entitlements`. The gate that grants beta access becomes the gate that grants Pro — one system, not two.
@@ -61,12 +63,12 @@ State this explicitly on the pricing page and in-app so it's a feature, not a co
 ## 5. Beta → v1.0 transition (the "lose access on update" part, done right)
 
 - **Beta (now):** everything free, no gating, no account.
-- **Before v1.0:** email + in-app banner — *"Global memory & the multi-agent room become Pro at v1.0. Here's what stays free forever. As a beta tester, you get [X months Pro free / Y% off for life] — thank you."*
+- **Before v1.0:** email + in-app banner — _"Global memory & the multi-agent room become Pro at v1.0. Here's what stays free forever. As a beta tester, you get [X months Pro free / Y% off for life] — thank you."_
 - **At v1.0:** the entitlement check ships. On update:
   - **Free entitlement →** Pro features (global memory, multi-agent room) gate behind an **Upgrade** screen. Data is **not deleted** — global memory is simply gated and re-unlocks on upgrade.
   - **Grandfathered beta users →** flagged in the license DB → Pro unlocked (free period / discount) automatically.
 
-This is the honest version of "beta users lose the special features on update": they lose them *with notice, with a thank-you offer, and without losing their data.*
+This is the honest version of "beta users lose the special features on update": they lose them _with notice, with a thank-you offer, and without losing their data._
 
 ---
 

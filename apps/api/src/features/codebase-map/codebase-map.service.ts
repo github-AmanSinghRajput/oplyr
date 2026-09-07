@@ -97,7 +97,20 @@ export class CodebaseMapService {
     let truncated = false;
     if (nodes.length > MAX_NODES) {
       truncated = true;
-      nodes = [...nodes].sort((a, b) => b.degree - a.degree).slice(0, MAX_NODES);
+      // Trimming purely by degree silently deletes the repo root. Nothing imports package.json,
+      // README.md, tsconfig.json or next.config.mjs, so they all score 0 and sort last — on a
+      // 900-file repo the canvas showed `src`, `docs` and a stray `.DS_Store` at the root and
+      // nothing else, because src's files consumed the whole budget. (`.DS_Store` only survived by
+      // winning the zero-degree tie-break on path order, which is why it looked arbitrary.)
+      //
+      // Root files are few and are the first thing anyone looks for, so reserve them, then spend
+      // what's left on the most-connected files.
+      const rootNodes = nodes.filter((node) => !node.id.includes('/')).slice(0, MAX_NODES);
+      const connected = nodes
+        .filter((node) => node.id.includes('/'))
+        .sort((a, b) => b.degree - a.degree)
+        .slice(0, Math.max(0, MAX_NODES - rootNodes.length));
+      nodes = [...rootNodes, ...connected];
       const keep = new Set(nodes.map((node) => node.id));
       keptEdges = edges.filter((edge) => keep.has(edge.from) && keep.has(edge.to));
     }

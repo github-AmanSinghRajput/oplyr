@@ -6,10 +6,15 @@ import { env } from '../../config/env.js';
 import { logger } from '../../lib/logger.js';
 import { matchesLocalApiAuthToken } from '../../lib/local-api-auth.js';
 import { getDefaultSttStreamWorkerCommand, resolveLoginShell } from '../../runtime-paths.js';
+import { collectWorkspaceKeyterms } from './voice-keyterms.source.js';
+import { getWorkspaceState } from '../../runtime.js';
 
 const TYPE_AUDIO = 0;
 const TYPE_FINALIZE = 1;
 const TYPE_RESET = 2;
+
+/** Ceiling on how long vocabulary collection may delay the start of a voice session. */
+const KEYTERM_BUDGET_MS = 400;
 
 // Hard cap on concurrent voice workers. Each connection spawns a native STT process; without a bound
 // a buggy or hostile client could exhaust CPU/RAM/PIDs. The real product only ever opens one.
@@ -31,9 +36,15 @@ function isAllowedOrigin(origin: string | undefined, allowedOrigin: string): boo
 }
 
 /** Environment for the STT worker, with the API token stripped — the worker never needs it. */
-function workerEnv(): NodeJS.ProcessEnv {
+function workerEnv(keyterms?: string): NodeJS.ProcessEnv {
   const clone: NodeJS.ProcessEnv = { ...process.env };
   delete clone.LOCAL_API_AUTH_TOKEN;
+  // Speech biasing vocabulary for THIS session. Passed at spawn rather than as a stdin frame
+  // because the worker is spawned per voice session, so the terms are already known — and the
+  // engine wants biasing configured before streaming starts.
+  if (keyterms) {
+    clone.OPLYR_STT_KEYTERMS = keyterms;
+  }
   return clone;
 }
 
@@ -45,7 +56,7 @@ export function attachVoiceStreamGateway(server: Server, options: VoiceStreamGat
   const wss = new WebSocketServer({ server, path: '/api/voice/stream' });
   let activeStreams = 0;
 
-  wss.on('connection', (socket: WebSocket, request) => {
+  wss.on('connection', async (socket: WebSocket, request) => {
     // Fail closed: a matching token is REQUIRED, and the origin must be the trusted renderer. This
     // blocks any web page the user has open from opening the socket or spawning STT workers.
     const url = new URL(request.url ?? '', 'http://localhost');
@@ -79,8 +90,28 @@ export function attachVoiceStreamGateway(server: Server, options: VoiceStreamGat
       activeStreams -= 1;
     };
 
+    // Bias decoding toward this project's own words — its name, branch, filenames, dependencies.
+    // Best effort and cheap (no subprocess, no scan of node_modules); a failure here costs accuracy
+    // on project-specific terms, never the ability to dictate.
+    let keytermsJson: string | undefined;
+    try {
+      // This blocks the spawn, so it is time-boxed: past the budget we start unbiased rather than
+      // make the user wait to speak.
+      const keyterms = await Promise.race([
+        collectWorkspaceKeyterms(getWorkspaceState().projectRoot ?? null),
+        new Promise<never[]>((resolve) => setTimeout(() => resolve([]), KEYTERM_BUDGET_MS))
+      ]);
+      if (keyterms.length > 0) {
+        keytermsJson = JSON.stringify(keyterms);
+      }
+    } catch (error) {
+      logger.warn('voice.stream.keyterms_failed', {
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+
     const worker: ChildProcessWithoutNullStreams = spawn(resolveLoginShell(), ['-lc', command], {
-      env: workerEnv(),
+      env: workerEnv(keytermsJson),
       stdio: ['pipe', 'pipe', 'pipe']
     }) as ChildProcessWithoutNullStreams;
 

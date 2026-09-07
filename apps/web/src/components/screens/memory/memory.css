@@ -142,6 +142,12 @@
   color: var(--color-text-tertiary);
 }
 
+/* Semantic recall is dead — say so where the "Semantic" badge would otherwise sit. */
+.memory-status-pill__model.is-warning {
+  color: var(--color-warning);
+  cursor: help;
+}
+
 .memory-status-pill__model code {
   overflow: hidden;
   max-width: 12rem;

@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { getDatabase, getRuntimeDatabasePath, isDatabaseConfigured } from '../../db/client.js';
+import { withTransaction } from '../../db/transaction.js';
 import { getRootDir } from '../../store.js';
 import type { ChatAttachment, ChatAttachmentKind } from '../../types.js';
 
@@ -265,6 +266,49 @@ export class ChatAttachmentRepository {
     };
   }
 
+  /**
+   * Clear the attachments belonging to ONE conversation: everything hanging off that session's
+   * messages, plus drafts not yet attached to a message (those belong to the live composer).
+   *
+   * "Clear chat" used to call clearAll(), which is `DELETE FROM conversation_attachments` with no
+   * WHERE and an unlink of every file on disk — so clearing the chat in one workspace destroyed the
+   * attachments of every other workspace. Session rows already cascade to attachment rows; the files
+   * are what needed scoping.
+   */
+  async clearForSession(sessionId: string) {
+    if (!isDatabaseConfigured()) {
+      return;
+    }
+
+    const database = getDatabase();
+    const rows = database
+      .prepare(
+        `
+        SELECT a.id, a.storage_path
+        FROM conversation_attachments a
+        LEFT JOIN conversation_messages m ON m.id = a.message_id
+        WHERE m.session_id = ? OR a.message_id IS NULL
+      `
+      )
+      .all(sessionId) as { id: string; storage_path: string }[];
+
+    if (rows.length === 0) {
+      return;
+    }
+
+    await withTransaction(async (tx) => {
+      const remove = tx.prepare('DELETE FROM conversation_attachments WHERE id = ?');
+      for (const row of rows) {
+        remove.run(row.id);
+      }
+    });
+
+    await Promise.all(
+      rows.map((row) => fs.rm(row.storage_path, { force: true }).catch(() => undefined))
+    );
+  }
+
+  /** Wipe every attachment, for the full app reset. Not for "clear chat" — see clearForSession. */
   async clearAll() {
     if (!isDatabaseConfigured()) {
       return;

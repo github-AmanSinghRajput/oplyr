@@ -101,7 +101,7 @@ export function ProductTourOverlay() {
       )}
 
       <div
-        className="absolute rounded-[var(--radius-panel)] border border-border bg-surface-1 p-4 shadow-2xl"
+        className="absolute rounded-[var(--radius-panel)] border border-border bg-surface-1 p-4 shadow-float"
         style={cardStyle}
       >
         <div className="mb-1 flex items-center justify-between gap-4">

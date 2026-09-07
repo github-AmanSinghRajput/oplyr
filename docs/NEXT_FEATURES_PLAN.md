@@ -4,6 +4,7 @@
 These come AFTER the first notarized DMG ships (see `docs/DISTRIBUTION.md`). The brain (built + reviewed) is the shared-memory substrate both features rely on.
 
 ## Build order
+
 1. **Guided connect flow** (Feature A) — build first; it's a prerequisite for a useful room (you need ≥2 agents actually connected before "agents talk to each other" means anything).
 2. **Multi-agent room — conducted @mention** (Feature B1). ✅ SHIPPED (backend + UI; 2026-07-22).
 3. **Multi-agent room — capped debate** (Feature B2) — opt-in, guarded, fast-follow.
@@ -15,16 +16,19 @@ Each gets its own short spec → plan → build when we start.
 ---
 
 ## Feature A — Guided in-app connect flow
+
 **Problem:** today, connecting a provider whose CLI isn't set up is manual — the user must install + sign in the CLI in their OWN terminal, then return and press Refresh. If e.g. Gemini CLI isn't installed/authed, Oplyr just says "not installed / run the login command."
 
-**Decision:** *Guided in-app terminal.*
+**Decision:** _Guided in-app terminal._
 
 **Building blocks that already exist:**
+
 - Per-provider state detection — `AssistantProviderStatus { installed, loggedIn, appConnected, loginCommand }` (`assistant-client.ts` + each `*-client.ts` `getXStatus`).
 - An embedded PTY terminal — `node-pty` lives in `apps/desktop` (main process), driven over IPC.
 
 **Design:**
-- A **"Connect an agent" wizard** in Settings + Onboarding listing codex / claude / gemini with live state: *Not installed* / *Sign-in needed* / *Ready*.
+
+- A **"Connect an agent" wizard** in Settings + Onboarding listing codex / claude / gemini with live state: _Not installed_ / _Sign-in needed_ / _Ready_.
 - Per provider, a 3-step machine: **Install → Sign in → Connected.** Each step has a **"Run in Oplyr"** button.
 - New desktop IPC (sibling to `pickProjectFolder`): `runSetupCommand(providerId, step)` → spawns a **fixed, hardcoded** command in the embedded PTY, streams output into a terminal pane in the wizard. The interactive browser/device sign-in happens as normal.
 - Oplyr **auto-polls** provider status and advances to Connected itself — no manual Refresh.
@@ -35,9 +39,11 @@ Each gets its own short spec → plan → build when we start.
 ---
 
 ## Feature B — Multi-agent room ("Agentic Chat")
+
 **Decision:** conducted `@mention` first; capped debate as an opt-in follow. NOT fully autonomous.
 
 ### B1 — Conducted (v1)
+
 - The chat becomes a **room**: every message has an **author** (`user` or a specific `providerId`). Schema: add `authorProviderId` to `conversation_messages` (+ migration).
 - **Mention routing:** parse `@codex` / `@claude` / `@gemini` from the user message → ordered reply list; no mention → sticky **last-addressed** agent.
 - Each mentioned agent replies **in turn**; context per reply = last ~12 room messages (authored) + **brain recall** + the user message.
@@ -45,6 +51,7 @@ Each gets its own short spec → plan → build when we start.
 - Sidebar: rename chat to **"Agentic Chat"**; `@`-autocomplete offers only connected providers.
 
 ### B2 — Capped debate (opt-in, guarded)
+
 - A **"Discuss"** control: pick 2 agents + a topic + **max rounds** (e.g. 3–6). Loop: A → B → A … until the round cap or the user hits **Stop**.
 - **Hard guardrails:** read-only during the debate (no write-intent / approvals mid-argument), round cap, **Stop** aborts instantly (AbortSignal), cost cap, optional synthesis at the end. File writes happen only AFTER, when the human tells one agent to implement the agreed approach through the normal approval flow.
 - Brain captures debate turns with attribution; agreement between agents raises confidence via corroboration.
@@ -53,43 +60,51 @@ Each gets its own short spec → plan → build when we start.
 ---
 
 ## Feature C — Import existing agent memory (onboarding wedge)
+
 **Status:** documented 2026-07-22; **re-prioritized 2026-08-03** — the user's "quick user winner." Turns the #1 switching fear ("I'll lose the context I've built in Claude/Codex") into "Oplyr already knows my projects on day one." Onboarding flow + guardrails confirmed with the user (below).
 
-**Idea:** on connect, import a user's EXISTING Claude Code / Codex memory into the Oplyr Brain so they never start from scratch. Kills the cold-start feeling and leans on our two real differentiators — the Brain + local-first. **Scope note:** real on-disk memory exists for **Claude Code, Codex, and (best-effort) Gemini CLI** (`GEMINI.md`) — model providers like Kimi/Groq keep nothing local, so they're out unless reached *through* one of those CLIs. Marketing copy should name Claude/Codex/Gemini, not kimi/groq.
+**Idea:** on connect, import a user's EXISTING Claude Code / Codex memory into the Oplyr Brain so they never start from scratch. Kills the cold-start feeling and leans on our two real differentiators — the Brain + local-first. **Scope note:** real on-disk memory exists for **Claude Code, Codex, and (best-effort) Gemini CLI** (`GEMINI.md`) — model providers like Kimi/Groq keep nothing local, so they're out unless reached _through_ one of those CLIs. Marketing copy should name Claude/Codex/Gemini, not kimi/groq.
 
 **Onboarding flow (confirmed 2026-08-03):** connect an agent → Oplyr **scans and reports what it found** (e.g. "Found Claude Code memory across 6 projects + your global CLAUDE.md") → user **approves the preview** → **progress bar** writes into the Brain, **grouped by project** so they can jump straight back into the one they were on. Offered at the connect step; re-runnable from Settings.
 
 **Where the source data lives (verified on-disk 2026-07-22):**
+
 - **Claude — curated:** `<repo>/CLAUDE.md` (+ subdir `CLAUDE.md`, `@imports`) and global `~/.claude/CLAUDE.md`. **History:** `~/.claude/projects/<slugified-cwd>/<session-id>.jsonl` (one dir per project; path `/`→`-`) + `~/.claude/history.jsonl`. Config: `~/.claude.json`.
 - **Codex — curated:** `<repo>/AGENTS.md`, `~/.codex/rules`. **History/memory:** `~/.codex/history.jsonl`, session rollouts, and structured SQLite stores (`~/.codex/memories_1.sqlite`, `goals_1.sqlite`).
 
 **Build in two tiers:**
+
 - **Tier 1 (first — easy, high value):** parse curated files (`CLAUDE.md` project+global, `AGENTS.md` / Codex `rules`) → Brain distiller → atoms, scoped project vs global (1:1 with the Brain's existing scopes). Stable, small, curated → instant "Oplyr already knows my project".
 - **Tier 2 (deeper, opt-in):** distill recent `.jsonl` transcripts (Claude `projects/` + Codex sessions) into durable memories, selective by recency. Optionally read Codex's `memories_1.sqlite` directly.
 
 **Must-haves / caveats:**
+
 - **100% local** — read local files → distill locally → write local `brain.db`; **never upload.** Tier-2 summarization runs **on-device or through the user's OWN connected agent** (their account, their machine), never our cloud. On-brand; say it in the UI.
 - **Provenance** — tag imported atoms (`source: claude-md | codex-agents | imported-transcript`) so recall can say "learned from your existing setup."
 - **Consent + preview** before writing to the Brain (show which files + how many memories will be added).
 - **Brittleness** — undocumented internal paths/formats; start with the stable MD files, treat transcripts/SQLite as best-effort.
 
-**UI:** offer at the "connect a folder" onboarding step + in Settings: *"Import your existing Claude & Codex memory."*
+**UI:** offer at the "connect a folder" onboarding step + in Settings: _"Import your existing Claude & Codex memory."_
 
 ---
 
 ## Feature D — Local-network team collaboration ("shared room over LAN")
+
 **Status:** idea captured 2026-07-27 (user's idea). Not scheduled — flagship-sized (v0.5 / v1.0 territory). Deferred.
 
 **Idea:** two people running Oplyr on the same local network pair their instances into ONE shared session/room — pair programming, mentoring, or a small mob directing AI together, locally. Extends the multi-agent room from multi-agent to multi-**human** + multi-agent. On-brand: local-first, private, no cloud relay (unlike VS Code Live Share, which is cloud-relayed).
 
 **Decision — share the ROOM, not the login.** Each participant's turns run on THEIR OWN connected agent, on THEIR OWN machine, under THEIR OWN subscription. Do NOT pool or share subscriptions/credentials.
+
 - **Why not pool subscriptions (the original framing):** routing one person's prompts through another's Codex/Claude account is per-seat account-sharing — almost certainly violates provider ToS, risks account bans, exposes credentials, and directly contradicts the "your accounts, your machine, your call" pillar. The shared-room model delivers ~95% of the value (everyone sees each other's turns, proposals, and diffs live) with none of that risk. A teammate without a subscription can still take part in the room using their own free/BYO agent.
 
 **Scope fork (pick for v1):**
+
 - **v1 (simpler):** the HOST owns the project; the guest joins the room to co-direct. Shared chat/room + proposed diffs + approvals visible to both; approvals gated by the host (or shared). Start here.
 - **v2 (harder, defer):** both edit the same repo in real time → Live-Share/CRDT-level file + diff sync and a "who approves what" model.
 
 **Technical building blocks:**
+
 - Each Mac already runs its own local runtime (`:8787`) — the pairing substrate exists.
 - Needs: LAN peer discovery (mDNS/Bonjour), an explicit pairing handshake with trust (a short code / QR — never auto-join strangers), an encrypted peer-to-peer channel, and real-time sync of the shared room + diffs + approvals + presence over it.
 - **Touches:** `apps/desktop` (discovery + peer transport + IPC), `apps/api` (shared-session state + sync protocol), `apps/web` (host/join UI, shared room rendering, presence).
@@ -101,5 +116,6 @@ Each gets its own short spec → plan → build when we start.
 ---
 
 ## Notes
+
 - These features are **desktop-first** (PTY, IPC, LAN transport) — validate with `npm run dev:desktop`, not the browser.
 - No code written yet for the deferred ones — this file only captures the decisions/ideas so they aren't forgotten.

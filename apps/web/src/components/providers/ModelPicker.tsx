@@ -119,7 +119,7 @@ export function ModelPicker({
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-[calc(100%+6px)] z-30 max-h-96 min-w-[300px] max-w-[360px] overflow-y-auto rounded-[var(--radius-control)] border border-border bg-surface-1 p-1 shadow-lg"
+          className="absolute right-0 top-[calc(100%+6px)] z-30 max-h-96 min-w-[300px] max-w-[360px] overflow-y-auto rounded-[var(--radius-control)] border border-border bg-surface-1 p-1 shadow-2"
         >
           {options.map((option) => {
             const isActive = option.slug === effectiveCurrent;
@@ -299,7 +299,7 @@ export function EffortPicker({
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-[calc(100%+6px)] z-30 max-h-80 min-w-[240px] overflow-y-auto rounded-[var(--radius-control)] border border-border bg-surface-1 p-1 shadow-lg"
+          className="absolute right-0 top-[calc(100%+6px)] z-30 max-h-80 min-w-[240px] overflow-y-auto rounded-[var(--radius-control)] border border-border bg-surface-1 p-1 shadow-2"
         >
           {options.map((option) => {
             const isActive = option.effort === effective;

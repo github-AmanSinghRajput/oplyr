@@ -1,11 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import Markdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import rehypeHighlight from 'rehype-highlight';
 import { ChevronLeft, ChevronRight, FileText, Loader2, Search, FolderTree } from 'lucide-react';
 import { cn } from '@/lib/cn';
+import { MarkdownContent } from '@/components/markdown/MarkdownContent';
 import { useApi } from '@/providers/ApiProvider';
-import { CodeBlock } from '@/components/chat/CodeBlock';
 import '@/components/markdown.css';
 import type { MarkdownFileEntry } from '@/containers/voice-console/lib/types';
 
@@ -217,13 +214,7 @@ export function MarkdownScreen({ projectRoot }: MarkdownScreenProps) {
                   <p className="text-sm text-rose-400">{contentError}</p>
                 ) : (
                   <div className="md-body text-sm leading-relaxed text-text-primary">
-                    <Markdown
-                      remarkPlugins={[remarkGfm]}
-                      rehypePlugins={[rehypeHighlight]}
-                      components={{ code: CodeBlock }}
-                    >
-                      {content ?? ''}
-                    </Markdown>
+                    <MarkdownContent variant="doc">{content ?? ''}</MarkdownContent>
                   </div>
                 )}
               </div>

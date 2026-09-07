@@ -241,3 +241,68 @@ test('searchCandidates ranks by relevance without injection thresholds', () => {
   );
   assert.equal(results[0]!.id, 'a1');
 });
+
+// ── Continuation questions ────────────────────────────────────────────────────────────────────
+// "Where did we leave off" asks about TIME, not topic. It carries almost no words to match on, so
+// ranking it by relevance answered it with whatever was most salient — reliably something old — and
+// the 0.22 relevance bar discarded nearly everything, leaving the agent to re-explore the repo.
+
+/** An atom with an explicit age, so recency can be tested independently of topic. */
+function agedCandidate(id: string, text: string, ageDays: number): BrainRecallCandidate {
+  const base = candidate(id, text, 'workspace-1');
+  const seen = new Date(Date.now() - ageDays * 86_400_000).toISOString();
+  return { ...base, atom: { ...base.atom, createdAt: seen, lastSeenAt: seen } };
+}
+
+test('a "where did we leave off" question surfaces the most RECENT work', () => {
+  const settings = { ...getDefaultBrainSettings(), maxRecallAtoms: 1, maxRecallCharacters: 500 };
+  const old = agedCandidate('old', 'Chose Postgres over MySQL for the billing service.', 20);
+  const recent = agedCandidate('recent', 'Wired the auth middleware into the login route.', 0.02);
+
+  const bundle = buildBrainRecallBundle(
+    'what is the last thing you remember we were doing?',
+    [old, recent],
+    settings,
+    context({ recencyFirst: true })
+  );
+
+  assert.equal(bundle.injected, true, 'a continuation question must recall something');
+  assert.equal(bundle.atoms[0]?.id, 'recent', 'the newest memory has to win');
+});
+
+test('recencyFirst does not let recency override an on-topic question', () => {
+  const settings = { ...getDefaultBrainSettings(), maxRecallAtoms: 1, maxRecallCharacters: 500 };
+  const old = agedCandidate('old', 'Chose Postgres over MySQL for the billing service.', 20);
+  const recent = agedCandidate('recent', 'Wired the auth middleware into the login route.', 0.02);
+
+  // Normal (topical) query: the matching atom wins even though it is far older.
+  const bundle = buildBrainRecallBundle(
+    'which database did we pick for billing, Postgres or MySQL?',
+    [old, recent],
+    settings,
+    context()
+  );
+
+  assert.equal(bundle.atoms[0]?.id, 'old', 'topic still decides an ordinary question');
+});
+
+test('a continuation question still recalls when nothing matches its wording', () => {
+  const settings = { ...getDefaultBrainSettings(), maxRecallAtoms: 2, maxRecallCharacters: 500 };
+  // None of these share a word with the query — under the normal 0.22 bar all of them are dropped.
+  const atoms = [
+    agedCandidate('a', 'Wired the auth middleware into the login route.', 0.02),
+    agedCandidate('b', 'Renamed the invoice table to billing_invoice.', 1)
+  ];
+
+  const dropped = buildBrainRecallBundle('where did we leave off?', atoms, settings, context());
+  assert.equal(dropped.injected, false, 'this is the old behaviour: recall came back empty');
+
+  const kept = buildBrainRecallBundle(
+    'where did we leave off?',
+    atoms,
+    settings,
+    context({ recencyFirst: true })
+  );
+  assert.equal(kept.injected, true, 'with recencyFirst the recent work is available');
+  assert.equal(kept.atoms[0]?.id, 'a', 'newest first');
+});

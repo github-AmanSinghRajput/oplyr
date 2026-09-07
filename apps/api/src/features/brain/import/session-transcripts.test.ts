@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractMessages, buildSessionText } from './session-transcripts.js';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { extractMessages, readSessionMessages, buildSessionChunks } from './session-transcripts.js';
 
 test('extracts Claude user/assistant text, skips partial first line + tool blocks', () => {
   const tail = [
@@ -46,13 +49,77 @@ test('extracts Codex event_msg user/agent messages, ignores noise', () => {
   assert.deepEqual(messages[1], { role: 'assistant', text: 'Patched the webpack config.' });
 });
 
-test('buildSessionText keeps the most recent tail within the char budget', () => {
-  const many = Array.from({ length: 50 }, (_, i) => ({
+/** Write a Claude-format transcript of `count` turns to a temp file; returns its path. */
+async function writeClaudeSession(count: number, padding: number): Promise<string> {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'oplyr-session-'));
+  const lines = Array.from({ length: count }, (_, i) =>
+    JSON.stringify({
+      type: 'user',
+      message: { role: 'user', content: `turn ${i} ${'x'.repeat(padding)}` }
+    })
+  );
+  const file = path.join(dir, 'session.jsonl');
+  await fs.writeFile(file, lines.join('\n'), 'utf8');
+  return file;
+}
+
+test('readSessionMessages stops early once it has enough conversation', async () => {
+  const file = await writeClaudeSession(400, 200);
+
+  const messages = await readSessionMessages(file, 'claude', { enoughChars: 2000 });
+
+  // It read enough and no further, and what it kept is the END of the session.
+  assert.ok(messages.length > 0);
+  assert.equal(messages.at(-1)!.text.startsWith('turn 399'), true);
+});
+
+test('readSessionMessages reads the whole of a session smaller than the budget', async () => {
+  const file = await writeClaudeSession(5, 10);
+
+  const messages = await readSessionMessages(file, 'claude', { enoughChars: 100_000 });
+
+  assert.equal(messages.length, 5);
+  assert.equal(messages[0]!.text.startsWith('turn 0'), true);
+});
+
+test('readSessionMessages honours maxBytes and never throws on a missing file', async () => {
+  const file = await writeClaudeSession(400, 200);
+
+  // A byte ceiling below the file size still yields the newest turns, not a crash.
+  const capped = await readSessionMessages(file, 'claude', {
+    maxBytes: 4096,
+    enoughChars: 1_000_000
+  });
+  assert.ok(capped.length > 0);
+  assert.equal(capped.at(-1)!.text.startsWith('turn 399'), true);
+
+  assert.deepEqual(await readSessionMessages('/no/such/session.jsonl', 'claude'), []);
+});
+
+test('buildSessionChunks slices oldest-first and drops the OLDEST turns past the budget', () => {
+  const messages = Array.from({ length: 40 }, (_, i) => ({
     role: (i % 2 === 0 ? 'user' : 'assistant') as 'user' | 'assistant',
     text: `message ${i} ${'x'.repeat(100)}`
   }));
-  const text = buildSessionText(many, 500);
-  assert.ok(text.length <= 500 + 40); // 500 tail + the short "trimmed" prefix
-  assert.ok(text.includes('message 49')); // newest kept
-  assert.ok(text.startsWith('…[earlier turns trimmed]'));
+
+  const chunks = buildSessionChunks(messages, 500, 3);
+
+  assert.equal(chunks.length, 3);
+  for (const chunk of chunks) assert.ok(chunk.length <= 500 + 120);
+  // The newest turn survives and the oldest is what the budget cut.
+  assert.ok(chunks.at(-1)!.includes('message 39'));
+  assert.ok(!chunks[0]!.includes('message 0'));
+});
+
+test('buildSessionChunks returns a single chunk when everything fits', () => {
+  const messages = [
+    { role: 'user' as const, text: 'add retry logic' },
+    { role: 'assistant' as const, text: 'Done.' }
+  ];
+
+  const chunks = buildSessionChunks(messages, 12_000, 10);
+
+  assert.equal(chunks.length, 1);
+  assert.equal(chunks[0], 'User: add retry logic\n\nAssistant: Done.');
+  assert.deepEqual(buildSessionChunks([], 12_000, 10), []);
 });

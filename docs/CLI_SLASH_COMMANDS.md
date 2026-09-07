@@ -21,6 +21,7 @@ we implement an Oplyr-native slash layer that falls into three buckets:
 - **(C) TUI-only / N/A / defer** — meaningless outside the CLI's own terminal, or out of scope.
 
 **Already have the underlying behaviour today** (wire these first — bucket A):
+
 - `/status`, `/usage`, `/cost` → the live provider-usage scrape (Topbar meters + Settings → Agents).
 - `/model`, `/effort` → the Topbar model + effort pickers.
 - `/clear` → "Clear chat" (keeps the Brain).
@@ -39,6 +40,7 @@ Everything below is the **full** documented set per CLI, grouped, so we can deci
 ## Claude Code — `/` commands (2.1.220)
 
 **Session & conversation**
+
 - `/clear` — new conversation, empty context
 - `/compact [instructions]` — summarise the conversation to free context
 - `/context [all]` — visualise context usage
@@ -52,12 +54,14 @@ Everything below is the **full** documented set per CLI, grouped, so we can deci
 - `/exit` — quit
 
 **Background & subagents**
+
 - `/background [prompt]` — detach session as a background agent
 - `/subtask [prompt]` — hand a side task to a subagent
 - `/tasks` — list background work (incl. finished subagents)
 - `/agents` — manage subagent configs
 
 **Model & behaviour**
+
 - `/model [model]` — switch + save the model
 - `/effort [level|auto]` — set model effort level
 - `/fast [on|off]` — toggle fast mode
@@ -68,6 +72,7 @@ Everything below is the **full** documented set per CLI, grouped, so we can deci
 - `/color [color|default]` — prompt bar colour
 
 **Code, git & files**
+
 - `/diff` — interactive diff of uncommitted changes
 - `/run <command>` — run a shell command, capture output
 - `/worktree [list|attach <path>]` — manage git worktrees
@@ -77,6 +82,7 @@ Everything below is the **full** documented set per CLI, grouped, so we can deci
 - `/test` — run tests, analyse results
 
 **Skills invoked as commands (review / verify / research)**
+
 - `/review [pr#]` — read-only PR review
 - `/security-review` — scan the diff for vulnerabilities
 - `/simplify` — suggest code simplifications
@@ -91,17 +97,20 @@ Everything below is the **full** documented set per CLI, grouped, so we can deci
 - `/claude-api [migrate|managed-agents-onboard]` — Claude API reference
 
 **Memory & project**
+
 - `/memory` — edit `CLAUDE.md` + manage auto-memory
 - `/projects` — manage project storage
 - `/goal [condition|clear]` — work until a condition is met
 
 **Account & plan**
+
 - `/login`, `/logout` — sign in / out
 - `/usage` — token usage + cost (`/cost` is an alias)
 - `/upgrade` — upgrade to a paid plan
 - `/passes` — share a free week
 
 **Diagnostics & help**
+
 - `/status` — session status + background counts
 - `/doctor` — setup checkup
 - `/debug [description]` — debug logging
@@ -110,6 +119,7 @@ Everything below is the **full** documented set per CLI, grouped, so we can deci
 - `/tips`, `/help`, `/keybindings`, `/hooks`, `/permissions`
 
 **Integrations**
+
 - `/mcp [...]` — manage MCP servers
 - `/ide`, `/chrome`, `/desktop`, `/mobile`, `/teleport` — surfaces / hand-off
 - `/install-github-app`, `/install-slack-app`, `/plugins`
@@ -122,6 +132,7 @@ Everything below is the **full** documented set per CLI, grouped, so we can deci
 ## Codex CLI — `/` commands (0.145.0)
 
 **Session**
+
 - `/new` — fresh chat in the same session
 - `/clear` — reset terminal + fresh chat
 - `/rename` — rename the current chat
@@ -135,6 +146,7 @@ Everything below is the **full** documented set per CLI, grouped, so we can deci
 - `/exit`, `/quit` — close the CLI
 
 **Model & behaviour**
+
 - `/model` — switch active model
 - `/fast` — toggle Fast service tier
 - `/plan` — enable plan mode
@@ -144,6 +156,7 @@ Everything below is the **full** documented set per CLI, grouped, so we can deci
 - `/raw` — raw scrollback mode
 
 **Code, git & context**
+
 - `/diff` — show git changes
 - `/review` — review the working tree
 - `/init` — scaffold `AGENTS.md`
@@ -151,6 +164,7 @@ Everything below is the **full** documented set per CLI, grouped, so we can deci
 - `/goal` — set/manage the task target
 
 **Agents, skills & tools**
+
 - `/agent` (alias `/subagents`) — switch agent threads
 - `/skills` — browse + apply task skills
 - `/apps` — browse/attach connectors
@@ -160,17 +174,20 @@ Everything below is the **full** documented set per CLI, grouped, so we can deci
 - `/import` — migrate external agent configs
 
 **Background**
+
 - `/ps` — monitor background terminals
 - `/stop` — cancel background work
 - `/approve` — retry a denied auto-review action
 
 **Memory & account**
+
 - `/memories` — control memory injection + generation
 - `/status` — session details (model, approval policy, writable roots, token usage)
 - `/logout` — sign out
 - `/feedback` — report issues
 
 **Editor & environment**
+
 - `/ide` — pull in editor context
 - `/keymap` — customise shortcuts
 - `/vim` — Vim editing mode
@@ -180,6 +197,7 @@ Everything below is the **full** documented set per CLI, grouped, so we can deci
 ---
 
 ## Sources
+
 - Claude Code — built-in commands: https://code.claude.com/docs/en/commands
 - Claude Code — slash commands / skills: https://code.claude.com/docs/en/slash-commands
 - Codex CLI — developer commands (OpenAI): https://learn.chatgpt.com/docs/developer-commands?surface=cli

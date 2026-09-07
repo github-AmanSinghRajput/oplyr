@@ -1,4 +1,4 @@
-import { BrainCircuit, Cpu, Database, FolderGit2, Globe } from 'lucide-react';
+import { BrainCircuit, Cpu, Database, FolderGit2, Globe, TriangleAlert } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import type { BrainStatusResponse } from '@/containers/voice-console/lib/types';
 
@@ -17,7 +17,12 @@ export function MemoryStatusPill({ status, busy, onToggleEnabled }: MemoryStatus
   const stats = status?.stats;
   const enabled = status?.settings.enabled ?? false;
   // Show WHETHER recall works by meaning (benefit), never the internal embedding model name.
-  const semanticOn = Boolean(status?.embeddingsModel);
+  //
+  // This used to read `Boolean(status?.embeddingsModel)` — but that field is the model's NAME, always
+  // a non-empty string. So the pill claimed "Semantic" even while the embedder had failed to load and
+  // recall had silently degraded to keyword matching. It advertised the feature that wasn't running.
+  const semanticOn = status?.embeddingsAvailable === true;
+  const semanticBroken = status != null && status.embeddingsAvailable === false;
   const hasProject = Boolean(status?.project.key);
 
   return (
@@ -56,6 +61,21 @@ export function MemoryStatusPill({ status, busy, onToggleEnabled }: MemoryStatus
           >
             <Cpu size={12} />
             Semantic
+          </span>
+        </>
+      ) : null}
+
+      {semanticBroken ? (
+        <>
+          <span className="memory-status-pill__divider" aria-hidden />
+          <span
+            className="memory-status-pill__model is-warning"
+            title={`Semantic recall is not running, so memory is matched by keyword only.\n\n${
+              status?.embeddingsUnavailableReason ?? 'The on-device embedding model failed to load.'
+            }`}
+          >
+            <TriangleAlert size={12} />
+            Keyword only
           </span>
         </>
       ) : null}

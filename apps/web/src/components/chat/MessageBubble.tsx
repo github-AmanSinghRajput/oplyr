@@ -1,10 +1,6 @@
-import { type ReactNode } from 'react';
-import Markdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import rehypeHighlight from 'rehype-highlight';
 import { cn } from '@/lib/cn';
+import { MarkdownContent } from '@/components/markdown/MarkdownContent';
 import '../markdown.css';
-import { CodeBlock } from './CodeBlock';
 import { AgentActivityTimeline } from './AgentActivityTimeline';
 import { MemoryChip } from './MemoryChip';
 import { ProviderLogo } from '@/components/providers/ProviderLogo';
@@ -17,11 +13,6 @@ const AGENT_LABEL: Record<AssistantProviderId, string> = {
   claude: 'Claude',
   gemini: 'Gemini'
 };
-
-// react-markdown wraps fenced code in a default <pre>; CodeBlock renders its OWN <pre> wrapper, so
-// without this passthrough the block gets double-wrapped (invalid nesting + a doubled box/margins).
-// This makes CodeBlock the single source of truth for block rendering.
-const MarkdownPre = ({ children }: { children?: ReactNode }) => <>{children}</>;
 
 interface MessageBubbleProps {
   message: MessageEntry;
@@ -53,7 +44,7 @@ export function MessageBubble({
     <div className={cn('flex flex-col gap-1', isUser ? 'items-end' : 'items-start')}>
       <div
         className={cn(
-          'max-w-[85%] rounded-2xl px-4 py-3',
+          'max-w-[85%] rounded-[var(--radius-panel)] px-4 py-3',
           isUser
             ? 'bg-accent-muted border border-accent-border text-text-primary'
             : 'bg-surface-1 border border-border text-text-primary'
@@ -81,13 +72,7 @@ export function MessageBubble({
                 />
               ) : (
                 <>
-                  <Markdown
-                    remarkPlugins={[remarkGfm]}
-                    rehypePlugins={[rehypeHighlight]}
-                    components={{ code: CodeBlock, pre: MarkdownPre }}
-                  >
-                    {displayText}
-                  </Markdown>
+                  <MarkdownContent variant="chat">{displayText}</MarkdownContent>
                   {isStreaming && (
                     <span className="inline-block w-1.5 h-4 bg-accent rounded-full animate-pulse ml-0.5" />
                   )}

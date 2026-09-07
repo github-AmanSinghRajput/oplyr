@@ -9,26 +9,28 @@ This folder is the source of truth for what shipped in each Oplyr build.
 
 ## How to cut a release
 
-1. **Bump the version** in every package to the new `x.y.z`:
-   ```bash
-   npm pkg set version=x.y.z
-   npm pkg set version=x.y.z -w @oplyr/web -w @oplyr/runtime -w @oplyr/desktop
-   ```
-2. **Write the changelog** — add a new section at the top of `CHANGELOG.md` (Added / Changed / Fixed).
-3. **Build + notarize + ship** — follow `../DISTRIBUTION.md`. In short:
-   - `rm -rf apps/desktop/release`
-   - prep: STT (`swift build -c release`), `build:pack -w @oplyr/runtime`, `build -w @oplyr/web`,
-     `rebuild:native -w @oplyr/desktop`
-   - build both artifacts: `npx electron-builder --mac dmg zip --publish never` (from `apps/desktop`)
-   - notarize + staple the **DMG** (electron-builder notarizes the `.app`, not the DMG wrapper)
-   - restore dev ABI afterwards: `npm rebuild better-sqlite3 node-pty`
-4. **Publish the auto-update feed** (this is what updates existing installs): upload **only**
-   `Oplyr-x.y.z-arm64-mac.zip` + `.zip.blockmap` + `latest-mac.yml` to a GitHub release in
-   `github-AmanSinghRajput/oplyr-releases`, marked **Latest**. Never upload the DMG here.
-5. **New-user download**: upload the stapled **DMG** to the private R2 `oplyr-releases` bucket, keeping
-   the current + one previous version, then point `R2_DMG_KEY` (Vercel env) at the new object.
-6. **Website**: add the version to `vocod-website/content/releases.ts` (version, date, `sizeLabel`,
-   `sha256` from `shasum -a 256`, notes). `macAssetUrl` stays `null` while access is invite-only.
+**The commands live in one place: [`../DISTRIBUTION.md` → Release runbook](../DISTRIBUTION.md#release-runbook).**
+Follow it top to bottom. This file previously carried a second, subtly different copy of those steps;
+that's how a release went out with an unsigned DMG.
+
+The shape of it, so you know what you're committing to:
+
+1. Version bump across all four workspaces + `npm run check` must pass.
+2. A new `CHANGELOG.md` section (Added / Changed / Fixed), then commit and push.
+3. Build the DMG **and** zip in one electron-builder pass, from `apps/desktop`.
+4. Sign → notarize → staple the **DMG** by hand. electron-builder does the `.app`, never the wrapper.
+5. Verify both artifacts, boot-test the packaged app, then publish.
+6. Restore the dev ABI: `npm rebuild better-sqlite3 node-pty`.
+
+## Where each artifact goes
+
+- **Auto-update feed (public)** — `Oplyr-x.y.z-arm64-mac.zip` + `.zip.blockmap` + `latest-mac.yml` to
+  a GitHub release in `github-AmanSinghRajput/oplyr-releases`, marked **Latest**. This is what updates
+  existing installs. **Never upload the DMG here.**
+- **New-user download (gated)** — the stapled **DMG** to the private R2 `oplyr-releases` bucket. Keep
+  the current plus one previous version, then point `R2_DMG_KEY` (Vercel env) at the new object.
+- **Website** — add the version to `vocod-website/content/releases.ts` (version, date, `sizeLabel`,
+  `sha256`, notes). `macAssetUrl` stays `null` while access is invite-only.
 
 ## Conventions
 

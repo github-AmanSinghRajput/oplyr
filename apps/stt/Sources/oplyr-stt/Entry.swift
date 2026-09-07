@@ -9,7 +9,9 @@ struct Main {
     requireAppleSilicon()  // defined in Emit.swift (Task 2)
     let args = Array(CommandLine.arguments.dropFirst())
     do {
-      if args.contains("--provision") {
+      if args.contains("--provision-refinement") {
+        try await runProvisionRefinement()  // Provision.swift
+      } else if args.contains("--provision") {
         try await runProvision()      // Provision.swift (Task 5)
       } else {
         try await runStreamWorker()   // StreamWorker.swift (Tasks 3-4)

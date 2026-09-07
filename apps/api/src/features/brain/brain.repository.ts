@@ -155,6 +155,36 @@ export class BrainRepository {
   }
 
   /**
+   * Atoms recall would consider that carry no vector for the active model.
+   *
+   * Mirrors `listRecallCandidates`' own filters (live, non-entity) so the backfill never embeds
+   * something recall would not look at. Oldest first, so a brain interrupted mid-backfill makes
+   * forward progress on the next launch instead of re-embedding the same head of the list.
+   */
+  async listAtomsMissingEmbedding(
+    model: string,
+    limit: number
+  ): Promise<Array<{ id: string; text: string }>> {
+    if (!isBrainDatabaseConfigured()) {
+      return [];
+    }
+    return getBrainDatabase()
+      .prepare(
+        `
+        SELECT a.id, a.text
+        FROM brain_atoms a
+        LEFT JOIN brain_embeddings e ON e.atom_id = a.id AND e.model = @model
+        WHERE a.deleted_at IS NULL
+          AND a.type != 'entity'
+          AND e.atom_id IS NULL
+        ORDER BY a.created_at ASC
+        LIMIT @limit
+      `
+      )
+      .all({ model, limit }) as Array<{ id: string; text: string }>;
+  }
+
+  /**
    * Recall candidate set: live, non-entity atoms scoped per the cross-project rules, each joined to
    * its embedding for the active model (null when not embedded → keyword fallback in recall).
    */

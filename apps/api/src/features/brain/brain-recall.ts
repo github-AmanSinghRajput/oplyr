@@ -46,6 +46,11 @@ const STOP_WORDS = new Set([
 ]);
 
 const SAME_PROJECT_THRESHOLD = 0.22;
+// A "where did we leave off" query has no topic to match — relevance against it is legitimately
+// ZERO for every memory, so any positive bar discards the whole brain and recall comes back empty.
+// That is why the agent re-explored the repo instead of continuing. Topic must not gate a question
+// that isn't about topic; recency does the ranking instead.
+const RECENCY_QUERY_THRESHOLD = 0;
 const CROSS_PROJECT_THRESHOLD = 0.45;
 const GRAPH_BONUS = 0.05;
 const TOP_HITS_FOR_GRAPH = 5;
@@ -68,6 +73,8 @@ export interface BrainRecallContext {
    * old-project context actually surfaces instead of staying behind the strict cross-project gate.
    */
   explicitRecall?: boolean;
+  /** The query asks what we were doing LAST, so rank by recency rather than topic. */
+  recencyFirst?: boolean;
   /** Cross-project keys the query names directly — always surfaced at the same-project bar + ranked up. */
   namedProjectKeys?: Set<string>;
 }
@@ -113,21 +120,30 @@ export function buildBrainRecallBundle(
     // Cross-project memory normally clears a stricter bar. When the user explicitly asks to recall
     // past work — or names the project outright — drop it to the same-project bar.
     const relaxCross = context.explicitRecall || named;
-    const threshold =
-      crossProject && !relaxCross ? CROSS_PROJECT_THRESHOLD : SAME_PROJECT_THRESHOLD;
+    const threshold = context.recencyFirst
+      ? RECENCY_QUERY_THRESHOLD
+      : crossProject && !relaxCross
+        ? CROSS_PROJECT_THRESHOLD
+        : SAME_PROJECT_THRESHOLD;
     if (relevance < threshold) {
       continue;
     }
+
+    const recency = recencyScore(candidate.atom.lastSeenAt);
     scored.push({
       atom: candidate.atom,
       relevance,
       crossProject,
-      score:
-        relevance +
-        candidate.atom.salience * 0.1 +
-        candidate.atom.confidence * 0.08 +
-        recencyScore(candidate.atom.lastSeenAt) * 0.08 +
-        (named ? 0.15 : 0)
+      // Normally topic decides and recency is a nudge. For a "what were we last doing" question
+      // that is backwards: recency IS the question. Recency used to cap at +0.08 — less than the
+      // salience term — so an old decision reliably beat yesterday's work.
+      score: context.recencyFirst
+        ? recency + relevance * 0.35 + candidate.atom.salience * 0.05 + (named ? 0.15 : 0)
+        : relevance +
+          candidate.atom.salience * 0.1 +
+          candidate.atom.confidence * 0.08 +
+          recency * 0.08 +
+          (named ? 0.15 : 0)
     });
   }
 

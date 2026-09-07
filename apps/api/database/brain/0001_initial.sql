@@ -39,6 +39,12 @@ CREATE INDEX IF NOT EXISTS idx_brain_atoms_scope_project
 CREATE INDEX IF NOT EXISTS idx_brain_atoms_last_seen
   ON brain_atoms(last_seen_at);
 
+-- RESERVED, NOT YET WRITTEN. Nothing inserts into this table today: the edges you see on the
+-- Memory canvas are derived at RENDER time by brain-graph.ts, from atoms that share an entity, and
+-- are never persisted. The table exists for the deferred `supersedes` / `contradicts` reasoning
+-- ("this decision replaced that one"), which needs reconciliation logic first — see
+-- docs/BRAIN_TECH_EXPLAINER.md. Do not assume a graph edge survives a restart, and do not assume an
+-- empty table means the canvas is broken.
 CREATE TABLE IF NOT EXISTS brain_edges (
   id TEXT PRIMARY KEY NOT NULL DEFAULT (lower(hex(randomblob(16)))),
   source_atom_id TEXT NOT NULL REFERENCES brain_atoms(id) ON DELETE CASCADE,

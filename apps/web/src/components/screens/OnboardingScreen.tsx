@@ -66,19 +66,21 @@ export function OnboardingScreen({
   onChoosePet,
   onSkipPet
 }: OnboardingScreenProps) {
-  // Leaving the project step also leaves the memory-import card behind — and it's easy to click past
-  // by accident. If un-imported agent memory is still sitting there, confirm before advancing.
-  const { pendingCount } = useMemoryImport();
-  type Advance = { kind: 'skip' } | { kind: 'connect'; path: string };
-  const [pendingAdvance, setPendingAdvance] = useState<Advance | null>(null);
-  const runAdvance = (action: Advance) => {
-    setPendingAdvance(null);
+  // Importing agent memory is OPTIONAL and must never block onboarding. This used to pop a confirm
+  // that REPLACED the button row, so pressing "Skip for now" removed the Skip button and left only
+  // a nag — the step became a dead end even for someone who had already imported.
+  //
+  // Now: if sources are ticked but Import was never pressed, start it in the background and move on.
+  // The import provider lives at the app root, so the run survives leaving this screen.
+  const { pendingCount, selectedCount, startImport, run, hasImportable, scanState } =
+    useMemoryImport();
+  const importWillStart = selectedCount > 0 && run.status !== 'running';
+  const advance = (action: { kind: 'skip' } | { kind: 'connect'; path: string }) => {
+    if (importWillStart) {
+      void startImport();
+    }
     if (action.kind === 'skip') onSkipProject();
     else onConnectProject(action.path);
-  };
-  const requestAdvance = (action: Advance) => {
-    if (pendingCount > 0) setPendingAdvance(action);
-    else runAdvance(action);
   };
 
   const [displayNameInput, setDisplayNameInput] = useState(appSettings?.displayName ?? '');
@@ -144,7 +146,8 @@ export function OnboardingScreen({
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[calc(100vh-var(--topbar-height)-48px)]">
-      <div className="w-full max-w-2xl">
+      {/* Step 4 pairs two panels side by side, so it needs more than the single-column width. */}
+      <div className={cn('w-full', step === 4 ? 'max-w-5xl' : 'max-w-2xl')}>
         {/* Progress */}
         <div className="flex items-center justify-center gap-2 mb-8">
           {[1, 2, 3, 4, 5].map((s) => (
@@ -181,7 +184,7 @@ export function OnboardingScreen({
             {step === 1 && (
               <div className="min-h-[28rem] rounded-[calc(var(--radius-panel)+6px)] border border-border bg-surface-1 px-10 py-10 text-center">
                 <p className="text-xs text-text-tertiary uppercase tracking-wider mb-2">Step 1</p>
-                <h1 className="text-2xl font-semibold text-text-primary mb-3">
+                <h1 className="font-serif text-[26px] leading-tight text-text-primary mb-3">
                   Welcome to Oplyr — what should we call you?
                 </h1>
                 <p className="mx-auto mb-5 max-w-xl text-sm text-text-secondary">
@@ -231,7 +234,7 @@ export function OnboardingScreen({
                     {typedWelcome}
                   </p>
                 )}
-                <h1 className="text-3xl font-semibold text-text-primary mb-3">
+                <h1 className="font-serif text-[32px] leading-tight text-text-primary mb-3">
                   Pick the agent you want to start with.
                 </h1>
                 <p className="mx-auto mb-8 max-w-2xl text-sm text-text-secondary">
@@ -247,7 +250,7 @@ export function OnboardingScreen({
                       className={cn(
                         'min-h-[15rem] rounded-[calc(var(--radius-panel)+2px)] border p-5 text-left transition-all',
                         selectedProviderId === provider.id
-                          ? 'border-accent bg-accent-muted/60 shadow-[0_0_0_1px_rgba(0,212,245,0.22)]'
+                          ? 'border-accent bg-accent-muted/60 shadow-[0_0_0_1px_var(--color-accent-border)]'
                           : 'border-border bg-surface-2 hover:border-accent-border hover:bg-surface-1'
                       )}
                       onClick={() => onSelectProvider(provider.id)}
@@ -293,7 +296,7 @@ export function OnboardingScreen({
                       imageClassName="h-10 w-auto max-w-[72%]"
                     />
                     <p className="text-xs uppercase tracking-[0.22em] text-text-tertiary">Step 3</p>
-                    <h1 className="mt-3 text-3xl font-semibold text-text-primary">
+                    <h1 className="mt-3 font-serif text-[32px] leading-tight text-text-primary">
                       Connect {selectedProvider.name}
                     </h1>
                     <p className="mx-auto mt-3 max-w-2xl text-sm text-text-secondary">
@@ -452,81 +455,105 @@ export function OnboardingScreen({
             )}
 
             {step === 4 && (
-              <div className="flex flex-col gap-4">
-                <MemoryImportPanel compact hideWhenCaughtUp />
-                <div className="min-h-[28rem] rounded-[calc(var(--radius-panel)+6px)] border border-border bg-surface-1 px-10 py-10 text-center">
+              <div className="rounded-[calc(var(--radius-panel)+6px)] border border-border bg-surface-1 p-8 shadow-1">
+                <div className="mb-6 text-center">
                   <p className="text-xs text-text-tertiary uppercase tracking-wider mb-2">Step 4</p>
-                  <h1 className="text-2xl font-semibold text-text-primary mb-3">
+                  <h1 className="font-serif text-[26px] leading-tight text-text-primary mb-2">
                     Connect your first project
                   </h1>
-                  <p className="mx-auto mb-8 max-w-xl text-sm text-text-secondary">
-                    Point Oplyr at a project folder to start working — it scans your codebase into a
-                    live map and your agents work inside this boundary. You can change it anytime.
+                  <p className="mx-auto max-w-xl text-sm text-text-secondary">
+                    Oplyr works inside the folder you point it at. Bring your existing agent memory
+                    along at the same time, or leave it for later.
                   </p>
-                  {error && <p className="text-sm text-danger mb-4">{error}</p>}
+                </div>
 
-                  <div className="mx-auto mb-6 flex max-w-md items-center gap-2">
-                    <Input
-                      autoFocus
-                      className="h-11 flex-1 rounded-[14px] px-4 text-sm"
-                      placeholder="/path/to/your/project"
-                      value={projectInput}
-                      onChange={(e) => setProjectInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && projectInput.trim())
-                          onConnectProject(projectInput);
-                      }}
-                    />
-                    {canBrowseProjectFolder && (
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          void onBrowseProjectFolder().then((folder) => {
-                            if (folder) setProjectInput(folder);
-                          });
+                <div className="grid gap-5 md:grid-cols-2">
+                  {/* ── Required: the project ─────────────────────────────────── */}
+                  <section className="flex flex-col rounded-[var(--radius-panel)] border border-border bg-background/40 p-5">
+                    <header className="mb-3 flex items-baseline justify-between gap-2">
+                      <h2 className="text-xs font-medium uppercase tracking-wider text-text-tertiary">
+                        Your project
+                      </h2>
+                      <span className="text-[11px] text-text-tertiary">Required</span>
+                    </header>
+
+                    <div className="flex items-center gap-2">
+                      <Input
+                        autoFocus
+                        className="h-10 flex-1 rounded-[var(--radius-control)] px-3 text-sm"
+                        placeholder="/path/to/your/project"
+                        value={projectInput}
+                        onChange={(e) => setProjectInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && projectInput.trim())
+                            advance({ kind: 'connect', path: projectInput });
                         }}
-                      >
-                        Browse…
-                      </Button>
-                    )}
-                  </div>
-
-                  {pendingAdvance ? (
-                    <div className="mx-auto max-w-xl rounded-[var(--radius-panel)] border border-accent-border/40 bg-accent-muted/20 p-4 text-left">
-                      <p className="text-sm font-medium text-text-primary">
-                        Import your agent memory first?
-                      </p>
-                      <p className="mt-1 text-xs text-text-secondary">
-                        We found {pendingCount} {pendingCount === 1 ? 'source' : 'sources'} from
-                        your Claude / Codex setup that aren&apos;t in your brain yet. You can always
-                        do this later from the Workspace screen.
-                      </p>
-                      <div className="mt-3 flex items-center gap-2">
-                        <Button size="sm" onClick={() => setPendingAdvance(null)}>
-                          Let me import
-                        </Button>
+                      />
+                      {canBrowseProjectFolder && (
                         <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => runAdvance(pendingAdvance)}
+                          variant="outline"
+                          className="h-10 shrink-0"
+                          onClick={() => {
+                            void onBrowseProjectFolder().then((folder) => {
+                              if (folder) setProjectInput(folder);
+                            });
+                          }}
                         >
-                          Continue without importing
+                          Browse…
                         </Button>
-                      </div>
+                      )}
                     </div>
-                  ) : (
-                    <div className="flex items-center justify-center gap-3">
-                      <Button variant="ghost" onClick={() => requestAdvance({ kind: 'skip' })}>
-                        Skip for now
-                      </Button>
-                      <Button
-                        disabled={!projectInput.trim()}
-                        onClick={() => requestAdvance({ kind: 'connect', path: projectInput })}
-                      >
-                        Connect project
-                      </Button>
-                    </div>
-                  )}
+
+                    {error ? (
+                      <p className="mt-3 text-sm text-danger">{error}</p>
+                    ) : (
+                      <p className="mt-3 text-xs text-text-tertiary">
+                        Any folder, Git or not. Multi-repo workspaces are detected for you, and you
+                        can change this whenever you like.
+                      </p>
+                    )}
+                  </section>
+
+                  {/* ── Optional: existing agent memory ───────────────────────── */}
+                  <section className="flex flex-col rounded-[var(--radius-panel)] border border-border bg-background/40 p-5">
+                    <header className="mb-3 flex items-baseline justify-between gap-2">
+                      <h2 className="text-xs font-medium uppercase tracking-wider text-text-tertiary">
+                        Bring your agent memory
+                      </h2>
+                      <span className="text-[11px] text-text-tertiary">Optional</span>
+                    </header>
+                    {hasImportable || run.status !== 'idle' ? (
+                      <MemoryImportPanel compact />
+                    ) : (
+                      <p className="text-xs text-text-tertiary">
+                        {scanState === 'scanning'
+                          ? 'Looking for memory from your installed agents…'
+                          : 'No existing agent memory found on this Mac. Oplyr will build its own as you work.'}
+                      </p>
+                    )}
+                  </section>
+                </div>
+
+                {/* ── One row, both buttons always live ──────────────────────── */}
+                <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-5">
+                  <p className="text-xs text-text-tertiary">
+                    {importWillStart
+                      ? `${selectedCount} ${selectedCount === 1 ? 'source' : 'sources'} will import in the background — you don't have to wait.`
+                      : pendingCount > 0
+                        ? 'You can import agent memory any time from the Workspace screen.'
+                        : ''}
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <Button variant="ghost" onClick={() => advance({ kind: 'skip' })}>
+                      Skip for now
+                    </Button>
+                    <Button
+                      disabled={!projectInput.trim()}
+                      onClick={() => advance({ kind: 'connect', path: projectInput })}
+                    >
+                      Connect project
+                    </Button>
+                  </div>
                 </div>
               </div>
             )}
@@ -534,7 +561,7 @@ export function OnboardingScreen({
             {step === 5 && (
               <div className="min-h-[28rem] rounded-[calc(var(--radius-panel)+6px)] border border-border bg-surface-1 px-10 py-10 text-center">
                 <p className="text-xs text-text-tertiary uppercase tracking-wider mb-2">Step 5</p>
-                <h1 className="text-2xl font-semibold text-text-primary mb-3">
+                <h1 className="font-serif text-[26px] leading-tight text-text-primary mb-3">
                   Pick your desk pet
                 </h1>
                 <p className="mx-auto mb-8 max-w-xl text-sm text-text-secondary">
@@ -551,7 +578,7 @@ export function OnboardingScreen({
                       className={cn(
                         'flex flex-col items-center gap-2 rounded-[var(--radius-panel)] border px-2 py-4 transition-all',
                         petChoice === pet
-                          ? 'border-accent bg-accent-muted/60 shadow-[0_0_0_1px_rgba(0,212,245,0.22)]'
+                          ? 'border-accent bg-accent-muted/60 shadow-[0_0_0_1px_var(--color-accent-border)]'
                           : 'border-border bg-surface-2 hover:border-accent-border hover:bg-surface-1'
                       )}
                     >

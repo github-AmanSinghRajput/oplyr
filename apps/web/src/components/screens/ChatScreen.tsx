@@ -55,6 +55,7 @@ export function ChatScreen({
         apiBaseUrl={apiBaseUrl}
         liveActivity={liveActivity}
         activityLog={activityLog}
+        onSuggestion={onTextInputChange}
       />
       <div data-tour="composer">
         <ChatComposer

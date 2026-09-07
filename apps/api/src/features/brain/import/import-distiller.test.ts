@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { distillMemoryFile } from './import-distiller.js';
+import { distillMemoryFile, distillSession } from './import-distiller.js';
 import { getDefaultBrainSettings } from '../brain-settings.repository.js';
 import type { WorkspaceState } from '../../../types.js';
 
@@ -66,4 +66,116 @@ test('falls back to structural parse when the agent throws', async () => {
   );
   assert.ok(atoms.length >= 1);
   assert.equal(atoms[0]!.input.provenance.source, 'imported');
+});
+
+/** One atom of the given text, as the agent would return it. */
+function atomPayload(text: string): string {
+  return JSON.stringify({
+    atoms: [
+      {
+        type: 'fact',
+        text,
+        scope: 'project',
+        confidence: 0.9,
+        sensitivity: 'normal',
+        entities: []
+      }
+    ]
+  });
+}
+
+test('distillSession distills every chunk and dedupes what they repeat', async () => {
+  const prompts: string[] = [];
+  // The same fact restated in all three chunks, plus one fact unique to the last.
+  const replies = [
+    atomPayload('The retry budget is three attempts.'),
+    atomPayload('The retry budget is three attempts.'),
+    JSON.stringify({
+      atoms: [
+        {
+          type: 'fact',
+          text: 'The retry budget is three attempts.',
+          scope: 'project',
+          confidence: 0.9,
+          sensitivity: 'normal',
+          entities: []
+        },
+        {
+          type: 'fact',
+          text: 'Billing tests were left failing.',
+          scope: 'project',
+          confidence: 0.9,
+          sensitivity: 'normal',
+          entities: []
+        }
+      ]
+    })
+  ];
+  const complete = async (req: { prompt: string }) => {
+    prompts.push(req.prompt);
+    return replies[prompts.length - 1]!;
+  };
+
+  const atoms = await distillSession(
+    {
+      providerId: 'claude',
+      sessionChunks: ['chunk one', 'chunk two', 'chunk three'],
+      projectKey: '/repo',
+      projectName: 'repo',
+      workspace: ws
+    },
+    settings,
+    complete as never
+  );
+
+  assert.equal(prompts.length, 3, 'one agent call per chunk');
+  assert.equal(atoms.length, 2, 'the repeated fact collapses to one atom');
+  // Only the last chunk may be described to the agent as the end of the session.
+  assert.match(prompts[0]!, /part 1 of 3/);
+  assert.match(prompts[2]!, /FINAL part \(3 of 3\)/);
+});
+
+test('distillSession keeps the chunks that answered when one call fails', async () => {
+  let call = 0;
+  const complete = async () => {
+    call += 1;
+    if (call === 1) throw new Error('rate limited');
+    return atomPayload('Auth moved to the edge worker.');
+  };
+
+  const atoms = await distillSession(
+    {
+      providerId: 'claude',
+      sessionChunks: ['chunk one', 'chunk two'],
+      projectKey: '/repo',
+      projectName: 'repo',
+      workspace: ws
+    },
+    settings,
+    complete as never
+  );
+
+  assert.equal(atoms.length, 1);
+  assert.equal(atoms[0]!.input.provenance.source, 'imported');
+});
+
+test('distillSession returns nothing when no chunk yields an atom', async () => {
+  const complete = async () => {
+    throw new Error('offline');
+  };
+
+  const atoms = await distillSession(
+    {
+      providerId: 'claude',
+      sessionChunks: ['chunk one'],
+      projectKey: '/repo',
+      projectName: 'repo',
+      workspace: ws
+    },
+    settings,
+    complete as never
+  );
+
+  // Unlike a curated doc, raw chat lines have no structural fallback worth storing.
+  assert.deepEqual(atoms, []);
 });

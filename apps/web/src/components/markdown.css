@@ -224,3 +224,24 @@
   display: inline-block;
   width: 100%;
 }
+
+/* ── Math (KaTeX) ─────────────────────────────────────────────────────────────
+   KaTeX ships its own stylesheet with hard-coded colors, so formulas must be told to inherit ours
+   or they render near-black on the dark theme. Long formulas scroll rather than overflow the bubble. */
+.md-body .katex {
+  color: inherit;
+  font-size: 1.05em;
+}
+
+.md-body .katex-display {
+  margin: 0.75rem 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 0.25rem;
+}
+
+/* Mermaid returns an SVG sized to its own content; keep it inside the message. */
+.md-body svg[id^='mmd-'] {
+  max-width: 100%;
+  height: auto;
+}

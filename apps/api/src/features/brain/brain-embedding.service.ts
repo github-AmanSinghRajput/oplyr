@@ -45,6 +45,9 @@ export class LocalEmbeddingProvider implements BrainEmbeddingProvider {
   private readonly modelName: string;
   private disabled = !EMBEDDINGS_ENABLED;
   private loggedDisable = false;
+  private disabledReason: string | null = EMBEDDINGS_ENABLED
+    ? null
+    : 'Embeddings are switched off.';
   private extractorPromise: Promise<FeatureExtractor | null> | null = null;
 
   constructor(modelName: string = DEFAULT_MODEL) {
@@ -105,8 +108,20 @@ export class LocalEmbeddingProvider implements BrainEmbeddingProvider {
     }
   }
 
+  /** Whether semantic recall is actually working. Surfaced so a failure can't degrade in silence:
+   *  a packaged build once shipped without onnxruntime-node, every atom was stored with no vector,
+   *  recall quietly fell back to keyword overlap, and nothing in the product ever said so. */
+  get available(): boolean {
+    return !this.disabled;
+  }
+
+  get unavailableReason(): string | null {
+    return this.disabled ? this.disabledReason : null;
+  }
+
   private disable(event: string, error: unknown) {
     this.disabled = true;
+    this.disabledReason = error instanceof Error ? error.message : String(error);
     if (!this.loggedDisable) {
       this.loggedDisable = true;
       logger.warn(event, {

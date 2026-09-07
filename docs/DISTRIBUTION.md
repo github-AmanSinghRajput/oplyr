@@ -1,11 +1,109 @@
-# Shipping Oplyr — DMG, Signing, Notarization, Hosting (step by step)
+# Shipping Oplyr — DMG, Signing, Notarization, Hosting
 
-This is the practical, beginner-friendly guide to getting a real, installable Oplyr build into
-users' hands for the invite-only beta, and the path to Homebrew + the Mac App Store after we go
-public. Read top to bottom the first time; after that it's a checklist.
+**[Release runbook](#release-runbook) is what you want for a normal release.** Everything below it is
+one-time setup and background on how the packaging works.
 
-> **Golden rule:** notarization is the LAST step. Most of the work is making the *packaged* app
+> **Golden rule:** notarization is the LAST step. Most of the work is making the _packaged_ app
 > actually run on a machine that isn't your dev machine.
+
+---
+
+## Release runbook
+
+Copy-paste, in order. `X.Y.Z` is the new version.
+
+**Before you start**
+
+- Quit the installed `/Applications/Oplyr.app` — it owns port 8787.
+- Export all four: `APPLE_ID`, `APPLE_TEAM_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and
+  `CSC_NAME="Developer ID Application: Aman Singh Rajput (796SB32AWN)"`.
+  **`CSC_NAME` is easy to forget** — electron-builder finds the identity without it, so the DMG
+  signing in step 4 fails with a bare `: no identity found` much later.
+
+```bash
+cd /Users/amansingh/Desktop/aman/vocod/VOCOD
+
+# ── 1. Version + gate ─────────────────────────────────────────────────
+npm version X.Y.Z --workspaces --include-workspace-root --no-git-tag-version
+npm run format          # must precede check, or format:check fails
+npm run check           # format + lint + typecheck + tests, must exit 0
+# add the X.Y.Z entry to docs/releases/CHANGELOG.md, then commit + push
+
+# ── 2. Clean + build ──────────────────────────────────────────────────
+rm -rf apps/desktop/release        # a dirty release/ causes transient hdiutil errors
+npm run build:stt                  # Swift STT binary (Apple Silicon)
+npm run build:pack -w @oplyr/runtime
+npm run build -w @oplyr/web
+npm run rebuild:native -w @oplyr/desktop   # native modules for Electron's ABI — never skip
+
+# ── 3. Package BOTH artifacts in one pass — FROM apps/desktop ─────────
+cd apps/desktop
+npx electron-builder --mac dmg zip --publish never
+# → release/Oplyr-X.Y.Z-arm64.dmg
+#   release/Oplyr-X.Y.Z-arm64-mac.zip{,.blockmap} + latest-mac.yml
+#
+# Two things matter here:
+#  - Build dmg AND zip together. Running them as separate electron-builder invocations rewrites
+#    release/ the second time, which can clobber a DMG you already signed and notarized.
+#  - The cwd must be apps/desktop. From the repo root it packages the ROOT package.json as the app
+#    and dies with 'Application entry file "index.js" ... does not exist'.
+#
+# electron-builder signs AND notarizes the .app inside both. It does NOT touch the DMG wrapper.
+
+# ── 4. Sign, notarize and staple the DMG ──────────────────────────────
+# Sign FIRST: signing modifies the file, which would invalidate a ticket stapled earlier.
+cd release
+codesign --force --timestamp --sign "$CSC_NAME" Oplyr-X.Y.Z-arm64.dmg
+xcrun notarytool submit Oplyr-X.Y.Z-arm64.dmg \
+  --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+  --password "$APPLE_APP_SPECIFIC_PASSWORD" --wait
+xcrun stapler staple Oplyr-X.Y.Z-arm64.dmg
+
+# ── 5. Verify the DMG (this is the real success check) ────────────────
+xcrun stapler validate Oplyr-X.Y.Z-arm64.dmg
+spctl -a -t open --context context:primary-signature -v Oplyr-X.Y.Z-arm64.dmg
+# BOTH must pass. spctl MUST say: accepted / source=Notarized Developer ID.
+# "rejected / no usable signature" = the DMG is not codesigned → redo step 4 from the top.
+ls -lh Oplyr-X.Y.Z-arm64.dmg && shasum -a 256 Oplyr-X.Y.Z-arm64.dmg
+
+# ── 6. Verify the zip (the auto-update feed) ──────────────────────────
+grep -m1 'version:' latest-mac.yml                       # must be X.Y.Z
+rm -rf /tmp/zt && mkdir -p /tmp/zt && ditto -x -k Oplyr-X.Y.Z-arm64-mac.zip /tmp/zt
+spctl -a -t exec -vv /tmp/zt/Oplyr.app                   # accepted / Notarized Developer ID
+echo "zip: $(openssl dgst -sha512 -binary Oplyr-X.Y.Z-arm64-mac.zip | openssl base64 -A)"
+echo "yml: $(grep -m1 'sha512:' latest-mac.yml | awk '{print $2}')"   # must match
+rm -rf /tmp/zt
+
+# ── 7. Boot-test the packaged app BEFORE publishing ───────────────────
+cd /Users/amansingh/Desktop/aman/vocod/VOCOD
+apps/desktop/release/mac-arm64/Oplyr.app/Contents/MacOS/Oplyr
+# want: "server.started port:8787"   NOT: ERR_MODULE_NOT_FOUND
+# 0.2.0 shipped broken exactly here — see the extraResources gotcha below.
+
+# ── 9. Restore the dev tree ───────────────────────────────────────────
+npm rebuild better-sqlite3 node-pty
+```
+
+**Step 8 — Publish (manual, between 7 and 9)**
+
+- **GitHub** `oplyr-releases` → new release, tag `vX.Y.Z`, marked **Latest** (not pre-release —
+  electron-updater reads the latest release's `latest-mac.yml`). Upload **only** the zip, its
+  `.blockmap`, and `latest-mac.yml`. Miss one and existing installs never see the update.
+  **Never upload the DMG here** — the auto-update feed is public, the DMG is gated.
+- **R2** (private bucket `oplyr-releases`) → upload the stapled DMG, keep the current plus one
+  previous version, then point the Vercel env `R2_DMG_KEY` at the new object.
+- **Website** → add the version to `vocod-website/content/releases.ts` (version, date, `sizeLabel`,
+  `sha256` from step 5). Skip if you're not publishing notes for this release.
+
+**Step 10 — Verify auto-update:** on a machine running the previous version, fully quit and relaunch
+Oplyr → it should find X.Y.Z, download, and offer to restart.
+
+---
+
+## One-time setup and background
+
+Everything below was written while packaging was first being figured out. It's reference now, not a
+checklist — the runbook above supersedes it.
 
 ---
 
@@ -14,7 +112,7 @@ public. Read top to bottom the first time; after that it's a checklist.
 - **Pay for the Apple Developer Program (~₹8,700 / $99 per year). Required.** Without a paid membership
   you cannot create the signing certificate or notarize, and the app is unusable on anyone else's Mac.
 - After paying, in Xcode (Settings → Accounts) add your Apple ID, then create/download a
-  **"Developer ID Application"** certificate (this is the one for distributing *outside* the App
+  **"Developer ID Application"** certificate (this is the one for distributing _outside_ the App
   Store — the DMG path). The App Store uses a different cert later.
 - Create an **app-specific password** at appleid.apple.com (Sign-In & Security → App-Specific
   Passwords). Notarization uses this, not your real password.
@@ -107,6 +205,7 @@ open apps/desktop/release/mac-arm64/Oplyr.app
 ```
 
 ⚠️ **The dev ↔ package ABI dance.** The native modules can only be built for ONE ABI at a time:
+
 - **To package:** `npm run rebuild:native -w @oplyr/desktop` (Electron ABI), then `pack:test`/`dist`.
 - **To run dev / `npm test`:** `npm rebuild better-sqlite3 node-pty` (system-Node ABI).
 - Any `npm install` resets them to system-Node ABI, so re-run `rebuild:native` before packaging again.
@@ -138,23 +237,16 @@ APPLE_TEAM_ID="YOURTEAMID"
 CSC_NAME="Developer ID Application: Your Name (YOURTEAMID)"   # the signing identity
 ```
 
-Then:
+`npm run dist --workspace @oplyr/desktop` then codesigns the `.app` with the hardened runtime,
+submits **the app** to Apple's notary service, and staples the ticket to **the app**.
 
-```
-npm run dist --workspace @oplyr/desktop     # (script we'll add) → builds, signs, notarizes, staples
-```
-
-electron-builder will: codesign with hardened runtime → submit to Apple's notary service →
-staple the ticket to the DMG. Verify:
-
-```
-spctl -a -t open --context context:primary-signature -v Oplyr.dmg   # should say "accepted / Notarized Developer ID"
-xcrun stapler validate Oplyr.dmg
-```
-
-If you ever do it by hand (understanding the pieces): `codesign --deep --force --options runtime
---sign "$CSC_NAME" Oplyr.app` → zip → `xcrun notarytool submit --apple-id … --team-id … --password …
---wait` → `xcrun stapler staple Oplyr.dmg`.
+> **It stops there.** electron-builder neither signs nor notarizes the **DMG wrapper**. An unsigned,
+> un-notarized DMG fails `spctl -a -t open` with _"no usable signature"_ and shows users the
+> "Apple could not verify this app is free of malware" dialog — the exact thing you're paying for a
+> certificate to avoid.
+>
+> Steps 4 and 5 of the [release runbook](#release-runbook) do the DMG half. Don't skip them, and sign
+> before notarizing — signing rewrites the file and voids a ticket stapled beforehand.
 
 ---
 
@@ -182,7 +274,7 @@ log in / use it). The website flow:
 2. `/download` page already auto-detects macOS + shows requirements; the download button becomes live
    once `macAssetUrl` is set, and clicks are logged (`app_download_events`, already wired).
 3. **Security:** keep the download URL public but rate-limit/track; the invite/login gate protects
-   *use*, not the download. Validate all new form/endpoint inputs; no secrets in client.
+   _use_, not the download. Validate all new form/endpoint inputs; no secrets in client.
 4. **DB:** the download-events table is auto-created; if we email invites-with-links we may add an
    `invite_token`/`download_url` column to `beta_invites` — decided when we build this phase.
 
@@ -194,6 +286,7 @@ Neither is appropriate during invite-only beta (both need a public, notable, sta
 login-free download).
 
 ### Homebrew (own tap first)
+
 - Requires a signed + notarized DMG at a stable public URL + SHA-256 (Phases 3–4).
 - Create a `homebrew-oplyr` GitHub repo with `Casks/oplyr.rb` (version, sha256, url, name, homepage,
   `app` stanza, `auto_updates true`). Users then run:
@@ -206,27 +299,40 @@ login-free download).
   versions are rejected).
 
 ### Mac App Store
+
 - Separate track: needs an **App Store Distribution** certificate + provisioning, **App Sandbox**
   entitlements (stricter than the Developer ID hardened runtime — our child-process API + native STT
-  + terminal will need careful entitlement review or may not be App-Store-compatible as-is), an App
-  Store Connect listing, screenshots, privacy nutrition labels, and Apple review.
+  - terminal will need careful entitlement review or may not be App-Store-compatible as-is), an App
+    Store Connect listing, screenshots, privacy nutrition labels, and Apple review.
 - Realistically a post-1.0 effort; the DMG (Developer ID) path is the beta/GA distribution channel.
 
 ---
 
-## Quick status (updated 2026-07 — shipping 0.2.2)
+## Quick status (updated 2026-09 — shipping 0.5.0)
 
-The hard parts below are DONE. This file is now background/reference; the day-to-day release runbook
-lives in **[`releases/README.md`](./releases/README.md)** (with the exact commands).
+Everything below Phase 0 is DONE and now reads as background. The commands you actually run each
+release are in the [release runbook](#release-runbook) at the top of this file;
+[`releases/README.md`](./releases/README.md) covers where each artifact gets published.
 
 - Phase 0 — ✅ Apple Developer account active; Developer ID cert + app-specific password in place.
 - Phase 1 — ✅ Packaged app runs on-device: forked API, STT binary, PATH fix, native modules.
 - Phase 2 — ✅ electron-builder config + icon + esbuild API bundle, all validated.
-- Phases 3–4 — ✅ Signed, **notarized, and stapled**; shipping via DMG (gated) + GitHub zip auto-update.
+- Phases 3–4 — ✅ Signed, notarized and stapled — **the app by electron-builder, the DMG by hand.**
 - Phase 5 — ✅ Website `/download`, invite gate, and emailed `/get` link live.
 - Phase 6 — Homebrew / Mac App Store: still post-public, unbuilt.
 
 ### Two gotchas learned the hard way (not obvious from the phases above)
+
+**Ship every esbuild external AND the native deps of those externals.** The first rule cost us
+0.2.0 (a missing `node-pty` stopped the API booting). The second cost us everything through 0.4.1:
+`@xenova/transformers` shipped, but its `onnxruntime-node` did not, because the packaging config
+assumed transformers would fall back to the bundled WASM runtime. It does not —
+`backends/onnx.js` holds a **static** `import * as ONNX_NODE from 'onnxruntime-node'`, so the
+module must resolve even when WASM is the backend actually used. Absent it, the whole embedding path
+failed at load, every brain atom was stored with no vector, and semantic recall silently degraded to
+keyword overlap. Nothing in the product said so; only `brain.embeddings.unavailable` in
+`api-child.log` did. **After any packaging change, check the log for that event and confirm
+`brain.embeddings.ready` instead.**
 
 - **Don't set `CSC_NAME`** to the full `"Developer ID Application: …"` string — electron-builder auto-
   selects the cert from the keychain, and the prefixed name trips its validation.

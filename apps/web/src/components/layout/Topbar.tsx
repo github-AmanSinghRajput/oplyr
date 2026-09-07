@@ -195,7 +195,7 @@ export function Topbar({
                 <TooltipContent>
                   {refreshing
                     ? 'Refreshing everything…'
-                    : 'Refresh everything (status, chat, memory, usage)'}
+                    : 'Refresh everything — status, agents, usage, memory, and the brain'}
                 </TooltipContent>
               </Tooltip>
 
@@ -308,7 +308,7 @@ function ProviderSwitcher({
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-[calc(100%+6px)] z-30 min-w-[200px] overflow-hidden rounded-[var(--radius-control)] border border-border bg-surface-1 p-1 shadow-lg"
+          className="absolute right-0 top-[calc(100%+6px)] z-30 min-w-[200px] overflow-hidden rounded-[var(--radius-control)] border border-border bg-surface-1 p-1 shadow-2"
         >
           {providers.map((provider) => {
             const isActive = provider.id === activeProviderId;

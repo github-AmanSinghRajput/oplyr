@@ -196,7 +196,7 @@ export function ChatComposer({
         <div className="flex items-end gap-2">
           <div className="flex-1 relative">
             {mentionOpen && (
-              <div className="absolute bottom-full left-0 mb-1 w-60 overflow-hidden rounded-[var(--radius-control)] border border-border bg-surface-1 shadow-lg z-20">
+              <div className="absolute bottom-full left-0 mb-1 w-60 overflow-hidden rounded-[var(--radius-control)] border border-border bg-surface-1 shadow-2 z-20">
                 {suggestions.map((id, i) => (
                   <button
                     key={id}

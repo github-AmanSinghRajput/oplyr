@@ -13,6 +13,17 @@ export interface TranscriptMessage {
   text: string;
 }
 
+/**
+ * How far back into a session we are willing to read. A long session is mostly tool payloads and
+ * base64 images, so the conversation worth distilling is a small fraction of the bytes — this is a
+ * ceiling for pathological files, not the normal read. `readSessionMessages` walks backwards and
+ * stops as soon as it has enough conversation, so a typical session touches a few MB at most.
+ */
+export const MAX_TAIL_BYTES = 100 * 1024 * 1024;
+
+/** How much of the file to pull per backward step while looking for enough conversation. */
+const READ_SLICE_BYTES = 2 * 1024 * 1024;
+
 /** Read only the last `maxBytes` of a file (transcripts can be enormous). */
 export async function readTail(filePath: string, maxBytes = 524288): Promise<string> {
   let handle: Awaited<ReturnType<typeof fs.open>> | undefined;
@@ -80,7 +91,9 @@ function isScaffold(text: string): boolean {
  *  Oplyr's own scaffolding, so the distiller sees the real conversation. */
 export function extractMessages(tailText: string, format: TranscriptFormat): TranscriptMessage[] {
   const lines = tailText.split('\n');
-  lines.shift();
+  // No unconditional shift here. That was safe when every read started mid-file, but the reader can
+  // now reach the top of a session, where line 1 is a real turn. A genuinely truncated line begins
+  // mid-JSON and is dropped by the parse guard below anyway.
   const toMessage = format === 'claude' ? claudeLineToMessage : codexLineToMessage;
   const messages: TranscriptMessage[] = [];
   for (const raw of lines) {
@@ -98,12 +111,104 @@ export function extractMessages(tailText: string, format: TranscriptFormat): Tra
   return messages;
 }
 
-/** Render recent messages into a bounded blob for the distiller (keeps the most recent tail). */
-export function buildSessionText(messages: TranscriptMessage[], maxChars = 9000): string {
-  const rendered = messages
-    .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.text}`)
-    .join('\n\n');
-  return rendered.length > maxChars
-    ? `…[earlier turns trimmed]\n\n${rendered.slice(rendered.length - maxChars)}`
-    : rendered;
+/** Total characters of conversation across messages — the budget that actually matters. */
+function conversationChars(messages: TranscriptMessage[]): number {
+  let total = 0;
+  for (const message of messages) total += message.text.length;
+  return total;
+}
+
+/**
+ * Walk backwards through a session until we have `enoughChars` of real conversation, or until
+ * `maxBytes` have been read.
+ *
+ * Reading a fixed tail was the wrong shape: 512KB of an 800MB session might be a single tool result
+ * and contain no conversation at all, while on a small session it reads the whole file needlessly.
+ * Slices are decoded together rather than one at a time, because a multi-byte character split
+ * across a slice boundary would otherwise corrupt into replacement characters mid-transcript.
+ */
+export async function readSessionMessages(
+  filePath: string,
+  format: TranscriptFormat,
+  options: { maxBytes?: number; enoughChars?: number } = {}
+): Promise<TranscriptMessage[]> {
+  const maxBytes = options.maxBytes ?? MAX_TAIL_BYTES;
+  const enoughChars = options.enoughChars ?? 9000;
+
+  let handle: Awaited<ReturnType<typeof fs.open>> | undefined;
+  try {
+    handle = await fs.open(filePath, 'r');
+    const { size } = await handle.stat();
+    const total = Number(size);
+    if (total <= 0) return [];
+
+    const slices: Buffer[] = [];
+    let start = total;
+    let consumed = 0;
+    let best: TranscriptMessage[] = [];
+
+    while (start > 0 && consumed < maxBytes) {
+      const sliceSize = Math.min(READ_SLICE_BYTES, start, maxBytes - consumed);
+      start -= sliceSize;
+      const buffer = Buffer.alloc(sliceSize);
+      await handle.read(buffer, 0, sliceSize, start);
+      slices.unshift(buffer);
+      consumed += sliceSize;
+
+      let text = Buffer.concat(slices).toString('utf8');
+      // Unless we reached the top of the file, the first line is a fragment of an earlier record.
+      if (start > 0) {
+        const firstBreak = text.indexOf('\n');
+        text = firstBreak === -1 ? '' : text.slice(firstBreak + 1);
+      }
+
+      best = extractMessages(text, format);
+      if (conversationChars(best) >= enoughChars) {
+        return best;
+      }
+    }
+
+    return best;
+  } catch {
+    return [];
+  } finally {
+    await handle?.close();
+  }
+}
+
+/**
+ * Split the retained conversation into distiller-sized chunks, newest last.
+ *
+ * One 9000-character blob per session was the real limit on how much Oplyr could remember — the
+ * read size never mattered, because everything downstream was sliced to that. Each chunk costs one
+ * call to the user's own agent, so the chunk count is the cost dial.
+ */
+export function buildSessionChunks(
+  messages: TranscriptMessage[],
+  chunkChars: number,
+  maxChunks: number
+): string[] {
+  const rendered = messages.map(
+    (message) => `${message.role === 'user' ? 'User' : 'Assistant'}: ${message.text}`
+  );
+
+  const chunks: string[] = [];
+  let current: string[] = [];
+  let size = 0;
+
+  // Build from the NEWEST backwards, so if the budget runs out it is the oldest turns that are lost.
+  for (let i = rendered.length - 1; i >= 0; i -= 1) {
+    const entry = rendered[i]!;
+    if (size > 0 && size + entry.length > chunkChars) {
+      chunks.unshift(current.join('\n\n'));
+      if (chunks.length >= maxChunks) return chunks;
+      current = [];
+      size = 0;
+    }
+    current.unshift(entry);
+    size += entry.length;
+  }
+  if (current.length > 0) chunks.unshift(current.join('\n\n'));
+
+  return chunks.slice(-maxChunks);
 }

@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { promises as fs } from 'node:fs';
+import { existsSync, promises as fs } from 'node:fs';
 import { logger } from '../../lib/logger.js';
 import { ensureDirectory, getModelsInstallDir } from '../../runtime-paths.js';
 import type { VoiceSessionService } from './voice-session.service.js';
@@ -31,6 +31,10 @@ export interface VoiceBootstrapStatus {
   installRoot: string;
   seedRoot: string | null;
   steps: VoiceBootstrapStep[];
+  /** Background fetch of the speech-refinement model that keyterm biasing needs. Not a gate. */
+  speechRefinement: 'idle' | 'downloading' | 'ready' | 'unavailable';
+  /** 0-99 while downloading, else null. */
+  speechRefinementPercent: number | null;
   updatedAt: string;
 }
 
@@ -43,6 +47,8 @@ interface VoiceAssetInspection {
 interface VoiceBootstrapDependencies {
   voiceSessionService: Pick<VoiceSessionService, 'enableBackgroundWarmup' | 'refreshAudioState'>;
   provisionSpeechModel?: (onProgress: (pct: number) => void) => Promise<void>;
+  /** Background fetch of the speech-refinement model used by keyterm biasing. */
+  provisionSpeechRefinement?: (onProgress: (pct: number) => void) => Promise<void>;
 }
 
 const baseSteps: Record<VoiceBootstrapStepId, Omit<VoiceBootstrapStep, 'state' | 'detail'>> = {
@@ -96,6 +102,9 @@ function createStatus(
   return {
     phase,
     progressPercent: phase === 'ready' ? 100 : percentFromSteps(steps),
+    // Overwritten with the live value by getStatus; the refinement fetch is independent of phase.
+    speechRefinement: 'idle',
+    speechRefinementPercent: null,
     message,
     error,
     installRoot,
@@ -131,6 +140,10 @@ async function fileExists(targetPath: string | null) {
 }
 
 export class VoiceBootstrapService {
+  private refinementState: 'idle' | 'downloading' | 'ready' | 'unavailable' = 'idle';
+  /** Download progress while refinementState is 'downloading'. Null once it settles. */
+  private refinementPercent: number | null = null;
+
   private status = createStatus(
     'idle',
     buildInitialSteps(),
@@ -152,7 +165,12 @@ export class VoiceBootstrapService {
       await this.inspect();
     }
 
-    const status = { ...this.status, steps: cloneSteps(this.status.steps) };
+    const status = {
+      ...this.status,
+      steps: cloneSteps(this.status.steps),
+      speechRefinement: this.refinementState,
+      speechRefinementPercent: this.refinementPercent
+    };
     if (this.status.phase === 'installing' && this.modelDownloadPercent !== null) {
       status.progressPercent = this.modelDownloadPercent;
     }
@@ -282,6 +300,12 @@ export class VoiceBootstrapService {
       });
       this.setStatus('ready', steps, 'Voice runtime is ready.');
       logger.info('voice.bootstrap.completed', { installRoot: this.status.installRoot });
+
+      // Voice is usable NOW. The speech-refinement model (keyterm biasing) is fetched afterwards,
+      // detached, so nobody waits on 114MB for an accuracy upgrade — existing installs especially,
+      // who would otherwise have been locked out of the app on their first launch after updating.
+      // Until it lands, StreamWorker reads the cache, finds nothing, and dictates unbiased.
+      this.startRefinementFetch();
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Unable to warm local voice runtime.';
@@ -316,6 +340,63 @@ export class VoiceBootstrapService {
     return steps;
   }
 
+  /**
+   * Fetch the speech-refinement model in the background, at most once per process.
+   *
+   * Fire-and-forget on purpose: a failure costs accuracy on project-specific words, never the
+   * ability to speak, so it must not surface as an error or retry aggressively. Progress is tracked
+   * on the status so Settings can show it without the caller having to wait.
+   */
+  private startRefinementFetch() {
+    if (this.refinementState !== 'idle' || !this.dependencies.provisionSpeechRefinement) {
+      return;
+    }
+
+    // Its own marker, so a completed fetch is remembered across launches. Without this the runtime
+    // spawns the provisioner on EVERY app start for the rest of the install's life — it would exit
+    // immediately (the model is cached) but there is no reason to pay for the process.
+    if (existsSync(this.refinementMarkerPath())) {
+      this.refinementState = 'ready';
+      this.refinementPercent = null;
+      return;
+    }
+
+    this.refinementState = 'downloading';
+    this.refinementPercent = 0;
+    void this.dependencies
+      .provisionSpeechRefinement((pct) => {
+        this.refinementPercent = pct;
+      })
+      .then(async () => {
+        this.refinementState = 'ready';
+        this.refinementPercent = null;
+        await this.markRefinementProvisioned();
+        logger.info('voice.refinement.ready');
+      })
+      .catch((error: unknown) => {
+        this.refinementState = 'unavailable';
+        this.refinementPercent = null;
+        logger.warn('voice.refinement.failed', {
+          error: error instanceof Error ? error.message : String(error)
+        });
+      });
+  }
+
+  private refinementMarkerPath() {
+    return path.join(getModelsInstallDir(), '.speech-refinement-ready');
+  }
+
+  private async markRefinementProvisioned() {
+    try {
+      ensureDirectory(getModelsInstallDir());
+      await fs.writeFile(this.refinementMarkerPath(), nowIso(), 'utf8');
+    } catch {
+      // Non-fatal: we just re-check (and re-spawn a fast no-op) on the next launch.
+    }
+  }
+
+  /** Records that the SPEECH model is present. The refinement model is deliberately not part of
+   *  readiness — it is an accuracy upgrade fetched in the background, never a gate. */
   private markerPath() {
     return path.join(getModelsInstallDir(), '.speech-model-ready');
   }

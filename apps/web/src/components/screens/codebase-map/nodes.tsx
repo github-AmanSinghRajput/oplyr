@@ -79,7 +79,7 @@ export function FolderNodeView({ data }: NodeProps<FolderNode>) {
   if (data.collapsed) {
     return (
       <div
-        className="flex h-full w-full items-center gap-2 rounded-lg border bg-surface-2 px-3 shadow-sm"
+        className="flex h-full w-full items-center gap-2 rounded-lg border bg-surface-2 px-3 shadow-1"
         style={{ borderColor: 'var(--color-border-strong)' }}
       >
         <Handle

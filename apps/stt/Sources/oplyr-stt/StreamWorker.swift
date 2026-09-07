@@ -10,6 +10,12 @@ func runStreamWorker() async throws {
   // ~2s bursts. Trade-off: partials are slightly more volatile (a word may rewrite before it confirms).
   let streamer = SlidingWindowAsrManager(config: .streaming)
   try await streamer.loadModels(models)
+
+  // Bias decoding toward this project's vocabulary BEFORE streaming starts, so the very first
+  // confirmed words are already rescored. Terms arrive in OPLYR_STT_KEYTERMS at spawn (the worker
+  // is spawned per voice session, so they are known by then) rather than as a stdin frame.
+  await applyKeytermBiasing(to: streamer)
+
   // `.microphone` is only a label: the audio genuinely is microphone audio captured
   // upstream, but it arrives here via `streamAudio(_:)` from framed stdin, not from a
   // live AVAudioEngine input device.
@@ -100,4 +106,50 @@ private func emitFinal(fullAudio: [Float], batch: AsrManager) async throws {
   var state = try TdtDecoderState()
   let result = try await batch.transcribe(fullAudio, decoderState: &state)
   emit(["type": "final", "text": result.text])
+}
+
+/// One biasing term as handed over by the runtime.
+private struct KeytermPayload: Decodable {
+  let text: String
+  let weight: Double
+}
+
+/// Configure vocabulary boosting from OPLYR_STT_KEYTERMS, if present.
+///
+/// Entirely best effort. Biasing needs the CTC keyword-spotter model as well as the ASR model
+/// (`configureVocabularyBoosting` takes `CtcModels` non-optionally, so there is no TDT-only path),
+/// and that model is fetched during provisioning. If it is missing, or the payload is malformed, we
+/// log and dictate WITHOUT biasing — losing accuracy on project-specific words is acceptable,
+/// losing the ability to speak is not.
+private func applyKeytermBiasing(to streamer: SlidingWindowAsrManager) async {
+  guard let raw = ProcessInfo.processInfo.environment["OPLYR_STT_KEYTERMS"],
+    !raw.isEmpty,
+    let data = raw.data(using: .utf8)
+  else { return }
+
+  do {
+    let payload = try JSONDecoder().decode([KeytermPayload].self, from: data)
+    guard !payload.isEmpty else { return }
+
+    let terms = payload.map {
+      CustomVocabularyTerm(text: $0.text, weight: Float($0.weight))
+    }
+    let vocabulary = CustomVocabularyContext(terms: terms)
+
+    // CACHE ONLY — never download here. The keyword-spotter model is ~114MB, and this runs while the
+    // user is waiting to speak; fetching it inline would stall the session for minutes with no
+    // progress anywhere. Provisioning owns the download (see Provision.swift), which is where the
+    // bootstrap UI can show it. Not cached yet → dictate unbiased and pick it up next session.
+    let cacheDir = CtcModels.defaultCacheDirectory(for: .ctc110m)
+    guard CtcModels.modelsExist(at: cacheDir) else {
+      logErr("keyterm biasing skipped: refinement model not provisioned yet")
+      return
+    }
+
+    let ctcModels = try await CtcModels.load(from: cacheDir, variant: .ctc110m)
+    try await streamer.configureVocabularyBoosting(vocabulary: vocabulary, ctcModels: ctcModels)
+    logErr("keyterm biasing active with \(terms.count) terms")
+  } catch {
+    logErr("keyterm biasing unavailable, continuing without it: \(error)")
+  }
 }

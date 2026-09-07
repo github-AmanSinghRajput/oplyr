@@ -89,7 +89,7 @@ export function Sidebar({ badges }: SidebarProps) {
       >
         {/* Brand */}
         <div className="flex items-center gap-2 px-3 h-11 shrink-0 overflow-hidden">
-          <div className="w-8 h-8 rounded-lg bg-surface-1 flex items-center justify-center shrink-0 shadow-sm ring-1 ring-border">
+          <div className="w-8 h-8 rounded-lg bg-surface-1 flex items-center justify-center shrink-0 shadow-1 ring-1 ring-border">
             <OplyrLogoMark className="h-7 w-7" />
           </div>
           <AnimatePresence>

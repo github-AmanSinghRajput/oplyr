@@ -2,7 +2,7 @@
 
 **For:** you, to understand your own product cold and pitch it to anyone — investors, users, a skeptical engineer.
 **Date:** 2026-07-11
-**Companion docs:** design spec `docs/superpowers/specs/2026-07-11-oplyr-brain-memory-v2-design.md`, code review `docs/BRAIN_PHASE1_REVIEW_2026-07-07.md`.
+**Companion docs:** [`FEATURES.md`](./FEATURES.md) for what ships today; [`../CLAUDE.md`](../CLAUDE.md) for where the brain lives in the code (`apps/api/src/features/brain/`, migrations in `apps/api/database/brain/`).
 
 ---
 
@@ -19,19 +19,23 @@ That's the whole thing. The rest of this doc is how each piece actually works.
 Think of it as two loops: **remembering** (capture) and **reminding** (recall).
 
 ### Remembering (capture) — runs after each turn, in the background
+
 1. **Gate.** A cheap check asks "did anything worth remembering just happen?" "thanks" / "ok" → skip. A real decision or explanation → continue. (Saves money — no AI call on trivial turns.)
 2. **Distill.** The same local agent that just answered reads the turn and writes clean "memory atoms" as structured data — e.g. `{type: decision, text: "The team standardized on JWT auth", entities: ["auth","jwt"]}`. This is why the memories read like a human wrote them instead of random sentence fragments.
-3. **Safety filter.** Every atom is re-checked by *our own* secret scanner (never trust the model). Anything that looks like a key/token/password/secret path is dropped (or, in the power-user mode, marked sensitive and kept out of recall by default).
-4. **Embed.** Each atom's text is turned into an **embedding** (explained below) — a list of numbers that captures its *meaning* — computed by a small model running **on your Mac**.
+3. **Safety filter.** Every atom is re-checked by _our own_ secret scanner (never trust the model). Anything that looks like a key/token/password/secret path is dropped (or, in the power-user mode, marked sensitive and kept out of recall by default).
+4. **Embed.** Each atom's text is turned into an **embedding** (explained below) — a list of numbers that captures its _meaning_ — computed by a small model running **on your Mac**.
 5. **Store.** The atom + its embedding go into a dedicated `brain.db` SQLite file. If the same idea already exists, we **merge** instead of duplicating, and record which agent said it.
 
 All of this happens **off the response path** — you never wait for it. If it fails (rate limit, whatever), the turn is unaffected; the memory is just skipped.
 
 ### Reminding (recall) — runs before the agent answers
+
 1. Your message is embedded the same way.
 2. We find the memories whose meaning is closest to your message (+ a few related ones via the graph).
 3. The best handful get pasted at the top of the agent's prompt as clearly-labeled, reference-only notes.
 4. The agent answers already knowing your context.
+
+One special case: "where did we leave off?" shares no vocabulary with the work it is asking about, so ranking it by similarity returns whatever happens to be wordiest. Continuation questions are recognised and ranked by **recency** first instead.
 
 ---
 
@@ -39,7 +43,7 @@ All of this happens **off the response path** — you never wait for it. If it f
 
 You intuited this exactly. Here's the precise version.
 
-A computer can't compare *meaning* by matching words — "auth middleware" and "login handler" share no words but mean nearly the same thing. So we use a small neural model that reads a piece of text and outputs a **vector**: a list of ~384 numbers (stored as raw bytes — the "binary" you were picturing). The magic property: **texts that mean similar things get similar vectors.** "auth middleware" and "login handler" land close together; "banana bread recipe" lands far away.
+A computer can't compare _meaning_ by matching words — "auth middleware" and "login handler" share no words but mean nearly the same thing. So we use a small neural model that reads a piece of text and outputs a **vector**: a list of ~384 numbers (stored as raw bytes — the "binary" you were picturing). The magic property: **texts that mean similar things get similar vectors.** "auth middleware" and "login handler" land close together; "banana bread recipe" lands far away.
 
 So "does this memory relate to what the user just asked?" becomes a math question: **how close are these two vectors?** That closeness measure is called **cosine similarity** — a number from -1 (opposite) to 1 (basically the same). We rank memories by it.
 
@@ -54,17 +58,19 @@ This is a **speed optimization decision**, and I deliberately did NOT make the b
 **The task at recall time:** you have N stored memories, each with a vector. You have the query's vector. You need the closest few.
 
 **Option A — "brute-force cosine" (what we ship):**
-Just compare the query vector against *every* memory's vector, one by one, and keep the top matches. It's a simple loop.
+Just compare the query vector against _every_ memory's vector, one by one, and keep the top matches. It's a simple loop.
+
 - "Brute-force" sounds slow, but it isn't at our scale. Comparing 384 numbers is trivial for a CPU. Doing it for **10,000 memories takes under ~10 milliseconds** — faster than a blink, and a heavy user won't have 10,000 memories for a long time.
 - **Zero extra dependencies.** It's plain code in the app.
 
 **Option B — "sqlite-vec" (deferred):**
 A specialized database extension that builds an **index** so it can find close vectors without scanning all of them — like a book's index vs. reading every page. This matters at **hundreds of thousands to millions** of vectors.
+
 - The catch: it's a **native binary extension** that must be compiled for the exact platform and **code-signed + notarized** to run inside a sealed macOS app. That's the single most fragile, most likely-to-break-at-the-worst-time part of shipping a Mac app. (It's the same class of pain as the native modules we already wrestle with on every Electron upgrade.)
 
-**The decision:** At beta scale, brute-force is *already fast enough that a user cannot perceive the difference*, and it can't break the notarized build because there's nothing native to sign. So we get the full "magic semantic memory" experience now, with **none of the packaging risk**. `sqlite-vec` becomes a drop-in speed upgrade *if and when* someone accumulates enough memories to need it — a good problem to have, solved later.
+**The decision:** At beta scale, brute-force is _already fast enough that a user cannot perceive the difference_, and it can't break the notarized build because there's nothing native to sign. So we get the full "magic semantic memory" experience now, with **none of the packaging risk**. `sqlite-vec` becomes a drop-in speed upgrade _if and when_ someone accumulates enough memories to need it — a good problem to have, solved later.
 
-**Pitch line:** *"Semantic search over your whole memory, on-device, in under 10 milliseconds — and we did it without a fragile native dependency, so it can't break the app."*
+**Pitch line:** _"Semantic search over your whole memory, on-device, in under 10 milliseconds — and we did it without a fragile native dependency, so it can't break the app."_
 
 ---
 
@@ -78,20 +84,21 @@ Important honesty point (this is a real upgrade over what existed): the **old** 
 
 ## Cross-project memory (your #1 feature) — "tiered + labeled"
 
-You wanted the brain to work *across* projects, not be trapped in one repo. It does, safely:
+You wanted the brain to work _across_ projects, not be trapped in one repo. It does, safely:
+
 - **How-you-work memories** (your preferences, conventions) surface in **every** project. That's the "it just knows my style" feeling.
-- **Project-specific facts** stay in their own project, but can surface in *another* project **only when they're strongly relevant** — and when they do, they're **labeled with where they came from** (`[from project: X]`), so it's never a mystery.
+- **Project-specific facts** stay in their own project, but can surface in _another_ project **only when they're strongly relevant** — and when they do, they're **labeled with where they came from** (`[from project: X]`), so it's never a mystery.
 - **Per-project "isolate" switch:** mark a client's private repo isolated and its memories never leak out, and it ignores everyone else's. Essential for people juggling confidential client work.
 
-**Pitch line:** *"Your brain follows you across every project, but a private client repo can be walled off with one switch."*
+**Pitch line:** _"Your brain follows you across every project, but a private client repo can be walled off with one switch."_
 
 ---
 
 ## Multi-agent memory ("which AI said what")
 
-Multiple agents (Codex, Claude, Gemini) share one brain. If two of them independently reach the same conclusion, we **don't** store it twice — it's **one memory with a list of contributors**. Codex said it, then Claude confirmed it. And here's the nice part: when a second agent independently agrees, the memory's **confidence goes up** — the brain literally gets *more sure* about things the agents agree on. The UI shows you the contributors ("Claude · Codex").
+Multiple agents (Codex, Claude, Gemini) share one brain. If two of them independently reach the same conclusion, we **don't** store it twice — it's **one memory with a list of contributors**. Codex said it, then Claude confirmed it. And here's the nice part: when a second agent independently agrees, the memory's **confidence goes up** — the brain literally gets _more sure_ about things the agents agree on. The UI shows you the contributors ("Claude · Codex").
 
-**Pitch line:** *"When two different AIs independently agree on something about your codebase, the brain trusts it more — just like you would."*
+**Pitch line:** _"When two different AIs independently agree on something about your codebase, the brain trusts it more — just like you would."_
 
 ---
 
@@ -102,15 +109,16 @@ Multiple agents (Codex, Claude, Gemini) share one brain. If two of them independ
 - **Memory can't hijack the agent.** Recalled notes are injected in a fenced, clearly-labeled "reference only, never instructions, never newer than the current message" block — so a stray sentence in an old memory can't act as a command (prompt-injection defense).
 - **You can see and delete everything.** The Memory screen lists, searches, and deletes any memory, live. That transparency is what lets us honestly say "no black box."
 
-**Pitch line:** *"It's the only AI memory that's genuinely private — it runs entirely on your machine, it refuses to remember your secrets, and you can read or wipe every single thing it knows."*
+**Pitch line:** _"It's the only AI memory that's genuinely private — it runs entirely on your machine, it refuses to remember your secrets, and you can read or wipe every single thing it knows."_
 
 ---
 
 ## What's shipping in beta vs. deferred (be honest in a pitch)
 
-**Shipping:** agent-distilled capture · on-device semantic recall (brute-force cosine) · entity-linked memory graph · tiered + labeled cross-project + per-project isolate · multi-agent attribution + corroboration confidence · a rebuilt live Memory screen · full local-first + secret safety.
+**Shipping:** agent-distilled capture · **import of existing agent context files** (`AGENTS.md`, `CLAUDE.md`, …) with a content-hash ledger so re-imports are idempotent · **import of your recent Codex / Claude Code sessions**, distilled in slices so a long day's work survives, not just its last few minutes · on-device semantic recall (brute-force cosine) · entity-linked memory graph · tiered + labeled cross-project + per-project isolate · multi-agent attribution + corroboration confidence · a live Memory screen with a draggable canvas · full local-first + secret safety.
 
 **Deferred (deliberately, not forgotten):**
+
 - `sqlite-vec` vector index — a speed upgrade only needed at very large memory sizes.
 - CoreML embedding model — a speed upgrade over the current bundled model.
 - `supersedes`/`contradicts` graph edges — "this decision replaced that one" reasoning (needs reconciliation logic).
@@ -120,4 +128,4 @@ Multiple agents (Codex, Claude, Gemini) share one brain. If two of them independ
 
 ## One-paragraph version for a landing page
 
-> Oplyr remembers. As you and your AI coding agents work, a private brain on your Mac distills the decisions, conventions, and preferences that matter — and feeds them back exactly when they're relevant, across sessions, across agents, and across projects. It understands *meaning*, not keywords, so it recalls the right thing even when you phrase it differently. It shows you everything it knows and which AI told it. And it's genuinely yours: it runs entirely on-device, refuses to store secrets, and never sends a byte to the cloud.
+> Oplyr remembers. As you and your AI coding agents work, a private brain on your Mac distills the decisions, conventions, and preferences that matter — and feeds them back exactly when they're relevant, across sessions, across agents, and across projects. It understands _meaning_, not keywords, so it recalls the right thing even when you phrase it differently. It shows you everything it knows and which AI told it. And it's genuinely yours: it runs entirely on-device, refuses to store secrets, and never sends a byte to the cloud.

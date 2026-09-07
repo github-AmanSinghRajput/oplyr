@@ -21,6 +21,7 @@ import {
   type GeminiSettingsResponse,
   type ProviderUsageSnapshot,
   type StatusResponse,
+  type VoiceBootstrapStatus,
   type VoiceSettingsResponse
 } from '@/containers/voice-console/lib/types';
 
@@ -34,6 +35,8 @@ interface SettingsScreenProps {
   providerUsageLoading: boolean;
   status: StatusResponse | null;
   voiceSettings: VoiceSettingsResponse | null;
+  /** Background speech-refinement fetch, shown in the Voice tab. */
+  voiceBootstrap: VoiceBootstrapStatus | null;
   onPreferenceChange: <Key extends keyof ConsolePreferences>(
     key: Key,
     value: ConsolePreferences[Key]
@@ -374,6 +377,7 @@ export function SettingsScreen({
   providerUsageLoading,
   status,
   voiceSettings,
+  voiceBootstrap,
   onAppSettingChange,
   onPreferenceChange,
   onVoiceSettingChange,
@@ -397,6 +401,8 @@ export function SettingsScreen({
   const { theme, setTheme } = useTheme();
   const activeProvider = status?.assistantProviders.activeProvider ?? null;
   const activeProviderId = activeProvider?.id ?? null;
+  const speechRefinement = voiceBootstrap?.speechRefinement ?? 'idle';
+  const speechRefinementPercent = voiceBootstrap?.speechRefinementPercent ?? null;
   // While a turn is in flight, block switching the active agent (any provider) and block changing
   // the ACTIVE provider's model/effort. Editing an inactive provider's prefs stays allowed (it
   // doesn't touch the running turn). Mirrors the Topbar guard.
@@ -651,7 +657,7 @@ export function SettingsScreen({
           <SectionCard title="Voice controls" subtitle="Native session preferences">
             <SettingRow
               label="Auto-send transcripts"
-              hint="On: speak and the message sends itself. Off: your words land in the input box to edit before sending."
+              hint="Off by default: your words land in an editable box so you can check them before they reach the agent. On: speaking sends the message itself."
             >
               <input
                 type="checkbox"
@@ -667,6 +673,32 @@ export function SettingsScreen({
               hint="Runs locally on your Mac — your audio never leaves the device, nothing is uploaded."
             >
               <span className="text-sm font-medium text-text-primary">On-device (private)</span>
+            </SettingRow>
+            {/* Named for what it DOES, not for the model behind it. Downloads in the background
+                after voice is already usable, so this is the only place it's visible. */}
+            <SettingRow
+              label="Speech refinement"
+              hint="Teaches recognition your project's own names — files, branches, dependencies. Downloads once, in the background."
+            >
+              <span
+                className={cn(
+                  'text-sm font-medium',
+                  speechRefinement === 'ready' && 'text-success',
+                  speechRefinement === 'downloading' && 'text-accent',
+                  speechRefinement === 'unavailable' && 'text-text-tertiary',
+                  speechRefinement === 'idle' && 'text-text-tertiary'
+                )}
+              >
+                {speechRefinement === 'ready'
+                  ? 'Active'
+                  : speechRefinement === 'downloading'
+                    ? speechRefinementPercent === null
+                      ? 'Downloading…'
+                      : `Downloading… ${speechRefinementPercent}%`
+                    : speechRefinement === 'unavailable'
+                      ? 'Unavailable — speech still works'
+                      : 'Not downloaded yet'}
+              </span>
             </SettingRow>
             <SettingRow
               label="Silence window"
