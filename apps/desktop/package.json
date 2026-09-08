@@ -14,7 +14,8 @@
     "rebuild:native": "./scripts/rebuild-native-electron.sh",
     "pack:test": "npm run build && electron-builder --mac --dir",
     "dist": "npm run build && electron-builder --mac dmg",
-    "dist:publish": "npm run build && electron-builder --mac zip --publish always"
+    "dist:publish": "npm run build && electron-builder --mac zip --publish always",
+    "dist:mac": "electron-builder --mac dmg --publish never && electron-builder --mac zip --prepackaged release/mac-arm64/Oplyr.app --publish never"
   },
   "devDependencies": {
     "@types/node": "^24.8.1",

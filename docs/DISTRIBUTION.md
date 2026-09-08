@@ -15,10 +15,26 @@ Copy-paste, in order. `X.Y.Z` is the new version.
 **Before you start**
 
 - Quit the installed `/Applications/Oplyr.app` — it owns port 8787.
-- Export all four: `APPLE_ID`, `APPLE_TEAM_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and
-  `CSC_NAME="Developer ID Application: Aman Singh Rajput (796SB32AWN)"`.
-  **`CSC_NAME` is easy to forget** — electron-builder finds the identity without it, so the DMG
-  signing in step 4 fails with a bare `: no identity found` much later.
+- Export the three notarization secrets: `APPLE_ID`, `APPLE_TEAM_ID`,
+  `APPLE_APP_SPECIFIC_PASSWORD`. Then run this preflight, which resolves the signing identity from
+  the keychain and fails loudly if anything is missing:
+
+```bash
+: "${APPLE_ID:?export APPLE_ID first}" \
+  "${APPLE_TEAM_ID:?export APPLE_TEAM_ID first}" \
+  "${APPLE_APP_SPECIFIC_PASSWORD:?export APPLE_APP_SPECIFIC_PASSWORD first}"
+
+# Resolve the identity instead of retyping it. `security find-identity` prints the SHA-1, which
+# codesign accepts and which cannot be broken by a quoting or name mismatch.
+export CSC_NAME=$(security find-identity -v -p codesigning \
+  | awk '/Developer ID Application/{print $2; exit}')
+echo "signing identity: ${CSC_NAME:?no Developer ID Application identity in the keychain}"
+```
+
+> **Why the preflight exists.** electron-builder finds the signing identity on its own, so a missing
+> `CSC_NAME` causes no trouble until step 4, which then fails with a bare `: no identity found` —
+> the empty string before the colon IS the error. This has bitten more than once. Resolving the
+> identity from the keychain removes the variable you can forget.
 
 ```bash
 cd /Users/amansingh/Desktop/aman/vocod/VOCOD
@@ -36,15 +52,27 @@ npm run build:pack -w @oplyr/runtime
 npm run build -w @oplyr/web
 npm run rebuild:native -w @oplyr/desktop   # native modules for Electron's ABI — never skip
 
-# ── 3. Package BOTH artifacts in one pass — FROM apps/desktop ─────────
+# ── 3. Package both artifacts, ONE TARGET AT A TIME — FROM apps/desktop ───
 cd apps/desktop
-npx electron-builder --mac dmg zip --publish never
+npm run dist:mac
 # → release/Oplyr-X.Y.Z-arm64.dmg
 #   release/Oplyr-X.Y.Z-arm64-mac.zip{,.blockmap} + latest-mac.yml
 #
-# Two things matter here:
-#  - Build dmg AND zip together. Running them as separate electron-builder invocations rewrites
-#    release/ the second time, which can clobber a DMG you already signed and notarized.
+# `dist:mac` is two invocations in a fixed order, and both parts of that matter:
+#   electron-builder --mac dmg --publish never
+#   electron-builder --mac zip --prepackaged release/mac-arm64/Oplyr.app --publish never
+#
+#  - NOT in one pass. `--mac dmg zip` builds the targets concurrently, so `hdiutil create
+#    -srcfolder` copies Oplyr.app while the zip target reads the same tree, and hdiutil dies with a
+#    bare `unable to execute hdiutil ... Exit code: 1`. electron-builder retries and usually still
+#    produces a valid DMG, so this reads as noise. It is not: verify the DMG before trusting it.
+#  - ZIP LAST. The last target to run owns `latest-mac.yml`, and the update feed must point at the
+#    zip. A dmg-last build rewrites it to `path: Oplyr-X.Y.Z-arm64.dmg` and breaks auto-update for
+#    every existing install. Step 6 checks this.
+#  - `--prepackaged` on the second call reuses the app the first call already signed and notarized,
+#    so nothing is re-notarized and the zip is byte-identical to the notarized build. It takes
+#    seconds, and it is what makes splitting the targets safe (the old warning here about a second
+#    invocation clobbering release/ applied to re-running the FULL build, which --prepackaged skips).
 #  - The cwd must be apps/desktop. From the repo root it packages the ROOT package.json as the app
 #    and dies with 'Application entry file "index.js" ... does not exist'.
 #
@@ -53,7 +81,7 @@ npx electron-builder --mac dmg zip --publish never
 # ── 4. Sign, notarize and staple the DMG ──────────────────────────────
 # Sign FIRST: signing modifies the file, which would invalidate a ticket stapled earlier.
 cd release
-codesign --force --timestamp --sign "$CSC_NAME" Oplyr-X.Y.Z-arm64.dmg
+codesign --force --timestamp --sign "${CSC_NAME:?run the preflight above}" Oplyr-X.Y.Z-arm64.dmg
 xcrun notarytool submit Oplyr-X.Y.Z-arm64.dmg \
   --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
   --password "$APPLE_APP_SPECIFIC_PASSWORD" --wait
@@ -68,6 +96,7 @@ ls -lh Oplyr-X.Y.Z-arm64.dmg && shasum -a 256 Oplyr-X.Y.Z-arm64.dmg
 
 # ── 6. Verify the zip (the auto-update feed) ──────────────────────────
 grep -m1 'version:' latest-mac.yml                       # must be X.Y.Z
+grep -m1 'path:' latest-mac.yml                          # MUST be the .zip, never the .dmg
 rm -rf /tmp/zt && mkdir -p /tmp/zt && ditto -x -k Oplyr-X.Y.Z-arm64-mac.zip /tmp/zt
 spctl -a -t exec -vv /tmp/zt/Oplyr.app                   # accepted / Notarized Developer ID
 echo "zip: $(openssl dgst -sha512 -binary Oplyr-X.Y.Z-arm64-mac.zip | openssl base64 -A)"

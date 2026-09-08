@@ -126,6 +126,17 @@ mac:
     # dmg = manual/gated first install. zip = what electron-updater downloads to apply mac updates
     # (it swaps the .app from the zip); latest-mac.yml references the zip, so this is required for
     # auto-update to work at all.
+    #
+    # Both are declared, but do NOT build them in ONE invocation (`--mac dmg zip`, or a bare
+    # `--mac`). electron-builder runs targets concurrently, so `hdiutil create -srcfolder` copies
+    # Oplyr.app while the zip target reads the same tree, and hdiutil intermittently dies with a
+    # bare `unable to execute hdiutil ... Exit code: 1`. It retries, so the build usually still
+    # succeeds, which is exactly why this looked like noise instead of a bug.
+    #
+    # Use `npm run dist:mac`, which builds them one at a time. Order matters there: the LAST target
+    # to run owns `latest-mac.yml`, and the update feed must point at the zip, so the zip goes last.
+    # A dmg-last build silently rewrites the feed to `path: Oplyr-x.y.z-arm64.dmg`, which would
+    # break auto-update for every existing install.
     - dmg
     - zip
   # FREE BUILD (no paid Apple account): notarization OFF. electron-builder signs with whatever cert
