@@ -16,25 +16,22 @@ Copy-paste, in order. `X.Y.Z` is the new version.
 
 - Quit the installed `/Applications/Oplyr.app` — it owns port 8787.
 - Export the three notarization secrets: `APPLE_ID`, `APPLE_TEAM_ID`,
-  `APPLE_APP_SPECIFIC_PASSWORD`. Then run this preflight, which resolves the signing identity from
-  the keychain and fails loudly if anything is missing:
+  `APPLE_APP_SPECIFIC_PASSWORD`.
+- **Do NOT set `CSC_NAME`.** electron-builder finds the Developer ID in the keychain on its own, so
+  the variable buys nothing and costs plenty: unset it fails step 4 with a bare `: no identity
+found` (the empty string before the colon IS the error), and stale or mistyped it breaks the app
+  signing in step 3 instead. Step 4 names the identity literally for the same reason.
+
+Guard the secrets and confirm the certificate is present, so nothing fails minutes into a build:
 
 ```bash
 : "${APPLE_ID:?export APPLE_ID first}" \
   "${APPLE_TEAM_ID:?export APPLE_TEAM_ID first}" \
   "${APPLE_APP_SPECIFIC_PASSWORD:?export APPLE_APP_SPECIFIC_PASSWORD first}"
 
-# Resolve the identity instead of retyping it. `security find-identity` prints the SHA-1, which
-# codesign accepts and which cannot be broken by a quoting or name mismatch.
-export CSC_NAME=$(security find-identity -v -p codesigning \
-  | awk '/Developer ID Application/{print $2; exit}')
-echo "signing identity: ${CSC_NAME:?no Developer ID Application identity in the keychain}"
+# Read-only check. Must print: Developer ID Application: Aman Singh Rajput (796SB32AWN)
+security find-identity -v -p codesigning | grep "Developer ID Application"
 ```
-
-> **Why the preflight exists.** electron-builder finds the signing identity on its own, so a missing
-> `CSC_NAME` causes no trouble until step 4, which then fails with a bare `: no identity found` —
-> the empty string before the colon IS the error. This has bitten more than once. Resolving the
-> identity from the keychain removes the variable you can forget.
 
 ```bash
 cd /Users/amansingh/Desktop/aman/vocod/VOCOD
@@ -79,9 +76,14 @@ npm run dist:mac
 # electron-builder signs AND notarizes the .app inside both. It does NOT touch the DMG wrapper.
 
 # ── 4. Sign, notarize and staple the DMG ──────────────────────────────
+# electron-builder signs and notarizes the .app but NEVER the DMG wrapper. Skipping this ships a
+# DMG that fails spctl, and users get the malware warning.
 # Sign FIRST: signing modifies the file, which would invalidate a ticket stapled earlier.
+# The identity is written out in full on purpose. Do not reintroduce $CSC_NAME here.
 cd release
-codesign --force --timestamp --sign "${CSC_NAME:?run the preflight above}" Oplyr-X.Y.Z-arm64.dmg
+codesign --force --timestamp \
+  --sign "Developer ID Application: Aman Singh Rajput (796SB32AWN)" \
+  Oplyr-X.Y.Z-arm64.dmg
 xcrun notarytool submit Oplyr-X.Y.Z-arm64.dmg \
   --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
   --password "$APPLE_APP_SPECIFIC_PASSWORD" --wait
@@ -263,8 +265,11 @@ With electron-builder, this is mostly automatic once the environment is set. Set
 APPLE_ID="you@apple.com"
 APPLE_APP_SPECIFIC_PASSWORD="xxxx-xxxx-xxxx-xxxx"
 APPLE_TEAM_ID="YOURTEAMID"
-CSC_NAME="Developer ID Application: Your Name (YOURTEAMID)"   # the signing identity
 ```
+
+These three, and only these three. `CSC_NAME` used to be listed here and should not be: it
+contradicted the gotcha further down, electron-builder picks the certificate out of the keychain
+without it, and the DMG codesign in the runbook names the identity literally.
 
 `npm run dist --workspace @oplyr/desktop` then codesigns the `.app` with the hardened runtime,
 submits **the app** to Apple's notary service, and staples the ticket to **the app**.
@@ -363,8 +368,10 @@ keyword overlap. Nothing in the product said so; only `brain.embeddings.unavaila
 `api-child.log` did. **After any packaging change, check the log for that event and confirm
 `brain.embeddings.ready` instead.**
 
-- **Don't set `CSC_NAME`** to the full `"Developer ID Application: …"` string — electron-builder auto-
-  selects the cert from the keychain, and the prefixed name trips its validation.
+- **Don't set `CSC_NAME` at all.** electron-builder auto-selects the cert from the keychain, and the
+  prefixed name trips its validation. Leaving it unset instead broke the DMG codesign with a bare
+  `: no identity found`, because the runbook had come to depend on it. The runbook now writes the
+  identity out in full, so neither failure is reachable.
 - **electron-builder notarizes the `.app`, not the DMG wrapper.** After `npm run dist` you must still
   `codesign` → `notarytool submit` → `stapler staple` the DMG by hand. And quit the installed
   `/Applications/Oplyr.app` before `dev:desktop` — they both bind `:8787`.
