@@ -141,6 +141,15 @@ async function fileExists(targetPath: string | null) {
 
 export class VoiceBootstrapService {
   private refinementState: 'idle' | 'downloading' | 'ready' | 'unavailable' = 'idle';
+  /**
+   * The in-flight refinement fetch, so a caller that must not outlive it can wait.
+   *
+   * The fetch is deliberately detached from `start()`, but "detached" is not "unobservable": it
+   * writes a marker file when it finishes, and anything tearing down the models directory has to
+   * let that write land first. Without this a test's cleanup raced the marker write and failed
+   * intermittently with ENOTEMPTY.
+   */
+  private refinementTask: Promise<void> | null = null;
   /** Download progress while refinementState is 'downloading'. Null once it settles. */
   private refinementPercent: number | null = null;
 
@@ -363,7 +372,7 @@ export class VoiceBootstrapService {
 
     this.refinementState = 'downloading';
     this.refinementPercent = 0;
-    void this.dependencies
+    this.refinementTask = this.dependencies
       .provisionSpeechRefinement((pct) => {
         this.refinementPercent = pct;
       })
@@ -380,6 +389,12 @@ export class VoiceBootstrapService {
           error: error instanceof Error ? error.message : String(error)
         });
       });
+  }
+
+  /** Resolve once any in-flight refinement fetch has settled. Never rejects: the fetch swallows its
+   *  own failure, because losing keyterm accuracy must never surface as an error. */
+  async whenRefinementSettled(): Promise<void> {
+    await this.refinementTask;
   }
 
   private refinementMarkerPath() {

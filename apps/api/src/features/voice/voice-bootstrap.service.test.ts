@@ -163,6 +163,12 @@ test('an already-provisioned install still fetches speech refinement, in the bac
         const status = await service.getStatus();
         assert.equal(status.phase, 'ready', 'voice must be usable without waiting for refinement');
         assert.equal(fetched, 1, 'and the refinement fetch must still have been kicked off');
+
+        // Asserted above that nothing waits on the fetch. Now wait, because it writes its marker
+        // into the models directory this test is about to delete, and racing that removal failed
+        // intermittently with ENOTEMPTY.
+        await service.whenRefinementSettled();
+        assert.equal((await service.getStatus()).speechRefinement, 'ready');
       }
     );
   } finally {
@@ -230,8 +236,9 @@ test('a failed refinement fetch leaves voice ready and reports itself', async ()
         });
 
         await service.start();
-        // The fetch is detached, so let its rejection settle.
-        await new Promise((resolve) => setTimeout(resolve, 10));
+        // The fetch is detached, so let its rejection settle. Waiting on the task rather than on a
+        // timer, which would still lose the race on a loaded machine.
+        await service.whenRefinementSettled();
 
         const status = await service.getStatus();
         assert.equal(status.phase, 'ready', 'a failed accuracy upgrade must not fail voice');
