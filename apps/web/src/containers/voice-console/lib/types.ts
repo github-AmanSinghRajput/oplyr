@@ -566,6 +566,11 @@ export interface ImportFile {
   status?: ImportFileStatus;
   /** Memories this source contributed on its last import; present when `added`/`changed`. */
   atomsAdded?: number;
+  /** Sessions only: 0 is the most recently worked-in session for this project, 1 the next. */
+  sessionRank?: number;
+  /** ISO timestamp the source was last written. Several sessions per project are listed, so this is
+   *  what tells them apart. */
+  modifiedAt?: string;
 }
 
 /** Everything importable for a single agent — its global file, per-project files, and the newest

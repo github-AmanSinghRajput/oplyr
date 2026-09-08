@@ -65,11 +65,56 @@ function claudeLineToMessage(value: unknown): TranscriptMessage | null {
   return text ? { role, text } : null;
 }
 
+/** Codex wraps its own memory lookups in this block. It is bookkeeping, not conversation. */
+const CITATION_BLOCK_RE = /<oai-mem-citation>[\s\S]*?<\/oai-mem-citation>/g;
+
+/** Join the `content[]` entries of a rollout item, whatever case the `type` tags use. */
+function joinContentText(content: unknown): string {
+  if (!Array.isArray(content)) return '';
+  return content
+    .map((part) => (part as { text?: unknown })?.text)
+    .filter((text): text is string => typeof text === 'string')
+    .join('')
+    .replace(CITATION_BLOCK_RE, '')
+    .trim();
+}
+
+/**
+ * Pull one conversation turn out of a Codex rollout line.
+ *
+ * Codex has changed its rollout schema, and both shapes are on disk:
+ *  - older sessions emit `event_msg` with `payload.type` of `user_message` / `agent_message`
+ *  - current sessions emit `event_msg` with `payload.type: 'item_completed'` and the turn under
+ *    `payload.item` as `UserMessage` / `AgentMessage`
+ *
+ * Only reading the older shape meant every recent Codex session distilled to NOTHING, so the brain
+ * silently stopped learning from Codex while still reporting a successful import. An 883MB session
+ * of real work yielded zero messages.
+ *
+ * Deliberately confined to the `event_msg` family. `response_item` records carry the same turns
+ * again, so parsing both would double every message, and the `response_item` copies are the ones
+ * with the system preamble stitched into them.
+ */
 function codexLineToMessage(value: unknown): TranscriptMessage | null {
-  const line = value as { type?: unknown; payload?: { type?: unknown; message?: unknown } };
+  const line = value as {
+    type?: unknown;
+    payload?: { type?: unknown; message?: unknown; item?: unknown };
+  };
   if (line.type !== 'event_msg') return null;
   const payload = line.payload;
-  if (!payload || typeof payload.message !== 'string') return null;
+  if (!payload) return null;
+
+  if (payload.type === 'item_completed') {
+    const item = payload.item as { type?: unknown; content?: unknown } | undefined;
+    if (!item) return null;
+    const role =
+      item.type === 'UserMessage' ? 'user' : item.type === 'AgentMessage' ? 'assistant' : null;
+    if (!role) return null;
+    const text = joinContentText(item.content);
+    return text ? { role, text } : null;
+  }
+
+  if (typeof payload.message !== 'string') return null;
   const text = payload.message.trim();
   if (!text) return null;
   if (payload.type === 'user_message') return { role: 'user', text };
@@ -111,21 +156,17 @@ export function extractMessages(tailText: string, format: TranscriptFormat): Tra
   return messages;
 }
 
-/** Total characters of conversation across messages — the budget that actually matters. */
-function conversationChars(messages: TranscriptMessage[]): number {
-  let total = 0;
-  for (const message of messages) total += message.text.length;
-  return total;
-}
-
 /**
  * Walk backwards through a session until we have `enoughChars` of real conversation, or until
  * `maxBytes` have been read.
  *
  * Reading a fixed tail was the wrong shape: 512KB of an 800MB session might be a single tool result
  * and contain no conversation at all, while on a small session it reads the whole file needlessly.
- * Slices are decoded together rather than one at a time, because a multi-byte character split
- * across a slice boundary would otherwise corrupt into replacement characters mid-transcript.
+ *
+ * Each byte is decoded and parsed exactly once. The obvious version re-parses the whole accumulated
+ * buffer every round, which is quadratic and unusable on the real files this exists for: sessions
+ * here reach 883MB. Instead only the newly read slice is parsed, with the fragment before its first
+ * newline carried forward to be completed by the slice that precedes it.
  */
 export async function readSessionMessages(
   filePath: string,
@@ -142,33 +183,42 @@ export async function readSessionMessages(
     const total = Number(size);
     if (total <= 0) return [];
 
-    const slices: Buffer[] = [];
+    const messages: TranscriptMessage[] = [];
+    let chars = 0;
+    // Bytes read but not yet parsed: the fragment before the first newline of the region we have
+    // seen, which only becomes a complete line once the PREVIOUS slice is read.
+    let pending = Buffer.alloc(0);
     let start = total;
     let consumed = 0;
-    let best: TranscriptMessage[] = [];
 
     while (start > 0 && consumed < maxBytes) {
       const sliceSize = Math.min(READ_SLICE_BYTES, start, maxBytes - consumed);
       start -= sliceSize;
       const buffer = Buffer.alloc(sliceSize);
       await handle.read(buffer, 0, sliceSize, start);
-      slices.unshift(buffer);
       consumed += sliceSize;
 
-      let text = Buffer.concat(slices).toString('utf8');
-      // Unless we reached the top of the file, the first line is a fragment of an earlier record.
-      if (start > 0) {
-        const firstBreak = text.indexOf('\n');
-        text = firstBreak === -1 ? '' : text.slice(firstBreak + 1);
+      // Concatenate as BYTES before decoding: a multi-byte character split across the slice
+      // boundary would otherwise decode to replacement characters on both sides.
+      const region = Buffer.concat([buffer, pending]);
+      const atFileStart = start === 0;
+      const firstBreak = atFileStart ? -1 : region.indexOf(0x0a);
+      if (!atFileStart && firstBreak === -1) {
+        // No newline in the whole region yet: one very long line still being assembled.
+        pending = region;
+        continue;
       }
+      pending = atFileStart ? Buffer.alloc(0) : region.subarray(0, firstBreak);
 
-      best = extractMessages(text, format);
-      if (conversationChars(best) >= enoughChars) {
-        return best;
-      }
+      const slice = extractMessages(region.subarray(firstBreak + 1).toString('utf8'), format);
+      // Parsed newest-last overall, so earlier slices go in front.
+      messages.unshift(...slice);
+      for (const message of slice) chars += message.text.length;
+
+      if (chars >= enoughChars) break;
     }
 
-    return best;
+    return messages;
   } catch {
     return [];
   } finally {

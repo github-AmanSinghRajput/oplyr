@@ -7,9 +7,16 @@ import {
 } from './agent-memory-paths.js';
 import type { ImportAgentGroup, ImportFile, ImportManifest } from './import.types.js';
 
-// Cap the Codex session files we read for project roots / newest-session so a huge history can't
-// make a scan crawl. Paths embed the date, so the newest sort last — we keep the most recent slice.
-const MAX_CODEX_SESSIONS = 1500;
+// Cap the session files we open while indexing, so a huge history can't make a scan crawl. Which
+// files fall inside the cap is decided by mtime, never by name: a `resume`d session keeps its
+// original name, so a name-ordered window can exclude the very session being worked in today.
+const MAX_SESSIONS_SCANNED = 1500;
+// How many sessions per project root we offer for import. One was too few: a developer accumulates
+// dozens of sessions per repo, and a single file is an arbitrary slice of months of work.
+const SESSIONS_PER_ROOT = 3;
+// How far into a Claude transcript to look for its `cwd` record.
+const CLAUDE_CWD_PROBE_BYTES = 262144;
+const CLAUDE_CWD_PROBE_LINES = 40;
 // Skip near-empty sessions (just meta / a stray line) — nothing durable to distill, so importing
 // them would only waste an agent call.
 const MIN_SESSION_BYTES = 2048;
@@ -27,28 +34,60 @@ async function statFile(
       bytes: s.size,
       kind,
       projectRoot,
-      projectName: projectRoot ? path.basename(projectRoot) : null
+      projectName: projectRoot ? path.basename(projectRoot) : null,
+      modifiedAt: new Date(s.mtimeMs).toISOString()
     };
   } catch {
     return null;
   }
 }
 
-/** Read only the first line of a file (a Codex session's `session_meta` line carries the cwd). */
-async function firstLine(filePath: string, maxBytes = 65536): Promise<string | null> {
+/** Read the first `maxBytes` of a file, for peeking at a transcript's opening records. */
+async function headText(filePath: string, maxBytes: number): Promise<string | null> {
   let handle: Awaited<ReturnType<typeof fs.open>> | undefined;
   try {
     handle = await fs.open(filePath, 'r');
     const buffer = Buffer.alloc(maxBytes);
     const { bytesRead } = await handle.read(buffer, 0, maxBytes, 0);
-    const text = buffer.subarray(0, bytesRead).toString('utf8');
-    const newline = text.indexOf('\n');
-    return newline >= 0 ? text.slice(0, newline) : text;
+    return buffer.subarray(0, bytesRead).toString('utf8');
   } catch {
     return null;
   } finally {
     await handle?.close();
   }
+}
+
+/** Read only the first line of a file (a Codex session's `session_meta` line carries the cwd). */
+async function firstLine(filePath: string, maxBytes = 65536): Promise<string | null> {
+  const text = await headText(filePath, maxBytes);
+  if (text === null) return null;
+  const newline = text.indexOf('\n');
+  return newline >= 0 ? text.slice(0, newline) : text;
+}
+
+/**
+ * The working directory a Claude session ran in, read from the transcript itself.
+ *
+ * Claude names its project directory after the cwd, but the encoding is lossy: it replaces every
+ * non-alphanumeric character with '-', so a space, an underscore and a slash all become the same
+ * thing. Reconstructing the path from the directory name is therefore guesswork, and reproducing
+ * the encoding by hand got it wrong for any root containing a space or an underscore. Measured on
+ * a real machine, that hid 76 sessions across three projects. The records carry the real cwd, and
+ * it appears within the first few lines (worst case observed: 16KB in).
+ */
+async function claudeSessionCwd(filePath: string): Promise<string | null> {
+  const head = await headText(filePath, CLAUDE_CWD_PROBE_BYTES);
+  if (!head) return null;
+  for (const line of head.split('\n').slice(0, CLAUDE_CWD_PROBE_LINES)) {
+    if (!line.includes('"cwd"')) continue;
+    try {
+      const cwd = (JSON.parse(line) as { cwd?: unknown }).cwd;
+      if (typeof cwd === 'string' && cwd.length > 0) return cwd;
+    } catch {
+      // a truncated final line in the probe window
+    }
+  }
+  return null;
 }
 
 /** Claude's project roots: `~/.claude.json`'s `projects` keys (absolute paths). */
@@ -62,15 +101,56 @@ async function claudeProjectRoots(homeDir: string): Promise<string[]> {
   }
 }
 
-interface CodexIndex {
+interface SessionIndex {
   roots: string[];
-  /** Newest session-transcript path per project cwd. */
-  newestByRoot: Map<string, string>;
+  /** Session-transcript paths per project cwd, most recently WRITTEN first. */
+  recentByRoot: Map<string, string[]>;
 }
 
-/** One pass over Codex session rollouts → the project roots (session_meta.cwd) and the NEWEST session
- *  file per root (filenames embed the timestamp, so the later one in sorted order is newer). */
-async function codexSessionIndex(homeDir: string): Promise<CodexIndex> {
+/** Stat every candidate and keep the `limit` most recently written. Stats are far cheaper than the
+ *  reads that follow, so the cap can be applied on real recency rather than on a name heuristic. */
+async function mostRecentlyWritten(
+  paths: string[],
+  limit: number
+): Promise<Array<{ path: string; mtime: number }>> {
+  const stamped: Array<{ path: string; mtime: number }> = [];
+  for (const filePath of paths) {
+    try {
+      stamped.push({ path: filePath, mtime: (await fs.stat(filePath)).mtimeMs });
+    } catch {
+      // vanished between listing and stat
+    }
+  }
+  stamped.sort((a, b) => b.mtime - a.mtime);
+  return stamped.slice(0, limit);
+}
+
+/** Newest-written first, capped per root. */
+function rankRecent(
+  byRoot: Map<string, Array<{ path: string; mtime: number }>>
+): Map<string, string[]> {
+  const ranked = new Map<string, string[]>();
+  for (const [root, list] of byRoot) {
+    list.sort((a, b) => b.mtime - a.mtime);
+    ranked.set(
+      root,
+      list.slice(0, SESSIONS_PER_ROOT).map((entry) => entry.path)
+    );
+  }
+  return ranked;
+}
+
+/**
+ * One pass over Codex session rollouts → the project roots (session_meta.cwd) and the most recent
+ * sessions per root.
+ *
+ * Ranked by mtime, never by filename. A rollout file is named for when the session STARTED, but
+ * `codex resume` appends to that same file for as long as you keep coming back to it. Ranking by
+ * name therefore treats a session you worked in an hour ago as months old, and it loses exactly the
+ * long-running sessions that carry the most context. Observed: a 0.1MB session named one minute
+ * earlier beat the 883MB session that held the actual work.
+ */
+async function codexSessionIndex(homeDir: string): Promise<SessionIndex> {
   const sessionsDir = path.join(homeDir, '.codex', 'sessions');
   let names: string[];
   try {
@@ -78,62 +158,91 @@ async function codexSessionIndex(homeDir: string): Promise<CodexIndex> {
       n.endsWith('.jsonl')
     );
   } catch {
-    return { roots: [], newestByRoot: new Map() };
+    return { roots: [], recentByRoot: new Map() };
   }
-  names.sort();
-  const recent = names.slice(-MAX_CODEX_SESSIONS);
+  const candidates = await mostRecentlyWritten(
+    names.map((name) => path.join(sessionsDir, name)),
+    MAX_SESSIONS_SCANNED
+  );
 
-  const newestByRoot = new Map<string, string>();
-  for (const name of recent) {
-    const full = path.join(sessionsDir, name);
-    const line = await firstLine(full);
+  const byRoot = new Map<string, Array<{ path: string; mtime: number }>>();
+  for (const candidate of candidates) {
+    const line = await firstLine(candidate.path);
     if (!line) continue;
+    let cwd: unknown;
     try {
-      const meta = JSON.parse(line) as { payload?: { cwd?: unknown } };
-      const cwd = meta.payload?.cwd;
-      if (typeof cwd === 'string' && cwd.length > 0) newestByRoot.set(cwd, full); // later = newer
+      cwd = (JSON.parse(line) as { payload?: { cwd?: unknown } }).payload?.cwd;
     } catch {
-      // skip a malformed session line
+      continue; // malformed session line
     }
+    if (typeof cwd !== 'string' || cwd.length === 0) continue;
+    const list = byRoot.get(cwd);
+    if (list) list.push(candidate);
+    else byRoot.set(cwd, [candidate]);
   }
-  return { roots: [...newestByRoot.keys()], newestByRoot };
+
+  return { roots: [...byRoot.keys()], recentByRoot: rankRecent(byRoot) };
 }
 
-/** Claude's newest session `.jsonl` for a project root. Claude names its session dir by the cwd with
- *  '/' replaced by '-'. */
-async function claudeNewestSession(homeDir: string, projectRoot: string): Promise<string | null> {
-  const dir = path.join(homeDir, '.claude', 'projects', projectRoot.replace(/\//g, '-'));
-  let files: string[];
+/**
+ * Index Claude's transcripts the same way we index Codex's: group by the cwd each session actually
+ * ran in, ranked by when it was last written.
+ *
+ * Walking the project directories rather than deriving one per root also surfaces projects Claude
+ * has history for but `.claude.json` does not list.
+ */
+async function claudeSessionIndex(homeDir: string): Promise<SessionIndex> {
+  const projectsDir = path.join(homeDir, '.claude', 'projects');
+  let entries: string[];
   try {
-    files = (await fs.readdir(dir)).filter((f) => f.endsWith('.jsonl'));
+    entries = await fs.readdir(projectsDir);
   } catch {
-    return null;
+    return { roots: [], recentByRoot: new Map() };
   }
-  let newest: { path: string; mtime: number } | null = null;
-  for (const file of files) {
-    const full = path.join(dir, file);
+
+  const paths: string[] = [];
+  for (const entry of entries) {
+    const dir = path.join(projectsDir, entry);
     try {
-      const s = await fs.stat(full);
-      if (!newest || s.mtimeMs > newest.mtime) newest = { path: full, mtime: s.mtimeMs };
+      for (const file of await fs.readdir(dir)) {
+        if (file.endsWith('.jsonl')) paths.push(path.join(dir, file));
+      }
     } catch {
-      // skip
+      // a stray file rather than a project directory
     }
   }
-  return newest?.path ?? null;
+
+  const byRoot = new Map<string, Array<{ path: string; mtime: number }>>();
+  for (const candidate of await mostRecentlyWritten(paths, MAX_SESSIONS_SCANNED)) {
+    const cwd = await claudeSessionCwd(candidate.path);
+    if (!cwd) continue;
+    const list = byRoot.get(cwd);
+    if (list) list.push(candidate);
+    else byRoot.set(cwd, [candidate]);
+  }
+
+  return { roots: [...byRoot.keys()], recentByRoot: rankRecent(byRoot) };
 }
 
-async function newestSessionFile(
+/** The recent sessions for one root, newest first, each tagged with its rank so the distiller can
+ *  spend its budget on the session the user actually worked in last. */
+async function recentSessionFiles(
   providerId: ImportProviderId,
   root: string,
-  codex: CodexIndex,
-  homeDir: string
-): Promise<ImportFile | null> {
-  let sessionPath: string | null = null;
-  if (providerId === 'claude') sessionPath = await claudeNewestSession(homeDir, root);
-  else if (providerId === 'codex') sessionPath = codex.newestByRoot.get(root) ?? null;
-  if (!sessionPath) return null;
-  const file = await statFile(sessionPath, 'session', root);
-  return file && file.bytes >= MIN_SESSION_BYTES ? file : null;
+  indexes: { claude: SessionIndex; codex: SessionIndex }
+): Promise<ImportFile[]> {
+  const index =
+    providerId === 'claude' ? indexes.claude : providerId === 'codex' ? indexes.codex : null;
+  const paths = index?.recentByRoot.get(root) ?? [];
+
+  const files: ImportFile[] = [];
+  for (const sessionPath of paths) {
+    const file = await statFile(sessionPath, 'session', root);
+    if (file && file.bytes >= MIN_SESSION_BYTES) {
+      files.push({ ...file, sessionRank: files.length });
+    }
+  }
+  return files;
 }
 
 /** Candidate project roots = the UNION of each agent's own project history — accurate and fast, not
@@ -143,11 +252,15 @@ export async function scanAgentMemory(deps: {
   connected: Record<ImportProviderId, boolean>;
 }): Promise<ImportManifest> {
   const globals = discoverCuratedPaths(deps.homeDir);
-  const [claudeRoots, codex] = await Promise.all([
+  const [declaredRoots, claude, codex] = await Promise.all([
     claudeProjectRoots(deps.homeDir),
+    claudeSessionIndex(deps.homeDir),
     codexSessionIndex(deps.homeDir)
   ]);
-  const roots = [...new Set([...claudeRoots, ...codex.roots])];
+  // `.claude.json` still contributes, because a project can be declared there with a CLAUDE.md
+  // worth importing and no session history yet.
+  const roots = [...new Set([...declaredRoots, ...claude.roots, ...codex.roots])];
+  const indexes = { claude, codex };
 
   const agents: ImportAgentGroup[] = [];
   let totalFiles = 0;
@@ -163,8 +276,7 @@ export async function scanAgentMemory(deps: {
     for (const root of roots) {
       const projectFile = await statFile(path.join(root, projectFileName), 'project', root);
       if (projectFile) projects.push(projectFile);
-      const session = await newestSessionFile(providerId, root, codex, deps.homeDir);
-      if (session) sessions.push(session);
+      sessions.push(...(await recentSessionFiles(providerId, root, indexes)));
     }
 
     if (!global && projects.length === 0 && sessions.length === 0) continue;

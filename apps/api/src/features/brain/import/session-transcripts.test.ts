@@ -28,6 +28,57 @@ test('extracts Claude user/assistant text, skips partial first line + tool block
   assert.equal(messages[1]!.text, 'Done — extracted retry into billing/retry.ts.'); // tool block ignored
 });
 
+test('extracts the CURRENT Codex rollout shape (item_completed), not just the legacy one', () => {
+  // Codex changed its schema: recent sessions emit no user_message/agent_message at all. Reading
+  // only the old shape made every recent Codex session distill to nothing while still reporting a
+  // successful import. Verbatim shapes from a real rollout.
+  const tail = [
+    'partial',
+    JSON.stringify({
+      type: 'event_msg',
+      payload: {
+        type: 'item_completed',
+        item: {
+          type: 'UserMessage',
+          content: [{ type: 'text', text: 'hi last thing we did?', text_elements: [] }]
+        }
+      }
+    }),
+    // Reasoning and tool items sit between the turns and are not conversation.
+    JSON.stringify({
+      type: 'event_msg',
+      payload: { type: 'item_completed', item: { type: 'Reasoning' } }
+    }),
+    JSON.stringify({
+      type: 'response_item',
+      payload: { type: 'message', role: 'user', content: [{ text: 'hi last thing we did?' }] }
+    }),
+    JSON.stringify({
+      type: 'event_msg',
+      payload: {
+        type: 'item_completed',
+        item: {
+          type: 'AgentMessage',
+          content: [
+            {
+              type: 'Text',
+              text: 'We fixed the Approval Chains Owner picker.\n<oai-mem-citation>\nMEMORY.md:330-334\n</oai-mem-citation>'
+            }
+          ]
+        }
+      }
+    })
+  ].join('\n');
+
+  const messages = extractMessages(tail, 'codex');
+
+  // The response_item copy of the same turn must NOT double it up.
+  assert.equal(messages.length, 2);
+  assert.deepEqual(messages[0], { role: 'user', text: 'hi last thing we did?' });
+  assert.equal(messages[1]!.role, 'assistant');
+  assert.equal(messages[1]!.text, 'We fixed the Approval Chains Owner picker.'); // citation stripped
+});
+
 test('extracts Codex event_msg user/agent messages, ignores noise', () => {
   const tail = [
     'garbage partial',

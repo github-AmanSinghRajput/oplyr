@@ -50,6 +50,18 @@ const PROVIDER_IDS: readonly AssistantProviderId[] = ['codex', 'claude', 'gemini
 const MAX_ENTITIES_PER_ATOM = 16;
 const CORROBORATION_BONUS = 0.05;
 
+/**
+ * LIKE pattern matching every project key nested under `projectKey`.
+ *
+ * `%` and `_` are LIKE wildcards and both occur in real paths (`my_repo`), so they are escaped and
+ * the query pairs this with `ESCAPE '\\'`. Without that, `/src/my_repo/%` would also match
+ * `/src/myXrepo/...`.
+ */
+function descendantPattern(projectKey: string): string {
+  const escaped = projectKey.replace(/[\\%_]/g, (character) => `\\${character}`);
+  return `${escaped.replace(/\/$/, '')}/%`;
+}
+
 export class BrainRepository {
   /**
    * Insert new atoms or merge into existing ones (deduped by source_hash). Merging is a
@@ -197,9 +209,19 @@ export class BrainRepository {
     }
 
     const limit = options.limit ?? 300;
+    // Exact-match on two keys was wrong for a monorepo. Agents record a session against whatever
+    // directory they were launched from, so one repo's memories end up under the monorepo root and
+    // another's under `<root>/packages/api`. Connecting the root then recalled none of them. Keys
+    // BELOW the connected project now match too (never above: an ancestor could be the home
+    // directory, which would quietly turn every recall into a cross-project one).
     const projectFilter = options.includeCrossProject
       ? "AND (a.scope = 'global' OR a.scope = 'project')"
-      : "AND (a.scope = 'global' OR (a.scope = 'project' AND (a.project_key = @projectKey OR a.project_key = @projectRootKey)))";
+      : `AND (a.scope = 'global' OR (a.scope = 'project' AND (
+           a.project_key = @projectKey
+           OR a.project_key = @projectRootKey
+           OR a.project_key LIKE @projectDescendants ESCAPE '\\'
+           OR a.project_key LIKE @rootDescendants ESCAPE '\\'
+         )))`;
     const sensitivityFilter = options.includeSensitive ? '' : "AND a.sensitivity = 'normal'";
 
     const rows = getBrainDatabase()
@@ -219,6 +241,8 @@ export class BrainRepository {
       .all({
         projectKey,
         projectRootKey: options.projectRootKey ?? projectKey,
+        projectDescendants: descendantPattern(projectKey),
+        rootDescendants: descendantPattern(options.projectRootKey ?? projectKey),
         model: options.embeddingModel,
         limit
       }) as BrainCandidateRow[];

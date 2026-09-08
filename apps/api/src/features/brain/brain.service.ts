@@ -78,6 +78,17 @@ const EMBEDDING_BACKFILL_PAUSE_MS = 250;
  */
 const SESSION_CHUNK_CHARS = 12_000;
 const MAX_SESSION_CHUNKS = 10;
+/**
+ * Chunk budget per session, indexed by how recently the session was worked in (rank 0 = most
+ * recent). Importing several sessions per project is what gives the brain a real picture of a repo,
+ * but spending ten agent calls on each would be wasteful: the session you were in an hour ago is
+ * worth reading deeply, the one from three weeks ago is worth skimming.
+ */
+const SESSION_CHUNKS_BY_RANK = [MAX_SESSION_CHUNKS, 3, 2];
+
+function sessionChunkBudget(rank: number | undefined): number {
+  return SESSION_CHUNKS_BY_RANK[rank ?? 0] ?? SESSION_CHUNKS_BY_RANK.at(-1)!;
+}
 
 const RECENCY_QUERY_RE =
   /\b(?:where (?:did|do|were) we|left off|leave off|pick(?:ing)? up where|last (?:thing|time|session|worked|working|doing)|what were we|were we (?:doing|working)|continue (?:where|from where|our)|catch me up|what did we (?:do|finish|last)|since last time|resume(?: our)? (?:work|session))\b/i;
@@ -544,14 +555,11 @@ export class BrainService {
             kind: 'session',
             contentHash: await computeSourceHash(file),
             distill: async () => {
+              const maxChunks = sessionChunkBudget(file.sessionRank);
               const messages = await readSessionMessages(file.path, format, {
-                enoughChars: SESSION_CHUNK_CHARS * MAX_SESSION_CHUNKS
+                enoughChars: SESSION_CHUNK_CHARS * maxChunks
               });
-              const sessionChunks = buildSessionChunks(
-                messages,
-                SESSION_CHUNK_CHARS,
-                MAX_SESSION_CHUNKS
-              );
+              const sessionChunks = buildSessionChunks(messages, SESSION_CHUNK_CHARS, maxChunks);
               if (sessionChunks.length === 0) return [];
               return distillSession(
                 {

@@ -403,9 +403,24 @@ function kindIcon(kind: ImportFile['kind']) {
   return FolderGit2;
 }
 
+/** "Sep 8" — enough to tell one session from another without spelling out a full timestamp. */
+function shortDate(iso: string | undefined): string | null {
+  if (!iso) return null;
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime())
+    ? null
+    : date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
 function fileLabel(file: ImportFile, providerId: AssistantProviderId) {
   if (file.kind === 'global') return `Global ${GLOBAL_FILE_NAME[providerId]}`;
-  if (file.kind === 'session') return `${file.projectName ?? 'Project'} · latest session`;
+  if (file.kind === 'session') {
+    // Several sessions per project are offered now, so "latest session" on every row would make
+    // them indistinguishable. Rank names the newest one, the date separates the rest.
+    const when = shortDate(file.modifiedAt);
+    const which = file.sessionRank === 0 ? 'latest session' : 'session';
+    return `${file.projectName ?? 'Project'} · ${which}${when ? ` · ${when}` : ''}`;
+  }
   return file.projectName ?? 'Project';
 }
 

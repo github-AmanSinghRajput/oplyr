@@ -54,6 +54,31 @@ a shipped build — this fixes that, and then makes the memory around it worth r
   silently degraded to keyword overlap. Packaged builds now ship it (filtered to darwin/arm64,
   92MB → ~20MB). **Memories written by an older build have no vectors and are re-embedded on
   first launch.**
+- **Codex sessions stopped being read at all.** Codex changed its rollout format: recent sessions
+  emit no `user_message` / `agent_message` records, so the parser found nothing in them while the
+  import still reported success. An 883MB session of real work distilled to zero memories. Both
+  schemas are now read.
+- **Claude sessions were invisible for any project with a space or an underscore in its path.**
+  Claude names its transcript folder after the working directory, replacing every non-alphanumeric
+  character with `-`, so a space, an underscore and a slash all collapse to the same thing. We
+  rebuilt that name by replacing only `/`, which found nothing for the rest. Sessions are now
+  attributed by the working directory recorded inside the transcript, which also surfaces projects
+  Claude has history for but `~/.claude.json` does not list. On one real machine this had hidden
+  76 sessions across three projects.
+- **The "newest" session was picked by filename, not by when you last worked in it.** `codex resume`
+  appends to the file the session started in, so its name freezes while its content keeps growing.
+  A 0.1MB session named a minute later beat the 883MB session holding the actual work, and every
+  long-running session lost the same way. Ranking is now by last-written time.
+- **The scan's own file budget was ordered by name too**, so on a large history a resumed session
+  could be excluded before it was ever considered. The budget now goes to the most recently written
+  files, for both agents.
+- **Only one session per project was ever imported.** A repo with a hundred sessions contributed a
+  single arbitrary one. Up to three are now offered per project, newest first, and the newest is
+  read deepest.
+- **Monorepos recalled nothing.** Agents record a session against whatever directory they were
+  launched from, so one package's memories land under the monorepo root and another's under
+  `<root>/packages/api`. Connecting the root matched neither. Memories filed below the connected
+  project are now in scope. Scoping never widens upward.
 - **"Where did we leave off?" returns recent work.** Continuation questions share no vocabulary with
   the work they're asking about, so they scored below the relevance threshold and returned older,
   wordier memories. Such questions are now recognised and ranked by recency first.

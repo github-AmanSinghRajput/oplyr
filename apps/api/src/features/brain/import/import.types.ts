@@ -9,6 +9,12 @@ export interface ImportFile {
   kind: 'global' | 'project' | 'session';
   projectRoot: string | null;
   projectName: string | null;
+  /** For `kind: 'session'` only: 0 is the most recently worked-in session for this root, 1 the next,
+   *  and so on. The distiller reads deepest into rank 0 and skims the rest. */
+  sessionRank?: number;
+  /** ISO timestamp the file was last written. Sessions are listed several per project, so the date
+   *  is what tells two of them apart in the picker. */
+  modifiedAt?: string;
   /** Set by `scanImport` from the import ledger. Absent until the ledger join runs (defaults `new`). */
   status?: ImportFileStatus;
   /** Memories this source contributed on its last import (from the ledger); present when `added`/`changed`. */
