@@ -54,6 +54,14 @@ a shipped build — this fixes that, and then makes the memory around it worth r
   silently degraded to keyword overlap. Packaged builds now ship it (filtered to darwin/arm64,
   92MB → ~20MB). **Memories written by an older build have no vectors and are re-embedded on
   first launch.**
+- **`sharp` was missing from the packaged app too, for exactly the same reason.** Fixing
+  `onnxruntime-node` moved the failure one dependency along: transformers' `utils/image.js` opens
+  with a static `import sharp from 'sharp'` and `transformers.js` re-exports it, so a build without
+  it still died at load and still stored every memory with no vector. Caught only because this
+  release added the "Keyword only" warning. Oplyr embeds text and never an image, and running
+  without sharp is the library's own supported configuration, so a stub ships in its place rather
+  than 25MB of image codecs and a 37-package dependency closure. A test now reads the library's
+  real source and fails if the packaging list misses anything it imports, so there is no third time.
 - **Codex sessions stopped being read at all.** Codex changed its rollout format: recent sessions
   emit no `user_message` / `agent_message` records, so the parser found nothing in them while the
   import still reported success. An 883MB session of real work distilled to zero memories. Both
@@ -120,6 +128,13 @@ a shipped build — this fixes that, and then makes the memory around it worth r
   transcript reading and chunked distillation, and recency-first recall.
 - `brain_edges` is documented as reserved: Memory-graph edges are computed per request from stored
   entities and never persisted.
+- The mac build no longer packages both targets in one pass. Concurrent targets made
+  `hdiutil create` race the zip target over the same `.app` and fail; `npm run dist:mac` builds them
+  one at a time, zip last so it owns `latest-mac.yml`. The runbook no longer depends on `CSC_NAME`,
+  which was both easy to forget and documented as something never to set.
+- Fixed a flaky test in the voice bootstrap: the detached speech-refinement fetch wrote its marker
+  file after the test returned, racing the temp-directory cleanup. The in-flight task is now
+  awaitable, and a fixed 10ms sleep next door was replaced with the same wait.
 
 ---
 

@@ -93,6 +93,19 @@ extraResources:
       - "!bin/napi-v3/linux/**"
       - "!bin/napi-v3/win32/**"
       - "!bin/napi-v3/darwin/x64/**"
+  # `sharp` must RESOLVE for the same reason onnxruntime-node must: transformers' utils/image.js
+  # opens with a static `import sharp from 'sharp'`, and transformers.js re-exports that file. A
+  # packaged build without it died at load with
+  #   Cannot find package 'sharp' imported from .../@xenova/transformers/src/utils/image.js
+  # and stored every memory with no vector. This is the SECOND dependency this hand-written list
+  # has missed, so read the note in resources/sharp-stub/index.mjs before touching any of it.
+  #
+  # A stub, not the real package: sharp decodes images, Oplyr embeds only text, and shipping it
+  # would add ~25MB plus a 37-package closure to enumerate here. Running without sharp is the
+  # library's own supported configuration (its package.json sets `"browser": {"sharp": false}`),
+  # and sharp-stub.test.ts fails if that ever stops being true.
+  - from: resources/sharp-stub
+    to: api/node_modules/sharp
   - from: ../../node_modules/onnxruntime-web
     to: api/node_modules/onnxruntime-web
   - from: ../../node_modules/onnxruntime-common

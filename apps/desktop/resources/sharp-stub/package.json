@@ -1,0 +1,8 @@
+{
+  "name": "sharp",
+  "version": "0.0.0-oplyr-stub",
+  "private": true,
+  "type": "module",
+  "main": "./index.mjs",
+  "exports": "./index.mjs"
+}
