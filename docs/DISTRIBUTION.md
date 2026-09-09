@@ -59,10 +59,8 @@ npm run dist:mac
 #   electron-builder --mac dmg --publish never
 #   electron-builder --mac zip --prepackaged release/mac-arm64/Oplyr.app --publish never
 #
-#  - NOT in one pass. `--mac dmg zip` builds the targets concurrently, so `hdiutil create
-#    -srcfolder` copies Oplyr.app while the zip target reads the same tree, and hdiutil dies with a
-#    bare `unable to execute hdiutil ... Exit code: 1`. electron-builder retries and usually still
-#    produces a valid DMG, so this reads as noise. It is not: verify the DMG before trusting it.
+#  - NOT in one pass. The last target to run owns latest-mac.yml (see below), so the order has to
+#    be ours to control.
 #  - ZIP LAST. The last target to run owns `latest-mac.yml`, and the update feed must point at the
 #    zip. A dmg-last build rewrites it to `path: Oplyr-X.Y.Z-arm64.dmg` and breaks auto-update for
 #    every existing install. Step 6 checks this.
@@ -72,8 +70,17 @@ npm run dist:mac
 #    invocation clobbering release/ applied to re-running the FULL build, which --prepackaged skips).
 #  - The cwd must be apps/desktop. From the repo root it packages the ROOT package.json as the app
 #    and dies with 'Application entry file "index.js" ... does not exist'.
+#  - The third command verifies the output. Do not skip it, and do not sign anything if it fails.
 #
 # electron-builder signs AND notarizes the .app inside both. It does NOT touch the DMG wrapper.
+#
+# EXPECT THIS LINE, roughly one run in four:
+#   ⨯ unable to execute hdiutil ... Exit code: 1
+# The real error behind it is `hdiutil: create failed - Resource busy`, a macOS diskarbitration
+# race. It reproduces with nothing else running, is not caused by our packaging, and is unaffected
+# by TMPDIR or by which targets are building. electron-builder retries five times and recovers.
+# That is why `dist:mac` ends in a verification step: if the last line says "Build verified", the
+# hdiutil noise above it can be ignored. If it does not, stop.
 
 # ── 4. Sign, notarize and staple the DMG ──────────────────────────────
 # electron-builder signs and notarizes the .app but NEVER the DMG wrapper. Skipping this ships a
