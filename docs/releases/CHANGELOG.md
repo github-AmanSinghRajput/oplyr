@@ -9,10 +9,14 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/): **Added 
 
 ---
 
-## 0.5.0 — 2026-09-08
+## 0.5.1 — 2026-09-09
 
 The Brain release. Semantic recall has been in the product since 0.3.0 and has never actually run in
 a shipped build — this fixes that, and then makes the memory around it worth recalling.
+
+> 0.5.0 carried these same changes but was never published: its build was missing `sharp`, which
+> left the headline fix inert. It is folded in here rather than listed separately, because no
+> install could ever reach it.
 
 **Added**
 
@@ -116,6 +120,16 @@ a shipped build — this fixes that, and then makes the memory around it worth r
 - **The logo on a reply is the agent that wrote it.** Switching the active agent from the topbar
   restamped past replies with the new agent's logo.
 - **Refresh refreshes everything**, not a subset of the panels.
+- **The Memory screen is rebuilt around the graph.** The canvas is now full width instead of giving
+  a third of it to a permanent right-hand rail whose inspector read "Nothing selected" most of the
+  time. Search is one toolbar field, memories sit in a collapsible drawer under the canvas as a
+  responsive grid instead of one narrow column, and clicking a node or a link slides a detail sheet
+  in over the canvas rather than resizing it, which used to re-run the force simulation and make the
+  whole layout jump. Nothing on the screen scrolls the page any more: the drawer and the sheet each
+  bound their own content.
+- **Clearing the memory search and pressing Enter goes back to where you were.** An empty box was
+  sent to the API as a search for nothing, which left the results view pinned open and empty with no
+  way back. It now reverts to the live capture feed, and there is a clear button.
 - **The Memory screen says when recall is keyword-only** instead of leaving semantic search quietly
   degraded.
 - **Quitting the app does not reset the Brain.**

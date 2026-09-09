@@ -10,12 +10,117 @@
   min-height: 520px;
 }
 
-.memory-workspace {
+/* Three stacked regions: a one-line toolbar, the canvas, and a drawer. The canvas is the point of
+   this screen, so it gets the full width and all the leftover height. Nothing here scrolls the page
+   itself: the drawer and the inspector each bound their own content. */
+.memory-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex: 0 0 auto;
+}
+
+.memory-toolbar__gear {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
-  gap: 1rem;
-  flex: 1;
-  min-height: 0; /* let the grid children shrink so the canvas can own the height */
+  place-items: center;
+  flex: 0 0 auto;
+  width: 2.2rem;
+  height: 2.2rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-1);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition:
+    border-color 160ms var(--ease-brand),
+    color 160ms var(--ease-brand),
+    background 160ms var(--ease-brand);
+}
+
+.memory-toolbar__gear:hover {
+  border-color: var(--color-accent-border);
+  color: var(--color-accent);
+  background: var(--color-accent-muted);
+}
+
+/* ── Search, as one toolbar field ── */
+.memory-searchbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 2.2rem;
+  padding: 0 0.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-1);
+  transition: border-color 160ms var(--ease-brand);
+}
+
+.memory-searchbar:focus-within {
+  border-color: var(--color-accent-border);
+}
+
+.memory-searchbar__icon {
+  display: grid;
+  place-items: center;
+  color: var(--color-text-tertiary);
+}
+
+.memory-searchbar input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: none;
+  color: var(--color-text-primary);
+  font: inherit;
+  font-size: 0.8rem;
+  outline: none;
+}
+
+.memory-searchbar input::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+.memory-searchbar__count {
+  flex: 0 0 auto;
+  padding: 0.05rem 0.4rem;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent-muted);
+  color: var(--color-accent);
+  font-size: 0.66rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.memory-searchbar button {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+}
+
+.memory-searchbar button:hover {
+  background: var(--color-surface-3);
+  color: var(--color-text-primary);
+}
+
+/* ── Stage: the canvas, full width, with the inspector overlaying its right edge ── */
+.memory-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: calc(var(--radius-panel) + 4px);
+  background: var(--color-background);
 }
 
 .memory-eyebrow {
@@ -38,22 +143,20 @@
 
 /* ── Floating status pill (top-left of canvas) ──────────────────────────────── */
 
+/* Sits in the toolbar row now, not floating over the canvas, so it is in normal flow and drops the
+   glass treatment that only made sense on top of the graph. */
 .memory-status-pill {
-  position: absolute;
-  top: 0.85rem;
-  left: 0.85rem;
-  z-index: 4;
   display: flex;
   align-items: center;
   gap: 0.7rem;
-  max-width: calc(100% - 4.5rem);
+  flex: 0 0 auto;
+  min-width: 0;
+  height: 2.2rem;
   overflow: hidden;
   border: 1px solid var(--color-border);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--color-surface-1) 82%, transparent);
-  padding: 0.4rem 0.5rem 0.4rem 0.55rem;
-  backdrop-filter: blur(14px);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-1);
+  padding: 0 0.55rem;
 }
 
 .memory-status-pill__toggle {
@@ -158,57 +261,73 @@
   white-space: nowrap;
 }
 
-/* ── Canvas + rail layout ───────────────────────────────────────────────────── */
+/* ── Inspector sheet + drawer ───────────────────────────────────────────────── */
 
-.memory-canvas {
-  position: relative;
-  overflow: hidden;
-  min-width: 0;
-  min-height: 0;
-  border: 1px solid var(--color-border);
-  border-radius: calc(var(--radius-panel) + 4px);
-  background: var(--color-background);
-}
-
-.memory-canvas__gear {
+/* The inspector overlays the canvas instead of taking a permanent column beside it. A rail costs
+   the graph a third of its width to show "Nothing selected" most of the time, and resizing the
+   canvas on every click re-ran the force simulation and made the layout jump. */
+.memory-inspector {
   position: absolute;
-  top: 0.85rem;
-  right: 0.85rem;
-  z-index: 4;
-  display: grid;
-  place-items: center;
-  width: 2.1rem;
-  height: 2.1rem;
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--color-surface-1) 82%, transparent);
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  backdrop-filter: blur(14px);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
-  transition:
-    border-color 160ms ease,
-    color 160ms ease,
-    background 160ms ease;
-}
-
-.memory-canvas__gear:hover {
-  border-color: var(--color-accent-border);
-  color: var(--color-accent);
-  background: var(--color-accent-muted);
-}
-
-.memory-rail {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
   display: flex;
   flex-direction: column;
-  gap: 0.85rem;
-  min-height: 0;
-  overflow-y: auto;
-  padding-right: 0.15rem;
+  width: min(24rem, 100%);
+  border-left: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-surface-1) 92%, var(--color-background));
+  backdrop-filter: blur(18px);
+  box-shadow: var(--shadow-float);
+  transform: translateX(100%);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform 260ms var(--ease-brand),
+    opacity 200ms var(--ease-brand);
 }
 
-.memory-rail__inspector {
-  flex: 0 0 auto;
+.memory-inspector.is-open {
+  transform: translateX(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.memory-inspector__close {
+  position: absolute;
+  top: 0.7rem;
+  right: 0.7rem;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.memory-inspector__close:hover {
+  border-color: var(--color-accent-border);
+  color: var(--color-accent);
+}
+
+/* The panel inside already has its own border and background; inside the sheet that would be a box
+   in a box, so it renders flat and the sheet supplies the surface. */
+.memory-inspector__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.9rem;
+}
+
+.memory-inspector__body > .memory-panel {
+  border: 0;
+  background: none;
+  box-shadow: none;
+  padding: 0;
 }
 
 .memory-panel {
@@ -427,85 +546,6 @@
   color: var(--color-text-tertiary);
 }
 
-.memory-result-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  margin: 0;
-  padding: 0;
-  max-height: 20rem;
-  overflow-y: auto;
-  list-style: none;
-}
-
-.memory-result {
-  width: 100%;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
-  background: var(--color-background);
-  padding: 0.65rem 0.75rem;
-  text-align: left;
-  cursor: pointer;
-  transition:
-    border-color 160ms ease,
-    background 160ms ease;
-}
-
-.memory-result:hover,
-.memory-result.is-selected {
-  border-color: var(--color-accent-border);
-  background: color-mix(in srgb, var(--color-accent-muted) 45%, var(--color-background));
-}
-
-.memory-result__top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-
-.memory-result__type {
-  color: var(--color-accent);
-  font-size: 0.58rem;
-  font-weight: 760;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.memory-result__score {
-  color: var(--color-text-tertiary);
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-}
-
-.memory-result__text {
-  display: -webkit-box;
-  overflow: hidden;
-  margin: 0.4rem 0;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  color: var(--color-text-primary);
-  font-size: 0.8rem;
-  line-height: 1.45;
-}
-
-.memory-result__meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  color: var(--color-text-tertiary);
-  font-size: 0.66rem;
-}
-
-.memory-result__cross {
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  padding: 0.08rem 0.45rem;
-  font-family: var(--font-mono);
-}
-
 /* ── Detail panel ────────────────────────────────────────────────────────── */
 
 .memory-detail-empty {
@@ -622,86 +662,180 @@
   color: var(--color-success);
 }
 
-.memory-feed-panel {
+/* ── Drawer: recent captures, or search results ──
+   Fixed height with its own scroll and a collapse toggle, so the page never scrolls. Items sit in a
+   responsive grid rather than one narrow column, which is most of why the old 340px rail felt
+   cramped for text this long. */
+.memory-drawer {
   display: flex;
   flex-direction: column;
-  min-height: 0;
+  flex: 0 0 auto;
+  height: 13.5rem;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: calc(var(--radius-panel) + 4px);
+  background: color-mix(in srgb, var(--color-surface-1) 94%, var(--color-background));
+  transition: height 240ms var(--ease-brand);
 }
 
-.memory-feed-list {
+.memory-drawer.is-collapsed {
+  height: 2.9rem;
+}
+
+.memory-drawer__bar {
   display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  flex: 0 0 auto;
+  height: 2.9rem;
+  padding: 0 0.9rem;
+}
+
+.memory-drawer__toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  border: 0;
+  background: none;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  padding: 0;
+}
+
+.memory-drawer__chevron {
+  flex: 0 0 auto;
+  color: var(--color-text-tertiary);
+  transition: transform 240ms var(--ease-brand);
+}
+
+.memory-drawer.is-collapsed .memory-drawer__chevron {
+  transform: rotate(-90deg);
+}
+
+.memory-drawer__title {
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.memory-drawer__hint {
+  color: var(--color-text-tertiary);
+  font-size: 0.7rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memory-drawer__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 0.9rem 0.9rem;
+}
+
+.memory-drawer.is-collapsed .memory-drawer__body {
+  display: none;
+}
+
+.memory-drawer__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(19rem, 100%), 1fr));
+  gap: 0.5rem;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.memory-feed-item {
+/* ── One memory, as a card ── */
+.memory-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
   width: 100%;
   height: 100%;
+  padding: 0.6rem 0.7rem 0.6rem 0.95rem;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
   background: var(--color-background);
-  padding: 0.7rem 0.8rem;
+  color: var(--color-text-primary);
   text-align: left;
   cursor: pointer;
+  overflow: hidden;
   transition:
-    transform 160ms ease,
-    border-color 160ms ease,
-    background 160ms ease;
+    border-color 160ms var(--ease-brand),
+    background 160ms var(--ease-brand);
 }
 
-.memory-feed-item:hover,
-.memory-feed-item.is-selected {
-  transform: translateY(-1px);
+.memory-card:hover,
+.memory-card.is-selected {
   border-color: var(--color-accent-border);
-  background: color-mix(in srgb, var(--color-accent-muted) 45%, var(--color-background));
+  background: var(--color-accent-muted);
 }
 
-.memory-feed-item__top {
+/* Type colour as a spine rather than a dot, so the card reads at a glance in a grid. */
+.memory-card__spine {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 3px;
+  opacity: 0.85;
+}
+
+.memory-card__top {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   gap: 0.5rem;
 }
 
-.memory-feed-item__type {
+.memory-card__type {
   color: var(--color-accent);
-  font-size: 0.58rem;
-  font-weight: 760;
-  letter-spacing: 0.1em;
+  font-size: 0.6rem;
+  font-weight: 720;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
 }
 
-.memory-feed-item__time {
+.memory-card__trailing {
+  flex: 0 0 auto;
   color: var(--color-text-tertiary);
-  font-size: 0.64rem;
+  font-size: 0.62rem;
+  font-variant-numeric: tabular-nums;
 }
 
-.memory-feed-item__text {
-  display: -webkit-box;
-  /* Exactly two lines (0.8rem × 1.45 line-height × 2). min == max so cards are uniform AND a hard
-     cap prevents a clipped 3rd line bleeding through below the ellipsis. */
-  min-height: 2.32rem;
-  max-height: 2.32rem;
-  overflow: hidden;
-  margin: 0.5rem 0;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  color: var(--color-text-primary);
-  font-size: 0.8rem;
+.memory-card__text {
+  margin: 0;
+  font-size: 0.78rem;
   line-height: 1.45;
+  /* Three lines, then ellipsis: the full text is one click away in the inspector, and uniform card
+     heights are what make the grid scannable. */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
-.memory-feed-item__meta {
+.memory-card__meta {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
+  gap: 0.4rem;
+  margin-top: auto;
   color: var(--color-text-tertiary);
-  font-size: 0.66rem;
+  font-size: 0.65rem;
+}
+
+.memory-card__cross {
+  padding: 0.05rem 0.35rem;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-3);
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ── Settings ────────────────────────────────────────────────────────────── */
@@ -1224,27 +1358,42 @@
 
 /* ── Responsive ──────────────────────────────────────────────────────────── */
 
+/* The stacked layout needs no restructuring now the rail is gone. Below this width the viewport is
+   too short to give the canvas a useful share of a fixed-height page, so the page grows and scrolls
+   and the canvas takes a fixed slice of the viewport instead. */
 @media (max-width: 1180px) {
   .memory-page {
     height: auto;
   }
 
-  .memory-workspace {
-    grid-template-columns: 1fr;
+  .memory-stage {
+    height: min(58vh, 560px);
+    flex: 0 0 auto;
+  }
+}
+
+/* Narrow enough that a 24rem sheet is most of the screen: let it cover the canvas entirely. */
+@media (max-width: 640px) {
+  .memory-inspector {
+    width: 100%;
+    border-left: 0;
   }
 
-  .memory-canvas {
-    height: min(62vh, 620px);
+  .memory-toolbar {
+    flex-wrap: wrap;
   }
 
-  .memory-rail {
-    overflow: visible;
+  .memory-searchbar {
+    order: 3;
+    flex-basis: 100%;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .brain-dot__orb,
-  .memory-feed-item,
+  .memory-card,
+  .memory-drawer,
+  .memory-inspector,
   .memory-overlay__scrim,
   .memory-overlay__sheet,
   .memory-flow .react-flow__edge.animated path {

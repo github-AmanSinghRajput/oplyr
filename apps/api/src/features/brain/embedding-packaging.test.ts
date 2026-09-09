@@ -12,7 +12,7 @@ import url from 'node:url';
  * been missing one of the library's dependencies, and both times the symptom was the same: the
  * import fails at load, every brain memory is stored with no vector, and semantic recall silently
  * degrades to keyword overlap in a shipped build. `onnxruntime-node` cost us every release through
- * 0.4.1; `sharp` was caught only because 0.5.0 added the "Keyword only" warning to the UI.
+ * 0.4.1; `sharp` was caught only because the "Keyword only" warning was added to the UI in this cycle.
  *
  * These tests read the library's real source and assert the list still covers it, so the next
  * missing dependency fails here instead of in a DMG.

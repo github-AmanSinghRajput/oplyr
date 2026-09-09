@@ -1,4 +1,10 @@
-import type { AssistantProviderId, BrainAtomType } from '@/containers/voice-console/lib/types';
+import type {
+  AssistantProviderId,
+  BrainAtom,
+  BrainAtomScope,
+  BrainAtomType,
+  BrainRecallAtom
+} from '@/containers/voice-console/lib/types';
 
 /** Full agent display names (mirrors getProviderLabel in use-app-settings). */
 export const providerLabels: Record<AssistantProviderId, string> = {
@@ -53,4 +59,48 @@ export function cleanAtomText(text: string): string {
     .replace(/^\s*(decision|decided|preference|convention|fact|entity)\s*[:-]\s*/i, '')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/**
+ * One row in the memory drawer. Recent captures and search results are different shapes from the
+ * API but read identically in the UI, so they are normalised here and the drawer stays presentational.
+ */
+export interface MemoryDrawerItem {
+  id: string;
+  type: BrainAtomType;
+  scope: BrainAtomScope;
+  text: string;
+  /** Who asserted it. */
+  meta: string;
+  sensitive: boolean;
+  /** Right-aligned hint: a timestamp for recent captures, a relevance score for results. */
+  trailing: string;
+  /** Set when a result comes from a different project than the one being searched from. */
+  otherProject: string | null;
+}
+
+export function recentToDrawerItems(atoms: BrainAtom[]): MemoryDrawerItem[] {
+  return atoms.map((atom) => ({
+    id: atom.id,
+    type: atom.type,
+    scope: atom.scope,
+    text: cleanAtomText(atom.text) || atom.text,
+    meta: formatContributors(atom.contributors.map((c) => c.providerId)),
+    sensitive: atom.sensitivity === 'sensitive',
+    trailing: formatDateTime(atom.lastSeenAt),
+    otherProject: null
+  }));
+}
+
+export function resultsToDrawerItems(atoms: BrainRecallAtom[]): MemoryDrawerItem[] {
+  return atoms.map((atom) => ({
+    id: atom.id,
+    type: atom.type,
+    scope: atom.scope,
+    text: cleanAtomText(atom.text) || atom.text,
+    meta: formatContributors(atom.contributors),
+    sensitive: atom.sensitivity === 'sensitive',
+    trailing: `${Math.round(atom.score * 100)}%`,
+    otherProject: atom.crossProject ? (atom.projectKey ?? 'other project') : null
+  }));
 }

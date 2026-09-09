@@ -342,7 +342,7 @@ login-free download).
 
 ---
 
-## Quick status (updated 2026-09 — shipping 0.5.0)
+## Quick status (updated 2026-09 — shipping 0.5.1)
 
 Everything below Phase 0 is DONE and now reads as background. The commands you actually run each
 release are in the [release runbook](#release-runbook) at the top of this file;

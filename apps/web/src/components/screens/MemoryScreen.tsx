@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BrainCircuit, MousePointerClick, Settings2 } from 'lucide-react';
+import { BrainCircuit, Settings2 } from 'lucide-react';
 import { useApi } from '@/providers/ApiProvider';
 import type {
   BrainGraphResponse,
@@ -9,10 +9,10 @@ import type {
 } from '@/containers/voice-console/lib/types';
 import { MemoryStatusPill } from './memory/MemoryStatusPill';
 import { MemoryGraph } from './memory/MemoryGraph';
-import { MemorySearch } from './memory/MemorySearch';
-import { MemoryAtomDetail } from './memory/MemoryAtomDetail';
-import { MemoryLinkInspector } from './memory/MemoryLinkInspector';
-import { MemoryCaptureFeed } from './memory/MemoryCaptureFeed';
+import { MemorySearchBox } from './memory/MemorySearch';
+import { MemoryInspector } from './memory/MemoryInspector';
+import { MemoryDrawer } from './memory/MemoryDrawer';
+import { recentToDrawerItems, resultsToDrawerItems } from './memory/memory-shared';
 import { MemorySettingsOverlay } from './memory/MemorySettingsOverlay';
 import { resolveAtomDetail } from './memory/memory-atom-detail-model';
 import { useBrainEvents } from './memory/use-brain-events';
@@ -34,6 +34,7 @@ export function MemoryScreen({ refreshNonce }: { refreshNonce?: number }) {
   const [loading, setLoading] = useState(false);
   const [searching, setSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
+  const [drawerCollapsed, setDrawerCollapsed] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [livePulse, setLivePulse] = useState(false);
@@ -139,8 +140,22 @@ export function MemoryScreen({ refreshNonce }: { refreshNonce?: number }) {
     };
   }, []);
 
+  /** Return the drawer to the live capture feed, as if no search had happened. */
+  const resetSearch = useCallback(() => {
+    setQuery('');
+    setSearchResults([]);
+    setHasSearched(false);
+    setSearching(false);
+  }, []);
+
   const runSearch = useCallback(
     async (nextQuery: string) => {
+      // Clearing the box and pressing Enter reverts to the pre-search state. It used to send the
+      // empty string to the API and leave the results view pinned open with nothing in it.
+      if (!nextQuery.trim()) {
+        resetSearch();
+        return;
+      }
       setSearching(true);
       setHasSearched(true);
       setError(null);
@@ -154,7 +169,7 @@ export function MemoryScreen({ refreshNonce }: { refreshNonce?: number }) {
         setSearching(false);
       }
     },
-    [service]
+    [resetSearch, service]
   );
 
   const updateSettings = useCallback<BrainSettingsUpdate>(
@@ -297,101 +312,79 @@ export function MemoryScreen({ refreshNonce }: { refreshNonce?: number }) {
     <div className="memory-page">
       {error ? <div className="memory-error">{error}</div> : null}
 
-      <div className="memory-workspace">
-        <section className="memory-canvas">
-          <MemoryStatusPill
-            status={status}
-            busy={busy === 'settings'}
-            onToggleEnabled={(enabled) =>
-              updateSettings({ enabled }, (current) => ({ ...current, enabled }))
-            }
-          />
+      <div className="memory-toolbar">
+        <MemoryStatusPill
+          status={status}
+          busy={busy === 'settings'}
+          onToggleEnabled={(enabled) =>
+            updateSettings({ enabled }, (current) => ({ ...current, enabled }))
+          }
+        />
 
-          <button
-            type="button"
-            className="memory-canvas__gear"
-            onClick={() => setSettingsOpen(true)}
-            aria-label="Open memory settings"
-            title="Memory settings"
-          >
-            <Settings2 size={16} />
-          </button>
+        <MemorySearchBox
+          query={query}
+          searching={searching}
+          matchCount={hasSearched ? searchResults.length : null}
+          onQueryChange={setQuery}
+          onSubmit={(next) => void runSearch(next)}
+          onReset={resetSearch}
+        />
 
-          {hasGraph ? (
-            <MemoryGraph
-              nodes={graph.nodes}
-              edges={graph.edges}
-              selectedId={selectedId}
-              selectedEdgeId={selectedEdgeId}
-              onSelectNode={selectNode}
-              onSelectEdge={selectEdge}
-              onClear={clearSelection}
-            />
-          ) : (
-            <div className="memory-empty-state">
-              <BrainCircuit size={30} />
-              <strong>{loading ? 'Loading the graph…' : 'No memories yet'}</strong>
-              <p>
-                Just talk to your agent — share how you like to work or a decision for this project,
-                and Oplyr distills a durable memory from each turn and draws it here.
-              </p>
-            </div>
-          )}
-        </section>
-
-        <aside className="memory-rail">
-          <MemorySearch
-            results={searchResults}
-            query={query}
-            searching={searching}
-            hasSearched={hasSearched}
-            selectedId={selectedId}
-            onQueryChange={setQuery}
-            onSearch={(next) => void runSearch(next)}
-            onSelectResult={selectNode}
-          />
-
-          <div className="memory-rail__inspector">
-            {selectedEdge ? (
-              <MemoryLinkInspector
-                edge={selectedEdge}
-                source={edgeSource}
-                target={edgeTarget}
-                onSelectNode={selectNode}
-              />
-            ) : selectedDetail ? (
-              <MemoryAtomDetail
-                detail={selectedDetail}
-                busy={busy === selectedDetail.id}
-                onDelete={deleteAtom}
-              />
-            ) : (
-              <section className="memory-panel memory-detail-panel">
-                <div className="memory-panel__header">
-                  <div>
-                    <p className="memory-eyebrow">Inspector</p>
-                    <h3>Nothing selected</h3>
-                  </div>
-                </div>
-                <div className="memory-detail-empty">
-                  <MousePointerClick size={18} />
-                  <p>
-                    Click a dot to inspect a memory, or click a line between two dots to see what
-                    they share. Search results and feed items work too.
-                  </p>
-                </div>
-              </section>
-            )}
-          </div>
-
-          <MemoryCaptureFeed
-            atoms={recentAtoms}
-            selectedId={selectedId}
-            live={livePulse}
-            onSelect={selectNode}
-          />
-        </aside>
+        <button
+          type="button"
+          className="memory-toolbar__gear"
+          onClick={() => setSettingsOpen(true)}
+          aria-label="Open memory settings"
+          title="Memory settings"
+        >
+          <Settings2 size={16} />
+        </button>
       </div>
+
+      <div className="memory-stage">
+        {hasGraph ? (
+          <MemoryGraph
+            nodes={graph.nodes}
+            edges={graph.edges}
+            selectedId={selectedId}
+            selectedEdgeId={selectedEdgeId}
+            onSelectNode={selectNode}
+            onSelectEdge={selectEdge}
+            onClear={clearSelection}
+          />
+        ) : (
+          <div className="memory-empty-state">
+            <BrainCircuit size={30} />
+            <strong>{loading ? 'Loading the graph…' : 'No memories yet'}</strong>
+            <p>
+              Just talk to your agent — share how you like to work or a decision for this project,
+              and Oplyr distills a durable memory from each turn and draws it here.
+            </p>
+          </div>
+        )}
+
+        <MemoryInspector
+          detail={selectedDetail}
+          edge={selectedEdge}
+          edgeSource={edgeSource}
+          edgeTarget={edgeTarget}
+          busy={busy === selectedDetail?.id}
+          onSelectNode={selectNode}
+          onDelete={deleteAtom}
+          onClose={clearSelection}
+        />
+      </div>
+
+      <MemoryDrawer
+        items={hasSearched ? resultsToDrawerItems(searchResults) : recentToDrawerItems(recentAtoms)}
+        mode={hasSearched ? 'results' : 'recent'}
+        query={query}
+        live={livePulse}
+        selectedId={selectedId}
+        collapsed={drawerCollapsed}
+        onToggleCollapsed={() => setDrawerCollapsed((value) => !value)}
+        onSelect={selectNode}
+      />
 
       <MemorySettingsOverlay
         open={settingsOpen}
