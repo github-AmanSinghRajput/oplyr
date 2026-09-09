@@ -9,6 +9,35 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/): **Added 
 
 ---
 
+## 0.5.2 — 2026-09-09
+
+Semantic recall still did not run in 0.5.1. Same path, third packaging fault, and the one this
+release is for.
+
+**Fixed**
+
+- **The Brain embeds again.** 0.5.1 shipped a stand-in for `sharp` that exported `null`, on the
+  reading that `@xenova/transformers`' `utils/image.js` guards its use with `else if (sharp)`. Two
+  lines past that guard the chain ends in
+  `else { throw new Error('Unable to load image processing library.') }`, so a falsy value does not
+  disable image handling — it throws while the module is still loading. The embedding path died at
+  import exactly as it had when the package was missing altogether, every memory was stored without
+  a vector, and recall fell back to matching keywords. The stand-in is now truthy, which is all the
+  branch requires: the image code it selects is never reached, because the brain only ever embeds
+  text. Memories written by 0.4.x, 0.5.0 or 0.5.1 are re-embedded on first launch.
+
+**Internal**
+
+- The test that vouched for this was worthless and passed throughout. It read the library's source
+  and asserted the guard existed, which said nothing about the branch below it. It now assembles the
+  dependency set the DMG actually ships, loads the real library against it, and asserts a
+  384-dimension vector comes out. It also runs under `--preserve-symlinks`: without that, Node
+  resolves each symlinked package to its realpath and then resolves `sharp` from there, i.e. out of
+  the fixture and into the repo's real copy, so an earlier version of this test embedded happily
+  against a deliberately broken stub. Verified to fail on the exact bundle 0.5.1 shipped.
+
+---
+
 ## 0.5.1 — 2026-09-09
 
 The Brain release. Semantic recall has been in the product since 0.3.0 and has never actually run in

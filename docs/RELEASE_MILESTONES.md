@@ -10,14 +10,14 @@ If a milestone or feature is not useful for deciding product direction or execut
 
 ## Where we actually are
 
-**Shipping 0.5.1 (2026-09-09).** Signed + notarized DMG, auto-update via electron-updater, invite-gated
+**Shipping 0.5.2 (2026-09-09).** Signed + notarized DMG, auto-update via electron-updater, invite-gated
 download. The 0.1 and 0.2 phases below are complete — packaging, signing, distribution, the website
 and the download flow are all live and have carried five releases (0.2.x → 0.3.x → 0.4.x → 0.5.x).
 
 Since those phases were written, these also shipped and are **not** reflected in the checklists below:
 Agentic Chat (the `@mention` multi-agent room, 0.3.0), live per-agent usage limits, the Brain with
 semantic recall + import of existing agent context files (0.4.0), nested-repo review diffs (0.4.0),
-the codebase map, and — in 0.5.1 — the Plum × Linen redesign, keyterm-biased voice, rich markdown
+the codebase map, and — in 0.5.x — the Plum × Linen redesign, keyterm-biased voice, rich markdown
 with Mermaid, and the Brain repair (semantic recall had never run in a packaged build).
 
 > The 0.1/0.2 checklists are kept as a record of what the beta bar was. Treat **0.4.x → 1.0** as the

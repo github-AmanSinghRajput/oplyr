@@ -74,14 +74,32 @@ check('app inside the DMG', () => {
     ]).trim();
     if (shipped !== version) throw new Error(`app is ${shipped}, expected ${version}`);
 
-    // Both of these have shipped broken before: the embedding runtime needs sharp and
-    // onnxruntime-node to RESOLVE, or every memory is stored with no vector.
+    // Presence is not enough, and checking presence is how 0.5.1 shipped broken: `sharp` was in
+    // the bundle but exported a falsy value, which makes transformers throw while loading. So
+    // actually IMPORT the library from the DMG's own node_modules. That directory is a real copy,
+    // not a symlink, so resolution here is exactly the packaged app's.
+    const apiDir = path.join(app, 'Contents/Resources/api');
     for (const dep of ['sharp', 'onnxruntime-node']) {
-      if (!existsSync(path.join(app, 'Contents/Resources/api/node_modules', dep))) {
+      if (!existsSync(path.join(apiDir, 'node_modules', dep))) {
         throw new Error(`${dep} is not in the bundle — semantic recall will not run`);
       }
     }
-    return `v${shipped}, embedding deps present`;
+
+    // Only `utils/image.js`, not the whole library. Importing all of transformers pulls in
+    // onnxruntime's native binding, and dlopen refuses it from a foreign process on a signed app
+    // ("library load disallowed by system policy") — which would fail every correct build. image.js
+    // is where the sharp branch lives, so it is both the narrowest and the only relevant check.
+    const probe = spawnSync(
+      process.execPath,
+      ['--input-type=module', '-e', "await import('@xenova/transformers/src/utils/image.js');"],
+      { cwd: apiDir, encoding: 'utf8', timeout: 60_000 }
+    );
+    if (probe.status !== 0) {
+      const why = (probe.stderr ?? '').split('\n').find((line) => /Error/.test(line)) ?? 'unknown';
+      throw new Error(`the embedding runtime does not load from the bundle: ${why.trim()}`);
+    }
+
+    return `v${shipped}, embedding runtime loads from the bundle`;
   } finally {
     try {
       run('hdiutil', ['detach', '-quiet', mount]);
@@ -109,7 +127,9 @@ for (const line of ok) console.log(`  ok    ${line}`);
 for (const line of failures) console.error(`  FAIL  ${line}`);
 
 if (failures.length > 0) {
-  console.error(`\ndist verification failed (${failures.length}). Do not sign or publish this build.`);
+  console.error(
+    `\ndist verification failed (${failures.length}). Do not sign or publish this build.`
+  );
   process.exit(1);
 }
 console.log(

@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import url from 'node:url';
 
@@ -90,29 +92,81 @@ test('every package transformers statically imports is shipped into the packaged
   );
 });
 
-test('running without the real sharp is still the librarys supported configuration', () => {
-  // We ship a stub for sharp rather than 25MB of image codecs plus a 37-package closure. That is
-  // only safe while the library keeps tolerating a falsy sharp. Both facts below are what make it
-  // safe; if either changes, ship the real package instead of the stub.
-  const pkg = JSON.parse(
-    fs.readFileSync(path.join(transformersSrc, '..', 'package.json'), 'utf8')
-  ) as { browser?: Record<string, unknown> };
+test('the embedding runtime actually loads and embeds with the shipped sharp stub', async () => {
+  // This replaces two tests that read the library's SOURCE and asserted the sharp guard existed.
+  // They passed while the app was broken: `utils/image.js` guards its usage with `else if (sharp)`
+  // but ends in `else { throw new Error('Unable to load image processing library.') }`, so a falsy
+  // stub does not disable image support, it throws at module load. 0.5.1 shipped that way.
+  //
+  // So this asserts the outcome instead of the shape: assemble exactly what the DMG puts in
+  // `api/node_modules` — the enumerated dependencies plus our stub standing in for sharp — and
+  // make the real library embed a sentence in it. Runs in a child process because module
+  // resolution is per-directory and cannot be redirected in-process.
+  const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'oplyr-embed-'));
+  try {
+    const modules = path.join(sandbox, 'node_modules');
+    fs.mkdirSync(path.join(modules, '@xenova'), { recursive: true });
+    fs.mkdirSync(path.join(modules, '@huggingface'), { recursive: true });
 
-  assert.equal(
-    pkg.browser?.sharp,
-    false,
-    'transformers no longer declares sharp as omittable, so the stub may not be safe'
-  );
+    for (const dep of [
+      '@xenova/transformers',
+      '@huggingface/jinja',
+      'onnxruntime-node',
+      'onnxruntime-web',
+      'onnxruntime-common'
+    ]) {
+      fs.symlinkSync(path.join(repoRoot, 'node_modules', dep), path.join(modules, dep));
+    }
+    fs.cpSync(
+      path.join(repoRoot, 'apps/desktop/resources/sharp-stub'),
+      path.join(modules, 'sharp'),
+      {
+        recursive: true
+      }
+    );
+    fs.writeFileSync(path.join(sandbox, 'package.json'), '{"type":"module"}');
 
-  const imageSource = fs.readFileSync(path.join(transformersSrc, 'utils/image.js'), 'utf8');
-  assert.match(
-    imageSource,
-    /else if \(sharp\)/,
-    'utils/image.js no longer guards its sharp usage, so a stub would break image handling'
-  );
+    const probe = path.join(sandbox, 'probe.mjs');
+    fs.writeFileSync(
+      probe,
+      [
+        "const t = await import('@xenova/transformers');",
+        't.env.allowRemoteModels = false;',
+        `t.env.localModelPath = ${JSON.stringify(path.join(repoRoot, 'apps/api/models'))};`,
+        `t.env.cacheDir = ${JSON.stringify(path.join(sandbox, 'cache'))};`,
+        "const extractor = await t.pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');",
+        "const out = await extractor(['the retry budget is three attempts'], { pooling: 'mean', normalize: true });",
+        'process.stdout.write(`DIMS:${out.data.length}`);'
+      ].join('\n')
+    );
+
+    // `--preserve-symlinks` is load-bearing. Without it Node resolves each symlink to its realpath
+    // and then resolves `sharp` relative to THAT, i.e. back out of the sandbox and into the repo's
+    // real sharp — so the first version of this test embedded happily with a deliberately broken
+    // stub. The DMG copies these directories rather than linking them, so preserving the link path
+    // is what reproduces the packaged app's resolution.
+    const result = spawnSync(process.execPath, ['--preserve-symlinks', probe], {
+      cwd: sandbox,
+      encoding: 'utf8',
+      timeout: 120_000
+    });
+
+    assert.equal(
+      result.status,
+      0,
+      `the embedding runtime failed to load with the shipped dependency set:\n${result.stderr}`
+    );
+    assert.match(
+      result.stdout,
+      /DIMS:384/,
+      `expected a 384-dimension MiniLM vector, got: ${result.stdout}`
+    );
+  } finally {
+    fs.rmSync(sandbox, { recursive: true, force: true });
+  }
 });
 
-test('the shipped sharp stub resolves and exports a falsy default', async () => {
+test('the shipped sharp stub resolves and exports a TRUTHY default', async () => {
   const stubDir = path.join(repoRoot, 'apps/desktop/resources/sharp-stub');
   const pkg = JSON.parse(fs.readFileSync(path.join(stubDir, 'package.json'), 'utf8')) as {
     name: string;
@@ -124,5 +178,6 @@ test('the shipped sharp stub resolves and exports a falsy default', async () => 
   const loaded = (await import(url.pathToFileURL(path.join(stubDir, 'index.mjs')).href)) as {
     default: unknown;
   };
-  assert.equal(loaded.default, null, 'image.js branches on `else if (sharp)`, so it must be falsy');
+  // Truthy, not falsy: image.js throws on a falsy sharp rather than disabling image support.
+  assert.ok(loaded.default, 'a falsy default makes utils/image.js throw at module load');
 });
