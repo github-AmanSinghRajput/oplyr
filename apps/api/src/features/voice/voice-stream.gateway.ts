@@ -7,7 +7,7 @@ import { logger } from '../../lib/logger.js';
 import { matchesLocalApiAuthToken } from '../../lib/local-api-auth.js';
 import { getDefaultSttStreamWorkerCommand, resolveLoginShell } from '../../runtime-paths.js';
 import { collectWorkspaceKeyterms } from './voice-keyterms.source.js';
-import { getWorkspaceState } from '../../runtime.js';
+import { getRuntimeState, getWorkspaceState, resetVoiceSessionState } from '../../runtime.js';
 
 const TYPE_AUDIO = 0;
 const TYPE_FINALIZE = 1;
@@ -88,6 +88,14 @@ export function attachVoiceStreamGateway(server: Server, options: VoiceStreamGat
       if (released) return;
       released = true;
       activeStreams -= 1;
+      // The socket closing IS the end of the voice session, however it ended: finalize, cancel,
+      // a dropped connection, or a worker crash. Nothing was releasing the runtime's `active`
+      // flag on the normal path — only an explicit stop endpoint the UI never called on send —
+      // so it was set on the first recording and stayed set for the life of the process, and
+      // every later start was refused. Measured on a real install: 2 starts, 0 stops, 3 refused.
+      if (getRuntimeState().voiceSession.active) {
+        resetVoiceSessionState('idle');
+      }
     };
 
     // Bias decoding toward this project's own words — its name, branch, filenames, dependencies.

@@ -1,3 +1,5 @@
+import type { TurnTokenUsage } from './features/chat/turn-usage.js';
+
 export type ChatRole = 'user' | 'assistant';
 export type ChatSource = 'voice' | 'text';
 export type ChatAttachmentKind = 'image' | 'text' | 'code' | 'file';
@@ -39,6 +41,8 @@ export interface ChatMessage {
   authorProviderId?: AssistantProviderId | null;
   /** Present on assistant messages when recall injected memory (live-only; not persisted). */
   memory?: ChatMemoryUsage;
+  /** What this turn cost, as reported by the agent's own CLI (live-only; not persisted). */
+  tokenUsage?: TurnTokenUsage;
 }
 
 export interface LogStore {

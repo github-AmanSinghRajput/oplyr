@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { ChatMessage, PendingApproval, WorkspaceState } from './types.js';
 import type { ClaudeSettingsService } from './features/claude/claude-settings.service.js';
 import { logger } from './lib/logger.js';
+import { extractTurnUsage, type TurnTokenUsage } from './features/chat/turn-usage.js';
 import { getRootDir } from './store.js';
 import { getPortableAssistantCwd } from './runtime-paths.js';
 
@@ -31,6 +32,8 @@ interface StreamReplyOptions {
   voiceTurnId?: string;
   signal?: AbortSignal;
   onTextSnapshot?: (text: string) => void;
+  /** What the turn cost, once Claude reports it on the result event. */
+  onUsage?: (usage: TurnTokenUsage) => void;
   onActivityUpdate?: (activity: string) => void;
 }
 
@@ -646,6 +649,7 @@ export async function streamClaudeReply(
       signal: options?.signal,
       onTextSnapshot: options?.onTextSnapshot,
       onActivityUpdate: options?.onActivityUpdate,
+      onUsage: options?.onUsage,
       executionContext: {
         surface: options?.voiceTurnId ? 'voice' : 'text',
         intent: 'discussion'
@@ -679,6 +683,8 @@ async function runClaudePromptStream(options: {
   signal?: AbortSignal;
   outputSchema?: unknown;
   onTextSnapshot?: (text: string) => void;
+  /** What the turn cost, once Claude reports it on the result event. */
+  onUsage?: (usage: TurnTokenUsage) => void;
   onActivityUpdate?: (activity: string) => void;
   executionContext?: { surface: 'voice' | 'text'; intent: 'discussion' | 'write' };
 }) {
@@ -782,6 +788,11 @@ async function runClaudePromptStream(options: {
       }
 
       if (message.type === 'result') {
+        // `usage` on the result is what the whole turn cost. Claude reports no total, so
+        // extractTurnUsage sums it (without double-counting thinking tokens, which sit inside
+        // output_tokens).
+        const usage = extractTurnUsage(message);
+        if (usage) options.onUsage?.(usage);
         if (message.is_error === true) {
           const errorText =
             extractClaudeResultErrorMessage(message) ??

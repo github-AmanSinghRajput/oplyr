@@ -10,7 +10,7 @@ If a milestone or feature is not useful for deciding product direction or execut
 
 ## Where we actually are
 
-**Shipping 0.5.2 (2026-09-09).** Signed + notarized DMG, auto-update via electron-updater, invite-gated
+**Shipping 0.5.4 (2026-09-10).** Signed + notarized DMG, auto-update via electron-updater, invite-gated
 download. The 0.1 and 0.2 phases below are complete — packaging, signing, distribution, the website
 and the download flow are all live and have carried five releases (0.2.x → 0.3.x → 0.4.x → 0.5.x).
 

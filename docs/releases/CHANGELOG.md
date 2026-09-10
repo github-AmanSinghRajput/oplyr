@@ -9,6 +9,120 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/): **Added 
 
 ---
 
+## 0.5.4 — 2026-09-10
+
+Voice and the workspace, rebuilt for a desktop window. Plus what every turn costs.
+
+**Added**
+
+- **Every reply shows what it cost.** A token count sits on the same quiet line as the recalled
+  memories, expandable to the breakdown (input, cached prompt, output, and how much of the output
+  was reasoning). Read from the agent's own CLI, so it is what you were actually charged, not an
+  estimate. It is stored with the message, so a restart does not lose it: the count cannot be
+  recovered afterwards, because the CLI reports it exactly once during the turn, and it is the
+  basis for measuring what the Brain saves over time. Replies from earlier versions have no stored
+  count and show no chip. No comparison against "what the agent alone would have cost" is shown, because there is
+  no measured baseline for that and inventing one would make the most interesting number in the
+  product the least trustworthy.
+- **Long pasted messages collapse.** Drop in a stack trace or a page of logs and it clips to about
+  eight lines, fades out, and expands on click. Whether it overflows is measured rather than
+  guessed from length, so a message that already fits never grows a pointless "show more".
+- **Tooltips, everywhere.** The provider was mounted in four files while eighteen fell back to the
+  browser's own `title`, so most of the product had no usable tooltip at all. Every icon-only
+  control can now explain itself, and a control that is disabled says why.
+
+**Changed**
+
+- **The voice screen is two panes instead of a column.** It was a tower down the middle of a wide
+  screen, and every long reply pushed the mic further down it. Now your side is on the left — the
+  field, the control, and any transcript awaiting your approval — and the agent's side is on the
+  right, scrolling in place. The control never moves.
+- **A new voice field.** Three orbs rest still on one line and swim when you speak, each on its own
+  non-repeating path, trailing fine threads that cross in depth. It replaces a row of bars, which
+  was an honest level readout and looked like instrumentation: a human voice at conversational
+  volume is mostly a flat line, so the old meter read as "nothing is happening".
+- **The mic explains itself, and how long a turn has taken.** One button does three jobs — start,
+  stop-and-send, stop-the-agent — so it now says which, carries a live input ring answering "is it
+  hearing me?", and shows elapsed time while the agent works. A long turn and a stuck one used to
+  look identical.
+- **The workspace screen is a status bar and three columns.** Six stacked blocks became the two
+  decisions it is actually about, side by side. Three read-only cards are gone: they restated the
+  connected path and the write policy that were already on screen, and cost a third of the height
+  for no new fact.
+- **Browsing for a folder connects it.** It used to fill the box and wait for a second click, which
+  made the picker feel like it had not worked. The button also stops saying "switch" to someone who
+  has never connected anything, and there is now an indicator for a typed path that is not yet live.
+- **Importable memory is grouped by project, and searchable.** One expandable row per project with
+  a truthful count, and a filter once there are more than a handful. Sessions are one file per
+  conversation, so a flat list of a busy project was a wall of rows sharing a name and differing
+  only by date.
+
+**Fixed**
+
+- **The mic went dead after the first turn.** The voice session was started and never stopped: the
+  send path never told the server the session had ended, so its `active` flag was set on the first
+  recording and stayed set for the life of the process. Every later tap was then refused in two
+  places at once — the server returned the unchanged state, and the client returned before making a
+  request — with nothing to tell you why. Measured on a real install: two starts, zero stops, three
+  refused taps. The socket closing now releases the session however it ended, and both start paths
+  recover from a stale flag instead of discarding your tap.
+- **Token counts never appeared.** Twice, for different reasons. The callback was declared on every
+  options interface in both clients, fired correctly inside both, and never passed between the two —
+  a hand-off no compiler can catch, because both shapes are valid with the property absent. Then,
+  once connected, it was reading `turn/completed`, which carries no usage: Codex reports cost on its
+  own `thread/tokenUsage/updated` notification. The forwarding now has a test that asserts all three
+  links, and a turn that completes without usage says so in the log rather than leaving a missing
+  chip to be discovered by a user.
+- **The voice field was the wrong colour in light mode.** It read a CSS variable that does not exist
+  in this app, so it silently fell back to a hardcoded dark-mode plum, permanently.
+- **"Already imported" no longer reads as a failed import.** The folder you actually work in grows a
+  new session file every time you talk to your agent, so its most recent three differ on every
+  scan — correct, but "3 to add" beside "14 in your brain" was read as the import having failed. It
+  now distinguishes a source that has never been imported from a conversation that happened
+  afterwards.
+- **A group no longer goes blind while importing.** Its checkbox was hidden for the duration of a
+  run, so selected, queued and finished all looked the same and a running import looked idle. The
+  row now shows its own progress and opens so you can watch it.
+
+---
+
+## 0.5.3 — 2026-09-09
+
+0.5.2 could not start. This is the fix, and the checks that make that failure unshippable.
+
+**Fixed**
+
+- **The app boots.** 0.5.2 packaged a `better-sqlite3` built for Node 24 (ABI 137) while Electron 42
+  loads ABI 146, so the API process died immediately with `ERR_DLOPEN_FAILED`. With no backend the
+  frontend could only report a generic "voice setup failed" on the first onboarding step, which is
+  where every user stopped. Native modules are now rebuilt for Electron as part of packaging rather
+  than by a step someone has to remember, and the build refuses to finish if the shipped ABI does
+  not match Electron's.
+- **One window, one Oplyr.** There was no single-instance lock, so a second launch started a second
+  copy: two windows, two API processes, and a fight over port 8787 whose loser could only report a
+  generic startup failure. An update relaunching before the old process has exited is the usual way
+  in, and double-clicking an app that looks stuck is the other. A second launch now focuses the
+  window you already have.
+- **Updates arrive when they are published.** A running app checked for a new release every six
+  hours, so a build could sit unseen for most of a day and quitting and relaunching was the only
+  reliable way to get it. It now checks **every minute**, whenever you return to the window, and
+  when the machine wakes from sleep. A release that fixes a build which cannot start is only useful
+  if it reaches people quickly, and they cannot help themselves in the meantime. The feed is a few
+  KB of Atom served by github.com, not the rate-limited REST API, so this is the same load as an
+  ordinary feed reader — and it backs off if the feed starts failing.
+
+**Internal**
+
+- `dist:mac` runs `rebuild:native` itself, then verifies the artifact it produced: DMG checksum, the
+  app version inside it, that the embedding runtime loads from the bundle, that the update feed
+  points at the zip, and that every native binding matches Electron's ABI. Verified to reject the
+  exact 0.5.2 DMG that shipped.
+- The ABI check reads the compiled binding rather than `build/config.gypi`. That metadata still said
+  `runtime: electron` on a tree whose `.node` had since been replaced by a Node build, because
+  `prebuild-install` overwrites the binary without touching it.
+
+---
+
 ## 0.5.2 — 2026-09-09
 
 Semantic recall still did not run in 0.5.1. Same path, third packaging fault, and the one this

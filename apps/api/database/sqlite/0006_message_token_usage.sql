@@ -1,0 +1,12 @@
+-- What a turn cost, as reported by the agent's own CLI.
+--
+-- This was live-only at first, which meant the count vanished on the next app launch: the reply was
+-- still there, its price was not. That is the wrong lifetime for it. Token usage is a record of
+-- something that happened, it is the basis for comparing how much the Brain actually saves over
+-- time, and it cannot be recomputed after the fact — the CLI only reports it once, during the turn.
+--
+-- Stored as JSON rather than five columns because it is read as a whole and never queried by part,
+-- and because providers keep adding fields (cache writes, reasoning splits) that we should be able
+-- to keep without a migration each time. NULL for user messages and for any reply whose provider
+-- reported nothing.
+ALTER TABLE conversation_messages ADD COLUMN token_usage TEXT;

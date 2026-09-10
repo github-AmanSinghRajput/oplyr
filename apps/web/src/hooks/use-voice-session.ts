@@ -539,8 +539,20 @@ export function useVoiceSession({
   }, [chat, finalizeAndStop, service, updateVoiceSession]);
 
   const onStart = useCallback(async () => {
-    if (sessionActiveRef.current || processingTurnRef.current) {
+    // These flags used to be an unconditional refusal, which made the mic button a silent no-op
+    // whenever one of them got stuck: no request, no state change, nothing to tell the user why.
+    // A turn that hung left `processingTurnRef` set for as long as the agent ran, and taps during
+    // that window did literally nothing. Treat a tap as authoritative instead: if nothing is
+    // actually live, the flags are stale, so clear them and start.
+    const liveSocket = wsRef.current?.readyState === WebSocket.OPEN;
+    if ((sessionActiveRef.current || processingTurnRef.current) && liveSocket) {
+      // Genuinely mid-session: the caller wants to finish this turn, not open a second one.
       return;
+    }
+    if (sessionActiveRef.current || processingTurnRef.current) {
+      sessionActiveRef.current = false;
+      processingTurnRef.current = false;
+      isFinalizingRef.current = false;
     }
 
     stopRequestedRef.current = false;

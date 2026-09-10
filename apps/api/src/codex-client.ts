@@ -15,6 +15,7 @@ import type {
   WorkspaceState
 } from './types.js';
 import { logger } from './lib/logger.js';
+import { extractTurnUsage, type TurnTokenUsage } from './features/chat/turn-usage.js';
 import { detectRepos } from './features/workspaces/repo-detector.js';
 import { isProtectedWorkspacePath } from './lib/path-security.js';
 import { getRootDir } from './store.js';
@@ -135,6 +136,8 @@ interface StreamReplyOptions {
   signal?: AbortSignal;
   onTextSnapshot?: (text: string) => void;
   onActivityUpdate?: (activity: string) => void;
+  /** What the turn cost, once the provider reports it. */
+  onUsage?: (usage: TurnTokenUsage) => void;
 }
 
 const systemPrompt = [
@@ -481,6 +484,8 @@ async function runCodexPromptStream(options: {
   signal?: AbortSignal;
   onTextSnapshot?: (text: string) => void;
   onActivityUpdate?: (activity: string) => void;
+  /** What the turn cost, once the provider reports it. */
+  onUsage?: (usage: TurnTokenUsage) => void;
   executionContext?: { surface: 'voice' | 'text'; intent: 'discussion' | 'write' };
 }) {
   const executionSettings = await getExecutionOverrides(options.executionContext);
@@ -501,6 +506,7 @@ async function runCodexPromptStream(options: {
     let finalText = '';
     let latestText = '';
     let lastActivity = '';
+    let sawUsage = false;
     let abortListener: (() => void) | null = null;
 
     const cleanup = () => {
@@ -669,7 +675,35 @@ async function runCodexPromptStream(options: {
         return;
       }
 
+      // Codex reports what a turn cost on its OWN notification, not on `turn/completed`. The
+      // method list in the shipped binary names it explicitly: `thread/tokenUsage/updated`, sitting
+      // between `thread/settings/updated` and `turn/started`. An earlier version read
+      // `turn/completed`, which carries no usage at all, so every reply arrived with no token count
+      // and the chip never rendered.
+      if (typeof message.method === 'string' && message.method.includes('tokenUsage')) {
+        const usage = extractTurnUsage(message);
+        if (usage) {
+          sawUsage = true;
+          options.onUsage?.(usage);
+        }
+        return;
+      }
+
       if (message.method === 'turn/completed') {
+        // Belt and braces: if a future version also puts usage here, take it rather than miss it.
+        if (!sawUsage) {
+          const usage = extractTurnUsage(message);
+          if (usage) {
+            sawUsage = true;
+            options.onUsage?.(usage);
+          }
+        }
+        if (!sawUsage) {
+          // Say so once, rather than leaving a silently missing chip to be discovered by a user.
+          logger.warn('codex.turn.usage_missing', {
+            hint: 'no thread/tokenUsage/updated notification arrived for this turn'
+          });
+        }
         child.kill('SIGTERM');
         const result = (finalText || latestText).trim();
         if (!result) {
@@ -947,6 +981,7 @@ export async function streamAssistantReply(
       signal: options?.signal,
       onTextSnapshot: options?.onTextSnapshot,
       onActivityUpdate: options?.onActivityUpdate,
+      onUsage: options?.onUsage,
       executionContext: {
         surface: options?.voiceTurnId ? 'voice' : 'text',
         intent: 'discussion'

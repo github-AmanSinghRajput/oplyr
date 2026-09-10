@@ -25,7 +25,7 @@ export function MemoryChip({ atoms }: { atoms: ChatMemoryAtom[] }) {
   }
 
   return (
-    <div className="mt-2 pt-2 border-t border-border/50">
+    <div>
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}

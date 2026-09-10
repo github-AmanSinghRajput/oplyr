@@ -1,3 +1,4 @@
+import type { TurnTokenUsage } from './features/chat/turn-usage.js';
 import path from 'node:path';
 import {
   collectGitDiff,
@@ -103,6 +104,8 @@ interface StreamReplyOptions {
   signal?: AbortSignal;
   onTextSnapshot?: (text: string) => void;
   onActivityUpdate?: (activity: string) => void;
+  /** What the turn cost, once the agent's CLI reports it. */
+  onUsage?: (usage: TurnTokenUsage) => void;
 }
 
 interface CodingAssistantProvider {

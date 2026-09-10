@@ -11,6 +11,7 @@
 // problem, so the build now proves its own output instead of leaving you to read the log: if this
 // passes, the retry noise can be ignored; if it fails, stop.
 import { execFileSync, spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { existsSync, readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -99,7 +100,37 @@ check('app inside the DMG', () => {
       throw new Error(`the embedding runtime does not load from the bundle: ${why.trim()}`);
     }
 
-    return `v${shipped}, embedding runtime loads from the bundle`;
+    const electronVersion = JSON.parse(
+      readFileSync(path.join(here, '..', 'package.json'), 'utf8')
+    ).devDependencies?.electron?.replace(/^[^0-9]*/, '');
+    const require_ = createRequire(import.meta.url);
+    const expectedAbi = String(require_('node-abi').getAbi(electronVersion, 'electron'));
+
+    const checked = [];
+    for (const mod of ['better-sqlite3', 'node-pty']) {
+      const binding = path.join(
+        apiDir,
+        'node_modules',
+        mod,
+        mod === 'node-pty' ? 'build/Release/pty.node' : 'build/Release/better_sqlite3.node'
+      );
+      if (!existsSync(binding)) throw new Error(`${mod} has no compiled binding in the bundle`);
+      // Node-API modules are ABI-stable, so there is nothing to match.
+      if (usesNodeApi(binding)) {
+        checked.push(`${mod} napi`);
+        continue;
+      }
+      const { abi, builtForThisNode } = abiOfBinding(binding);
+      if (builtForThisNode || abi !== expectedAbi) {
+        throw new Error(
+          `${mod} is built for ABI ${abi}, but Electron ${electronVersion} loads ABI ${expectedAbi}. ` +
+            `The API will die at startup. Run \`npm run rebuild:native\` and repackage.`
+        );
+      }
+      checked.push(`${mod} ABI ${abi}`);
+    }
+
+    return `v${shipped}, embedding runtime loads, ${checked.join(' + ')}`;
   } finally {
     try {
       run('hdiutil', ['detach', '-quiet', mount]);
@@ -109,6 +140,55 @@ check('app inside the DMG', () => {
     rmSync(mount, { recursive: true, force: true });
   }
 });
+
+/**
+ * The native bindings must be built for ELECTRON's ABI, not the system Node's.
+ *
+ * This is what broke 0.5.2 for every user: the packaged `better_sqlite3.node` was built for Node
+ * 24 (ABI 137) while Electron 42 loads ABI 146, so the API process died at startup with
+ * ERR_DLOPEN_FAILED, the frontend had no backend, and onboarding stopped on step 1 with a generic
+ * "voice setup failed". `npm rebuild better-sqlite3` (which the release runbook tells you to run at
+ * the end, to get dev and tests working again) builds for system Node, and packaging afterwards
+ * ships that.
+ *
+ * Detection loads the shipped binding under THIS Node on purpose:
+ *  - it loads          → built for system Node → wrong, and the app will not boot
+ *  - it refuses, naming the version it was built for → compare that to Electron's ABI
+ *
+ * Note that `build/config.gypi` is NOT usable for this. It still said `runtime: electron` on a tree
+ * whose actual .node had since been replaced by a Node build, because prebuild-install overwrites
+ * the binary without touching the metadata.
+ */
+/**
+ * Does this binding use Node-API? Those are ABI-stable across Node and Electron versions by design,
+ * so they load anywhere and must NOT be held to an ABI match. node-pty is one; better-sqlite3 is
+ * not. An earlier version of this check ignored the distinction and failed a perfectly good build,
+ * reporting node-pty as "built for ABI 137" when 137 was simply the ABI of the Node running the
+ * check.
+ */
+function usesNodeApi(bindingPath) {
+  const symbols = spawnSync('nm', ['-u', bindingPath], { encoding: 'utf8' });
+  return (symbols.stdout ?? '').includes('napi_');
+}
+
+/**
+ * The ABI a binding was compiled for.
+ *
+ * Loading it under THIS Node is the probe: an ABI-bound module built for Electron refuses and names
+ * the version it wants, while one built for the running Node loads silently — which is the failure
+ * we are looking for, because packaging must not ship a system-Node build.
+ */
+function abiOfBinding(bindingPath) {
+  const probe = spawnSync(
+    process.execPath,
+    ['-e', `process.dlopen({ exports: {} }, ${JSON.stringify(bindingPath)})`],
+    { encoding: 'utf8' }
+  );
+  if (probe.status === 0) return { abi: process.versions.modules, builtForThisNode: true };
+  const matched = /NODE_MODULE_VERSION (\d+)/.exec(probe.stderr ?? '');
+  if (!matched) throw new Error(`could not read the ABI of ${path.basename(bindingPath)}`);
+  return { abi: matched[1], builtForThisNode: false };
+}
 
 // The update feed must point at the zip. A dmg-last build rewrites it to the DMG, which would send
 // every existing install after an artifact that is never published.

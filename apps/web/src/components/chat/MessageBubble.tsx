@@ -2,7 +2,9 @@ import { cn } from '@/lib/cn';
 import { MarkdownContent } from '@/components/markdown/MarkdownContent';
 import '../markdown.css';
 import { AgentActivityTimeline } from './AgentActivityTimeline';
+import { CollapsibleUserText } from './CollapsibleUserText';
 import { MemoryChip } from './MemoryChip';
+import { TokenUsageChip } from './TokenUsageChip';
 import { ProviderLogo } from '@/components/providers/ProviderLogo';
 import type { AssistantProviderId, MessageEntry } from '@/containers/voice-console/lib/types';
 import { formatClock } from '@/containers/voice-console/lib/helpers';
@@ -51,7 +53,7 @@ export function MessageBubble({
         )}
       >
         {isUser ? (
-          <p className="text-sm leading-relaxed whitespace-pre-wrap">{displayText}</p>
+          <CollapsibleUserText text={displayText} />
         ) : (
           <>
             {showAuthor && message.authorProviderId ? (
@@ -89,8 +91,13 @@ export function MessageBubble({
                 />
               </div>
             )}
-            {!isStreaming && message.memory?.atoms?.length ? (
-              <MemoryChip atoms={message.memory.atoms} />
+            {/* One quiet line under the reply: what memory was used, and what the turn cost. Both
+                are footnotes about the turn, so they share a row rather than each taking one. */}
+            {!isStreaming && (message.memory?.atoms?.length || message.tokenUsage) ? (
+              <div className="mt-2 flex flex-wrap items-start gap-x-3 gap-y-1 border-t border-border/50 pt-2">
+                {message.memory?.atoms?.length ? <MemoryChip atoms={message.memory.atoms} /> : null}
+                {message.tokenUsage ? <TokenUsageChip usage={message.tokenUsage} /> : null}
+              </div>
             ) : null}
           </>
         )}

@@ -247,6 +247,11 @@ export class ChatService {
       {
         signal,
         voiceTurnId: correlation?.voiceTurnId,
+        // The agent's own CLI reports what the turn cost. Attached to the message so the UI can
+        // show it on the same line as recalled memories.
+        onUsage: (usage) => {
+          assistantMessage.tokenUsage = usage;
+        },
         onTextSnapshot: (snapshotText) => {
           assistantMessage.text = snapshotText;
           callbacks?.onDelta?.({

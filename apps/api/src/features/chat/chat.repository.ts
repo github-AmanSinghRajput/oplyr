@@ -8,6 +8,17 @@ interface PersistedSession {
   projectKey: string | null;
 }
 
+/** Read the stored usage blob back. A malformed row costs its own chip, never the transcript. */
+function parseTokenUsage(raw: string | null): ChatMessage['tokenUsage'] {
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as ChatMessage['tokenUsage'];
+    return parsed && typeof parsed.totalTokens === 'number' ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export class ChatRepository {
   private session: PersistedSession | null = null;
 
@@ -39,7 +50,7 @@ export class ChatRepository {
     const rows = database
       .prepare(
         `
-        SELECT id, role, source, content, attachments_json, created_at, author_provider_id
+        SELECT id, role, source, content, attachments_json, created_at, author_provider_id, token_usage
         FROM conversation_messages
         WHERE session_id = ?
         ORDER BY created_at DESC
@@ -54,6 +65,7 @@ export class ChatRepository {
       attachments_json: string;
       created_at: string;
       author_provider_id: ChatMessage['authorProviderId'];
+      token_usage: string | null;
     }[];
 
     return rows.reverse().map((row) => ({
@@ -63,6 +75,7 @@ export class ChatRepository {
       text: row.content,
       attachments: parseAttachments(row.attachments_json),
       authorProviderId: row.author_provider_id ?? null,
+      tokenUsage: parseTokenUsage(row.token_usage),
       createdAt: new Date(row.created_at).toISOString()
     }));
   }
@@ -76,8 +89,8 @@ export class ChatRepository {
     await withTransaction(async (database) => {
       const statement = database.prepare(
         `
-          INSERT INTO conversation_messages (id, session_id, role, source, content, attachments_json, created_at, author_provider_id)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO conversation_messages (id, session_id, role, source, content, attachments_json, created_at, author_provider_id, token_usage)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
       );
 
@@ -90,7 +103,8 @@ export class ChatRepository {
           message.text || '',
           JSON.stringify(message.attachments ?? []),
           message.createdAt,
-          message.authorProviderId ?? null
+          message.authorProviderId ?? null,
+          message.tokenUsage ? JSON.stringify(message.tokenUsage) : null
         );
       }
     });

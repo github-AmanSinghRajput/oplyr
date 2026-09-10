@@ -63,11 +63,17 @@ export class VoiceSessionService {
     const settings = await this.dependencies.voiceSettingsService.getResolvedSettings();
     const runtime = getRuntimeState();
 
+    // An `active` session is NOT a reason to refuse. The client only asks to start when it believes
+    // nothing is running, so a mismatch means our flag is stale — and refusing turns the mic button
+    // into a no-op with nothing to tell the user, which is how it was reported: taps received,
+    // silently discarded, no state change. Measured on a real install: 2 starts, 0 stops, 3 refused.
+    // Recover into a fresh session instead.
     if (runtime.voiceSession.active) {
-      logger.info('voice.session.start.ignored', {
-        reason: 'already_active'
+      logger.info('voice.session.start.recovered', {
+        reason: 'stale_active_session',
+        phase: runtime.voiceSession.phase
       });
-      return runtime.voiceSession;
+      resetVoiceSessionState('idle');
     }
 
     logger.info('voice.session.started', {

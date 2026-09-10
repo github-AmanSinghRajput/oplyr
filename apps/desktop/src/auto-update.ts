@@ -1,4 +1,4 @@
-import { app, type BrowserWindow } from 'electron';
+import { app, powerMonitor, type BrowserWindow } from 'electron';
 import electronUpdater, { type UpdateInfo, type ProgressInfo } from 'electron-updater';
 import log from 'electron-log';
 
@@ -51,6 +51,24 @@ function normalizeNotes(notes: unknown): string | undefined {
  * (macOS refuses to apply updates to an unsigned/dev app). Downloads happen in the background; the
  * renderer decides when to prompt "restart to update". Safe to call once from app.whenReady().
  */
+/**
+ * How often a running app looks for a new release.
+ *
+ * Deliberately short. The feed is `github.com/<owner>/<repo>/releases.atom` — a few KB of Atom,
+ * served by github.com rather than `api.github.com`, so the 60-requests-per-hour REST limit does
+ * not apply and a per-minute poll is the same load as an ordinary feed reader.
+ *
+ * The reason it matters: a release that fixes a build which cannot start is only useful if it
+ * reaches people quickly, and those users cannot help themselves — a broken app looks like a broken
+ * app, not like something to wait out. This used to be six hours, which meant the only reliable
+ * recovery was quitting and relaunching until it happened to check.
+ */
+const UPDATE_CHECK_INTERVAL_MS = 60 * 1000;
+/** Back off after consecutive failures so an outage is not polled once a minute forever. */
+const MAX_BACKOFF_MS = 15 * 60 * 1000;
+/** Don't re-check more than this often just because the window regained focus. */
+const FOCUS_CHECK_DEBOUNCE_MS = 30 * 1000;
+
 export function setupAutoUpdater(getWindow: () => BrowserWindow | null) {
   getWindowRef = getWindow;
 
@@ -83,12 +101,62 @@ export function setupAutoUpdater(getWindow: () => BrowserWindow | null) {
     setStatus({ state: 'error', message: error?.message ?? 'Update failed.' });
   });
 
-  // Check shortly after launch (don't contend with startup) and periodically after that.
-  const check = () => {
-    autoUpdater.checkForUpdates().catch((error: unknown) => log.warn('auto-update check failed', error));
+  // Check shortly after launch (don't contend with startup), then on a cadence that matches how
+  // often early access actually ships. Six hours meant a release could sit unseen for most of a
+  // day, and the only way to get it was to quit and relaunch — which is exactly what users
+  // reported doing, repeatedly.
+  // A self-rescheduling timer rather than setInterval, so a failing feed can back off and a
+  // finished download can stop the polling entirely.
+  let consecutiveFailures = 0;
+  let timer: NodeJS.Timeout | undefined;
+
+  const scheduleNext = () => {
+    if (timer) clearTimeout(timer);
+    // Once an update is downloaded there is nothing left to look for; it applies on quit.
+    if (status.state === 'ready') return;
+    const backoff = Math.min(
+      UPDATE_CHECK_INTERVAL_MS * 2 ** consecutiveFailures,
+      MAX_BACKOFF_MS
+    );
+    timer = setTimeout(check, backoff);
   };
-  setTimeout(check, 8000);
-  setInterval(check, 6 * 60 * 60 * 1000);
+
+  const check = () => {
+    autoUpdater
+      .checkForUpdates()
+      .then(() => {
+        consecutiveFailures = 0;
+      })
+      .catch((error: unknown) => {
+        consecutiveFailures += 1;
+        log.warn('auto-update check failed', error);
+      })
+      .finally(scheduleNext);
+  };
+
+  // Tracked in `timer` like every other scheduled check, so a focus or resume check that lands
+  // first cancels it instead of leaving two chains running in parallel.
+  timer = setTimeout(check, 8000);
+
+  const checkNow = () => {
+    consecutiveFailures = 0;
+    if (timer) clearTimeout(timer);
+    check();
+  };
+
+  // Coming back to the app is when a user expects it to have noticed. Debounced, so tabbing in and
+  // out does not hammer the feed.
+  let lastFocusCheck = 0;
+  app.on('browser-window-focus', () => {
+    const now = Date.now();
+    if (now - lastFocusCheck < FOCUS_CHECK_DEBOUNCE_MS) return;
+    lastFocusCheck = now;
+    checkNow();
+  });
+
+  // Timers do not fire while the machine is asleep, so a laptop opened after a night away would
+  // otherwise wait out a full interval before looking.
+  powerMonitor.on('resume', checkNow);
 }
 
 /** Manual "check for updates" (Settings button). Returns the current status immediately. */

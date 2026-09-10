@@ -58,6 +58,8 @@ interface MemoryImportContextValue {
   selected: Set<string>;
   selectedCount: number;
   toggle: (path: string) => void;
+  /** Tick or untick many sources at once (a project group's checkbox). */
+  toggleMany: (paths: string[], select: boolean) => void;
   selectAll: () => void;
   clearSelection: () => void;
   rescan: () => Promise<void>;
@@ -162,6 +164,19 @@ export function MemoryImportProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  /** Tick or untick a whole project's sources in one update, so a group checkbox is one state
+   *  change rather than one per file. */
+  const toggleMany = useCallback((paths: string[], select: boolean) => {
+    setSelected((current) => {
+      const next = new Set(current);
+      for (const path of paths) {
+        if (select) next.add(path);
+        else next.delete(path);
+      }
+      return next;
+    });
+  }, []);
+
   const startImport = useCallback(async () => {
     if (runningRef.current || !manifest) return;
     const selectors: ImportSelector[] = [];
@@ -246,6 +261,7 @@ export function MemoryImportProvider({ children }: { children: ReactNode }) {
       selected,
       selectedCount: selected.size,
       toggle,
+      toggleMany,
       rescan,
       run,
       startImport,
@@ -263,6 +279,7 @@ export function MemoryImportProvider({ children }: { children: ReactNode }) {
     selected,
     run,
     toggle,
+    toggleMany,
     selectAll,
     clearSelection,
     rescan,

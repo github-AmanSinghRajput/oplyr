@@ -37,6 +37,9 @@ export async function startPcmCapture(
 
   const analyser = audioContext.createAnalyser();
   analyser.fftSize = 2048;
+  // The default 0.8 double-smooths against the meter's own attack/release and makes it feel laggy.
+  // Let the analyser pass the transients through and let the meter decide how it moves.
+  analyser.smoothingTimeConstant = 0.5;
   source.connect(analyser);
 
   const node = new AudioWorkletNode(audioContext, 'pcm-processor');

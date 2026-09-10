@@ -1,3 +1,4 @@
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { ThemeProvider } from '@/providers/ThemeProvider';
 import { ApiProvider } from '@/providers/ApiProvider';
 import { StatusProvider } from '@/providers/StatusProvider';
@@ -25,6 +26,9 @@ export default function App() {
   }
 
   return (
+    // One tooltip provider for the whole app. It was previously mounted per-component in a handful
+    // of files, so most of the product fell back to native `title=` with different timing, no
+    // styling and no keyboard behaviour. Hoisting it makes a tooltip usable anywhere.
     <ThemeProvider>
       <ApiProvider>
         <StatusProvider>
@@ -33,7 +37,9 @@ export default function App() {
               <ToastProvider>
                 <ApprovalProvider>
                   <TourProvider>
-                    <AppShell />
+                    <TooltipProvider delayDuration={300}>
+                      <AppShell />
+                    </TooltipProvider>
                   </TourProvider>
                 </ApprovalProvider>
               </ToastProvider>

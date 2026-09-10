@@ -690,9 +690,11 @@ export function AppShell() {
             onBrowseProjectFolder={() => {
               if (window.desktopShell?.pickProjectFolder) {
                 void window.desktopShell.pickProjectFolder().then((folder: string | null) => {
-                  if (folder) {
-                    setProjectInput(folder);
-                  }
+                  if (!folder) return;
+                  // Picking a folder in a native dialog IS the decision. Filling the box and then
+                  // asking for a second click made the picker feel like it had not worked.
+                  setProjectInput(folder);
+                  void settings.handleSaveProject(folder);
                 });
               }
             }}

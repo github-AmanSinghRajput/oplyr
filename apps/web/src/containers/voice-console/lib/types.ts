@@ -131,6 +131,14 @@ export interface MessageEntry {
   authorProviderId?: AssistantProviderId | null;
   /** Present on assistant messages when recall injected memory into the turn. */
   memory?: ChatMemoryUsage;
+  /** What this turn cost, from the agent's own CLI. Absent when the provider reported nothing. */
+  tokenUsage?: {
+    totalTokens: number;
+    inputTokens: number | null;
+    outputTokens: number | null;
+    cachedInputTokens: number | null;
+    reasoningTokens: number | null;
+  };
 }
 
 export interface WorkspaceState {
